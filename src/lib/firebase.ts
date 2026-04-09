@@ -8,12 +8,11 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Initialize Storage with increased retry limits
-// Using the standard .appspot.com bucket which is often more reliable
-export const storage = getStorage(app, "gen-lang-client-0712465288.appspot.com");
-// Increase retry time to 20 minutes to handle slow connections or large files
-storage.maxUploadRetryTime = 1200000;
-storage.maxOperationRetryTime = 1200000;
+// Initialize Storage using the exact bucket from config
+export const storage = getStorage(app, firebaseConfig.storageBucket);
+// Set a reasonable timeout (60 seconds) so it doesn't hang indefinitely
+storage.maxUploadRetryTime = 60000;
+storage.maxOperationRetryTime = 60000;
 
 export enum OperationType {
   CREATE = 'create',
