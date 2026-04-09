@@ -69,7 +69,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
             </span>
             {lecture.number && (
               <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-purple-100 text-purple-700">
-                {t.lectureNumber.split(' ')[0]} {lecture.number}
+                {isRtl ? 'محاضرة' : 'Lecture'} {lecture.number}
               </span>
             )}
           </div>

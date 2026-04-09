@@ -88,7 +88,7 @@ export const TRANSLATIONS = {
     sortAsc: 'تصاعدي',
     sortDesc: 'تنازلي',
     pharmacyPortal: 'بوابة الصيدلة',
-    resourceHub: 'مركز مصادر المحاضرات',
+    resourceHub: 'محاضرات المرحلة الثالثة',
     pharmacology: 'فارما',
     pharmacognosy: ' عقاقير',
     organic_chemistry: 'عضوية',

@@ -9,6 +9,7 @@ import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import Fuse from 'fuse.js';
 
 type SortField = 'title' | 'date' | 'number';
 type SortOrder = 'asc' | 'desc';
@@ -169,13 +170,22 @@ export default function App() {
     setUser(null);
   };
 
-  const filteredLectures = lectures.filter(lecture => {
-    const matchesSearch = lecture.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         lecture.description?.toLowerCase().includes(searchQuery.toLowerCase());
+  let baseLectures = lectures.filter(lecture => {
     const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;
     const matchesType = selectedType === 'all' || lecture.type === selectedType;
-    return matchesSearch && matchesCategory && matchesType;
-  }).sort((a, b) => {
+    return matchesCategory && matchesType;
+  });
+
+  if (searchQuery.trim()) {
+    const fuse = new Fuse(baseLectures, {
+      keys: ['title', 'description'],
+      threshold: 0.4,
+      ignoreLocation: true,
+    });
+    baseLectures = fuse.search(searchQuery).map(result => result.item);
+  }
+
+  const filteredLectures = baseLectures.sort((a, b) => {
     let comparison = 0;
     if (sortBy === 'title') {
       comparison = a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en');
