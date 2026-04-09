@@ -7,8 +7,11 @@ import Navbar from './components/Navbar';
 import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
-import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle } from 'lucide-react';
+import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+type SortField = 'title' | 'date' | 'number';
+type SortOrder = 'asc' | 'desc';
 
 export default function App() {
   const [lang, setLang] = useState<Language>('ar');
@@ -21,6 +24,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
+  const [sortBy, setSortBy] = useState<SortField>('date');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [showUpload, setShowUpload] = useState(false);
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -170,6 +175,20 @@ export default function App() {
     const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;
     const matchesType = selectedType === 'all' || lecture.type === selectedType;
     return matchesSearch && matchesCategory && matchesType;
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === 'title') {
+      comparison = a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en');
+    } else if (sortBy === 'date') {
+      const dateA = a.createdAt?.toMillis?.() || 0;
+      const dateB = b.createdAt?.toMillis?.() || 0;
+      comparison = dateA - dateB;
+    } else if (sortBy === 'number') {
+      const numA = a.number || 0;
+      const numB = b.number || 0;
+      comparison = numA - numB;
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
   });
 
   if (!isAuthReady) {
@@ -308,6 +327,30 @@ export default function App() {
               {t[cat.labelKey]}
             </button>
           ))}
+        </div>
+
+        {/* Sorting Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-bold text-gray-500">{t.sortBy}:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortField)}
+              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 outline-none font-medium"
+            >
+              <option value="date">{t.sortDate}</option>
+              <option value="title">{t.sortTitle}</option>
+              <option value="number">{t.sortNumber}</option>
+            </select>
+          </div>
+          <button
+            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-gray-700 transition-colors"
+            title={sortOrder === 'asc' ? t.sortAsc : t.sortDesc}
+          >
+            {sortOrder === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+            {sortOrder === 'asc' ? t.sortAsc : t.sortDesc}
+          </button>
         </div>
 
         {/* Content */}
