@@ -1,22 +1,53 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2 } from 'lucide-react';
-import { Lecture, CATEGORIES, Language, TRANSLATIONS } from '../types';
+import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2 } from 'lucide-react';
+import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { ref, deleteObject } from 'firebase/storage';
+import { db, storage } from '../lib/firebase';
 
 interface LectureCardProps {
   lecture: Lecture;
   lang: Language;
+  user: UserProfile | null;
+  onEdit?: (lecture: Lecture) => void;
   key?: string;
 }
 
-export default function LectureCard({ lecture, lang }: LectureCardProps) {
+export default function LectureCard({ lecture, lang, user, onEdit }: LectureCardProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [showPreview, setShowPreview] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   const categoryData = CATEGORIES.find(c => c.value === lecture.category);
   const categoryLabel = categoryData ? t[categoryData.labelKey] : lecture.category;
   const date = lecture.createdAt?.toDate ? lecture.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently;
+
+  const handleDelete = async () => {
+    if (!user || user.role !== 'admin') return;
+    
+    setIsDeleting(true);
+    try {
+      // 1. Delete from Firestore
+      await deleteDoc(doc(db, 'lectures', lecture.id));
+      
+      // 2. Try to delete from Storage (don't fail if it doesn't exist)
+      try {
+        const fileRef = ref(storage, lecture.pdfUrl);
+        await deleteObject(fileRef);
+      } catch (storageError) {
+        console.warn('Could not delete file from storage:', storageError);
+      }
+    } catch (error) {
+      console.error('Error deleting lecture:', error);
+      alert(t.errorUnknown);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   return (
     <>
@@ -32,9 +63,16 @@ export default function LectureCard({ lecture, lang }: LectureCardProps) {
           <div className={ `p-3 rounded-xl ${lecture.type === 'theoretical' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}` }>
             <FileText className="w-6 h-6" />
           </div>
-          <span className={ `text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.type === 'theoretical' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}` }>
-            {lecture.type === 'theoretical' ? t.theoretical : t.practical}
-          </span>
+          <div className="flex flex-col items-end gap-2">
+            <span className={ `text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.type === 'theoretical' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}` }>
+              {lecture.type === 'theoretical' ? t.theoretical : t.practical}
+            </span>
+            {lecture.number && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-purple-100 text-purple-700">
+                {t.lectureNumber.split(' ')[0]} {lecture.number}
+              </span>
+            )}
+          </div>
         </div>
 
         <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors line-clamp-2">
@@ -72,8 +110,68 @@ export default function LectureCard({ lecture, lang }: LectureCardProps) {
           >
             <Download className="w-5 h-5" />
           </a>
+          {user?.role === 'admin' && (
+            <>
+              <button
+                onClick={() => onEdit?.(lecture)}
+                className="inline-flex items-center justify-center p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
+                title={t.editLecture}
+              >
+                <Edit2 className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="inline-flex items-center justify-center p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors"
+                title={t.deleteLecture}
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </>
+          )}
         </div>
       </motion.div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDeleteConfirm(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden p-6"
+              dir={isRtl ? 'rtl' : 'ltr'}
+            >
+              <h3 className="text-xl font-bold text-gray-900 mb-2">{t.deleteLecture}</h3>
+              <p className="text-gray-500 mb-6">{t.confirmDeleteLecture}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  {t.close}
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                  {t.delete}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* PDF Preview Modal */}
       <AnimatePresence>

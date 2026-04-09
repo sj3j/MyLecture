@@ -10,6 +10,7 @@ export interface Lecture {
   pdfUrl: string;
   createdAt: any; // Firestore Timestamp
   uploadedBy: string;
+  number?: number;
 }
 
 export interface UserProfile {
@@ -48,6 +49,7 @@ export const TRANSLATIONS = {
     publishLecture: 'نشر المحاضرة',
     uploading: 'جاري الرفع...',
     lectureTitle: 'عنوان المحاضرة',
+    lectureNumber: 'رقم المحاضرة (اختياري)',
     pdfFile: 'ملف PDF',
     description: 'الوصف (اختياري)',
     category: 'المادة',
@@ -74,6 +76,11 @@ export const TRANSLATIONS = {
     invalidCredentials: 'اسم المستخدم أو كلمة المرور غير صحيحة',
     adminCreated: 'تم إنشاء المسؤول بنجاح',
     confirmDeleteAdmin: 'هل أنت متأكد من حذف هذا المسؤول؟',
+    confirmDeleteLecture: 'هل أنت متأكد من حذف هذه المحاضرة؟ لا يمكن التراجع عن هذا الإجراء.',
+    deleteLecture: 'حذف المحاضرة',
+    editLecture: 'تعديل المحاضرة',
+    saveChanges: 'حفظ التغييرات',
+    editSuccess: 'تم التعديل بنجاح!',
     pharmacyPortal: 'بوابة الصيدلة',
     resourceHub: 'مركز مصادر المحاضرات',
     pharmacology: 'فارما',
@@ -108,6 +115,7 @@ export const TRANSLATIONS = {
     publishLecture: 'Publish Lecture',
     uploading: 'Uploading...',
     lectureTitle: 'Lecture Title',
+    lectureNumber: 'Lecture Number (Optional)',
     pdfFile: 'PDF File',
     description: 'Description (Optional)',
     category: 'Category',
@@ -134,6 +142,11 @@ export const TRANSLATIONS = {
     invalidCredentials: 'Invalid username or password',
     adminCreated: 'Admin created successfully',
     confirmDeleteAdmin: 'Are you sure you want to delete this admin?',
+    confirmDeleteLecture: 'Are you sure you want to delete this lecture? This action cannot be undone.',
+    deleteLecture: 'Delete Lecture',
+    editLecture: 'Edit Lecture',
+    saveChanges: 'Save Changes',
+    editSuccess: 'Changes saved successfully!',
     pharmacyPortal: 'Pharmacy Portal',
     resourceHub: 'Lecture Resource Hub',
     pharmacology: 'Pharmacology',

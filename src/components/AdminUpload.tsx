@@ -1,22 +1,24 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, AlertCircle, Loader2, FileUp, CheckCircle2 } from 'lucide-react';
 import { db, auth, storage, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS } from '../types';
+import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, Lecture } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AdminUploadProps {
   isOpen: boolean;
   onClose: () => void;
   lang: Language;
+  lectureToEdit?: Lecture | null;
 }
 
-export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps) {
+export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: AdminUploadProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
   const [title, setTitle] = useState('');
+  const [lectureNumber, setLectureNumber] = useState('');
   const [category, setCategory] = useState<Category>('pharmacology');
   const [type, setType] = useState<LectureType>('theoretical');
   const [description, setDescription] = useState('');
@@ -27,6 +29,19 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (lectureToEdit) {
+      setTitle(lectureToEdit.title);
+      setLectureNumber(lectureToEdit.number ? String(lectureToEdit.number) : '');
+      setCategory(lectureToEdit.category);
+      setType(lectureToEdit.type);
+      setDescription(lectureToEdit.description || '');
+      setFile(null); // Optional to upload a new file
+    } else {
+      resetForm();
+    }
+  }, [lectureToEdit, isOpen]);
 
   const processFile = (selectedFile: File) => {
     if (selectedFile.type !== 'application/pdf') {
@@ -87,62 +102,80 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!auth.currentUser || !file) return;
+    if (!auth.currentUser) return;
+    if (!lectureToEdit && !file) return;
 
     setIsSubmitting(true);
     setError(null);
     setUploadProgress(0);
 
     try {
-      // 1. Upload file to Firebase Storage
-      const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-      const storagePath = `lectures/${Date.now()}_${safeFileName}`;
-      console.log('Starting upload to:', storagePath);
-      
-      const storageRef = ref(storage, storagePath);
-      const uploadTask = uploadBytesResumable(storageRef, file);
+      let downloadUrl = lectureToEdit?.pdfUrl;
 
-      const downloadUrl = await new Promise<string>((resolve, reject) => {
-        uploadTask.on('state_changed', 
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log(`Upload progress: ${progress.toFixed(2)}%`);
-            setUploadProgress(progress);
-          }, 
-          (error) => {
-            console.error('Upload error details:', {
-              code: error.code,
-              message: error.message,
-              fileName: file.name,
-              fileSize: file.size,
-              timestamp: new Date().toISOString()
-            });
-            reject(error);
-          }, 
-          async () => {
-            try {
-              console.log('Upload complete, getting download URL...');
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(url);
-            } catch (err) {
-              console.error('Download URL error:', err);
-              reject(err);
+      if (file) {
+        // 1. Upload file to Firebase Storage
+        const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const storagePath = `lectures/${Date.now()}_${safeFileName}`;
+        console.log('Starting upload to:', storagePath);
+        
+        const storageRef = ref(storage, storagePath);
+        const uploadTask = uploadBytesResumable(storageRef, file);
+
+        downloadUrl = await new Promise<string>((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              console.log(`Upload progress: ${progress.toFixed(2)}%`);
+              setUploadProgress(progress);
+            }, 
+            (error) => {
+              console.error('Upload error details:', {
+                code: error.code,
+                message: error.message,
+                fileName: file.name,
+                fileSize: file.size,
+                timestamp: new Date().toISOString()
+              });
+              reject(error);
+            }, 
+            async () => {
+              try {
+                console.log('Upload complete, getting download URL...');
+                const url = await getDownloadURL(uploadTask.snapshot.ref);
+                resolve(url);
+              } catch (err) {
+                console.error('Download URL error:', err);
+                reject(err);
+              }
             }
-          }
-        );
-      });
+          );
+        });
+      }
 
       // 2. Save metadata to Firestore
       console.log('Saving metadata to Firestore...');
-      await addDoc(collection(db, 'lectures'), {
+      const lectureData: any = {
         title,
         category,
         type,
         description,
         pdfUrl: downloadUrl,
-        createdAt: serverTimestamp(),
         uploadedBy: auth.currentUser.uid,
-      });
+      };
+      
+      if (lectureNumber) {
+        lectureData.number = parseInt(lectureNumber, 10);
+      } else {
+        // To remove the number field if it was cleared during edit
+        lectureData.number = null; 
+      }
+
+      if (lectureToEdit) {
+        await updateDoc(doc(db, 'lectures', lectureToEdit.id), lectureData);
+      } else {
+        lectureData.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'lectures'), lectureData);
+      }
       console.log('Metadata saved successfully');
 
       setShowSuccess(true);
@@ -202,7 +235,7 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-indigo-50/50">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-indigo-600" />
-                {t.publishLecture}
+                {lectureToEdit ? t.editLecture : t.publishLecture}
               </h2>
               <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
                 <X className="w-5 h-5 text-gray-500" />
@@ -220,16 +253,20 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
                     <CheckCircle2 className="w-10 h-10 text-green-500" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-gray-900 mb-2">{t.success}</h3>
+                    <h3 className="text-2xl font-black text-gray-900 mb-2">
+                      {lectureToEdit ? t.editSuccess : t.success}
+                    </h3>
                     <p className="text-gray-500">{t.lectureTitle}: <span className="font-bold text-gray-700">{title}</span></p>
                   </div>
                   <div className="flex flex-col w-full gap-3 pt-4">
-                    <button
-                      onClick={resetForm}
-                      className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-                    >
-                      {t.uploadAnother}
-                    </button>
+                    {!lectureToEdit && (
+                      <button
+                        onClick={resetForm}
+                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                      >
+                        {t.uploadAnother}
+                      </button>
+                    )}
                     <button
                       onClick={onClose}
                       className="w-full py-4 bg-gray-50 text-gray-600 rounded-2xl font-bold hover:bg-gray-100 transition-all"
@@ -263,15 +300,27 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
                     )}
                   </AnimatePresence>
 
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-gray-700 ml-1">{t.lectureTitle}</label>
-                    <input
-                      required
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-gray-700 ml-1">{t.lectureTitle}</label>
+                      <input
+                        required
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-gray-700 ml-1">{t.lectureNumber}</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={lectureNumber}
+                        onChange={(e) => setLectureNumber(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -376,7 +425,7 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
                   )}
 
                   <button
-                    disabled={isSubmitting || !file}
+                    disabled={isSubmitting || (!lectureToEdit && !file)}
                     type="submit"
                     className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
                   >
@@ -388,7 +437,7 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
                     ) : (
                       <>
                         <Upload className="w-5 h-5" />
-                        {t.publishLecture}
+                        {lectureToEdit ? t.saveChanges : t.publishLecture}
                       </>
                     )}
                   </button>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInAnonymously } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS } from './types';
+import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS, LectureType } from './types';
 import Navbar from './components/Navbar';
 import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
@@ -22,6 +22,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
   const [showUpload, setShowUpload] = useState(false);
+  const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -55,11 +56,9 @@ export default function App() {
           const subAdmin = localStorage.getItem('subAdmin');
           if (subAdmin) {
             setUser(JSON.parse(subAdmin));
-          } else {
-            // Logged in anonymously but no sub-admin info? Logout.
-            await signOut(auth);
-            setUser(null);
           }
+          // We don't sign out immediately here anymore, because the login flow
+          // needs time to set the localStorage after signInAnonymously completes.
         }
       } else {
         const subAdmin = localStorage.getItem('subAdmin');
@@ -97,7 +96,7 @@ export default function App() {
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPassword === '1234FENIX') {
-      setLoginStep('choice');
+      setLoginStep('google');
       setLoginError('');
     } else {
       setLoginError(t.incorrectPassword);
@@ -121,30 +120,22 @@ export default function App() {
     setLoginError('');
 
     try {
-      const q = query(
-        collection(db, 'sub_admins'), 
-        where('username', '==', subUsername),
-        where('password', '==', subPassword)
-      );
-      const snapshot = await getDocs(q);
-
-      if (!snapshot.empty) {
-        const adminData = snapshot.docs[0].data();
-        
-        // Sign in anonymously to get a real Firebase UID for Storage/Firestore rules
-        const anonUser = await signInAnonymously(auth);
-        
-        // Register this UID as an active admin session in Firestore
-        // The rules will allow this ONLY if the username/password provided matches the sub_admins record
+      // 1. Sign in anonymously first to get a real Firebase UID
+      const anonUser = await signInAnonymously(auth);
+      
+      // 2. Try to register this UID as an active admin session in Firestore
+      // The security rules will ONLY allow this if the username/password matches the sub_admins record
+      try {
         await setDoc(doc(db, 'active_admins', anonUser.user.uid), {
           username: subUsername,
           password: subPassword, // Passed to rules for validation
           createdAt: serverTimestamp()
         });
 
+        // 3. If successful, set the user state
         const subAdminUser: UserProfile = {
           uid: anonUser.user.uid,
-          name: adminData.username,
+          name: subUsername,
           email: 'sub-admin@lectures.com',
           role: 'admin'
         };
@@ -153,7 +144,10 @@ export default function App() {
         setShowAdminLogin(false);
         setSubUsername('');
         setSubPassword('');
-      } else {
+      } catch (firestoreError: any) {
+        // If Firestore write fails, it means invalid credentials (blocked by security rules)
+        await signOut(auth);
+        console.error('Invalid credentials or permission denied:', firestoreError);
         setLoginError(t.invalidCredentials);
       }
     } catch (err) {
@@ -220,13 +214,15 @@ export default function App() {
             
             {user && (
               <div className="flex gap-2">
-                <button 
-                  onClick={() => setShowAdminManage(true)}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-indigo-600 rounded-2xl text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-all"
-                >
-                  <Users className="w-4 h-4" />
-                  {t.manageAdmins}
-                </button>
+                {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
+                  <button 
+                    onClick={() => setShowAdminManage(true)}
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-indigo-600 rounded-2xl text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-all"
+                  >
+                    <Users className="w-4 h-4" />
+                    {t.manageAdmins}
+                  </button>
+                )}
                 <button 
                   onClick={handleLogout}
                   className="flex items-center justify-center gap-2 px-6 py-3 bg-red-50 border-2 border-red-100 rounded-2xl text-sm font-bold text-red-600 hover:bg-red-100 transition-all"
@@ -240,7 +236,7 @@ export default function App() {
               <button 
                 onClick={() => {
                   setShowAdminLogin(true);
-                  setLoginStep('password');
+                  setLoginStep('choice');
                   setAdminPassword('');
                   setLoginError('');
                 }}
@@ -327,7 +323,16 @@ export default function App() {
           >
             <AnimatePresence mode="popLayout">
               {filteredLectures.map((lecture: Lecture) => (
-                <LectureCard key={lecture.id} lecture={lecture} lang={lang} />
+                <LectureCard 
+                  key={lecture.id} 
+                  lecture={lecture} 
+                  lang={lang} 
+                  user={user} 
+                  onEdit={(l) => {
+                    setLectureToEdit(l);
+                    setShowUpload(true);
+                  }}
+                />
               ))}
             </AnimatePresence>
           </motion.div>
@@ -369,11 +374,32 @@ export default function App() {
                 <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
                   <Shield className="w-8 h-8 text-indigo-600" />
                 </div>
-                <h2 className="text-2xl font-black text-center text-gray-900 mb-2">{t.adminAccess}</h2>
-                <p className="text-center text-gray-500 mb-8">{t.enterPassword}</p>
+                <h2 className="text-2xl font-black text-center text-gray-900 mb-8">{t.adminAccess}</h2>
+
+                {loginStep === 'choice' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3">
+                      <button
+                        onClick={() => setLoginStep('password')}
+                        className="flex items-center justify-center gap-3 w-full py-4 bg-white border-2 border-gray-200 rounded-2xl font-bold hover:bg-gray-50 transition-all"
+                      >
+                        <Shield className="w-5 h-5 text-indigo-600" />
+                        {isRtl ? 'تسجيل الدخول كمسؤول رئيسي' : 'Master Admin Login'}
+                      </button>
+                      <button
+                        onClick={() => setLoginStep('subadmin')}
+                        className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
+                      >
+                        <Users className="w-5 h-5" />
+                        {t.subAdminLogin}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {loginStep === 'password' && (
                   <form onSubmit={handleAdminLogin} className="space-y-4">
+                    <p className="text-center text-gray-500 mb-4">{t.enterPassword}</p>
                     <input
                       type="password"
                       value={adminPassword}
@@ -393,35 +419,17 @@ export default function App() {
                     >
                       {t.verifyPassword}
                     </button>
+                    <button type="button" onClick={() => setLoginStep('choice')} className="w-full text-sm text-gray-400 font-bold hover:text-gray-600 mt-4">
+                      {isRtl ? 'رجوع' : 'Back'}
+                    </button>
                   </form>
-                )}
-
-                {loginStep === 'choice' && (
-                  <div className="space-y-4">
-                    <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-700 text-sm font-bold text-center mb-6">
-                      {t.passwordCorrect}
-                    </div>
-                    <div className="grid grid-cols-1 gap-3">
-                      <button
-                        onClick={loginWithGoogle}
-                        className="flex items-center justify-center gap-3 w-full py-4 bg-white border-2 border-gray-200 rounded-2xl font-bold hover:bg-gray-50 transition-all"
-                      >
-                        <UserCircle className="w-5 h-5 text-gray-600" />
-                        {t.confirmIdentity}
-                      </button>
-                      <button
-                        onClick={() => setLoginStep('subadmin')}
-                        className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
-                      >
-                        <Users className="w-5 h-5" />
-                        {t.subAdminLogin}
-                      </button>
-                    </div>
-                  </div>
                 )}
 
                 {loginStep === 'google' && (
                   <div className="space-y-6">
+                    <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-700 text-sm font-bold text-center mb-6">
+                      {t.passwordCorrect}
+                    </div>
                     <button
                       onClick={loginWithGoogle}
                       className="flex items-center justify-center gap-3 w-full py-4 bg-white border-2 border-gray-200 rounded-2xl font-bold hover:bg-gray-50 transition-all"
@@ -429,7 +437,7 @@ export default function App() {
                       <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
                       {t.confirmIdentity}
                     </button>
-                    <button onClick={() => setLoginStep('choice')} className="w-full text-sm text-gray-400 font-bold hover:text-gray-600">
+                    <button onClick={() => setLoginStep('password')} className="w-full text-sm text-gray-400 font-bold hover:text-gray-600">
                       {isRtl ? 'رجوع' : 'Back'}
                     </button>
                   </div>
@@ -478,7 +486,15 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AdminUpload isOpen={showUpload} onClose={() => setShowUpload(false)} lang={lang} />
+      <AdminUpload 
+        isOpen={showUpload} 
+        onClose={() => {
+          setShowUpload(false);
+          setLectureToEdit(null);
+        }} 
+        lang={lang} 
+        lectureToEdit={lectureToEdit}
+      />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       
       <footer className="mt-20 border-t border-gray-200 py-10">
