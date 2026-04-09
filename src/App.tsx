@@ -314,16 +314,6 @@ export default function App() {
 
         {/* Secondary Filters (Sub-categories) */}
         <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
-              selectedCategory === 'all'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
-            }`}
-          >
-            {t.allSubjects}
-          </button>
           {CATEGORIES.map((cat) => (
             <button
               key={cat.value}
