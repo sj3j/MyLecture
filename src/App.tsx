@@ -20,6 +20,7 @@ export default function App() {
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
+  const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
   const [showUpload, setShowUpload] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -173,7 +174,8 @@ export default function App() {
     const matchesSearch = lecture.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          lecture.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesType = selectedType === 'all' || lecture.type === selectedType;
+    return matchesSearch && matchesCategory && matchesType;
   });
 
   if (!isAuthReady) {
@@ -251,7 +253,41 @@ export default function App() {
           </div>
         </div>
 
-        {/* Filters */}
+        {/* Primary Filters (Type) */}
+        <div className="flex flex-wrap gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+          <button
+            onClick={() => setSelectedType('all')}
+            className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
+              selectedType === 'all'
+                ? 'bg-indigo-900 text-white shadow-lg shadow-indigo-200'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            {isRtl ? 'الكل' : 'All'}
+          </button>
+          <button
+            onClick={() => setSelectedType('theoretical')}
+            className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
+              selectedType === 'theoretical'
+                ? 'bg-indigo-900 text-white shadow-lg shadow-indigo-200'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            {t.theoretical}
+          </button>
+          <button
+            onClick={() => setSelectedType('practical')}
+            className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
+              selectedType === 'practical'
+                ? 'bg-indigo-900 text-white shadow-lg shadow-indigo-200'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            {t.practical}
+          </button>
+        </div>
+
+        {/* Secondary Filters (Sub-categories) */}
         <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
           <button
             onClick={() => setSelectedCategory('all')}

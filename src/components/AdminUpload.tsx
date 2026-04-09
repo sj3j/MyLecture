@@ -276,34 +276,38 @@ export default function AdminUpload({ isOpen, onClose, lang }: AdminUploadProps)
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-gray-700 ml-1">{t.type}</label>
+                      <select
+                        value={type}
+                        onChange={(e) => {
+                          const newType = e.target.value as LectureType;
+                          setType(newType);
+                          const currentCatData = CATEGORIES.find(c => c.value === category);
+                          if (currentCatData && !currentCatData.types.includes(newType)) {
+                            // Find first category that supports this type
+                            const validCat = CATEGORIES.find(c => c.types.includes(newType));
+                            if (validCat) setCategory(validCat.value);
+                          }
+                        }}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      >
+                        <option value="theoretical">{t.theoretical}</option>
+                        <option value="practical">{t.practical}</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
                       <label className="text-sm font-semibold text-gray-700 ml-1">{t.category}</label>
                       <select
                         value={category}
                         onChange={(e) => {
                           const newCat = e.target.value as Category;
                           setCategory(newCat);
-                          const catData = CATEGORIES.find(c => c.value === newCat);
-                          if (catData && !catData.types.includes(type)) {
-                            setType(catData.types[0]);
-                          }
                         }}
                         className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                       >
-                        {CATEGORIES.map((c) => (
+                        {CATEGORIES.filter(c => c.types.includes(type)).map((c) => (
                           <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-gray-700 ml-1">{t.type}</label>
-                      <select
-                        value={type}
-                        onChange={(e) => setType(e.target.value as LectureType)}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                      >
-                        {selectedCategoryData?.types.map((t_val) => (
-                          <option key={t_val} value={t_val}>{t_val === 'theoretical' ? t.theoretical : t.practical}</option>
                         ))}
                       </select>
                     </div>
