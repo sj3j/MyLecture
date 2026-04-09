@@ -1,0 +1,153 @@
+export type Category = 'pharmacology' | 'pharmacognosy' | 'organic_chemistry' | 'biochemistry' | 'cosmetics';
+export type LectureType = 'theoretical' | 'practical';
+
+export interface Lecture {
+  id: string;
+  title: string;
+  category: Category;
+  type: LectureType;
+  description?: string;
+  pdfUrl: string;
+  createdAt: any; // Firestore Timestamp
+  uploadedBy: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'student';
+}
+
+export type Language = 'ar' | 'en';
+
+export const TRANSLATIONS = {
+  ar: {
+    appName: 'محاضراتي',
+    university: 'جامعة الصفوة',
+    department: 'قسم الصيدلة',
+    byFenix: 'بواسطة فينيكس',
+    searchPlaceholder: 'البحث عن المحاضرات...',
+    upload: 'رفع',
+    adminPortal: 'بوابة المسؤول',
+    allSubjects: 'جميع المواد',
+    loading: 'جاري التحميل...',
+    noLectures: 'لم يتم العثور على محاضرات',
+    noLecturesDesc: 'لم نتمكن من العثور على أي محاضرات تطابق الفلاتر الحالية أو استعلام البحث.',
+    view: 'عرض',
+    download: 'تحميل',
+    theoretical: 'نظري',
+    practical: 'عملي',
+    recently: 'مؤخراً',
+    adminAccess: 'دخول المسؤول',
+    enterPassword: 'أدخل كلمة المرور لإدارة المحاضرات',
+    verifyPassword: 'تحقق من كلمة المرور',
+    confirmIdentity: 'تأكيد الهوية عبر جوجل',
+    passwordCorrect: 'كلمة المرور صحيحة! يرجى تسجيل الدخول بحساب جوجل المسؤول لتأكيد الهوية.',
+    incorrectPassword: 'كلمة مرور غير صحيحة',
+    publishLecture: 'نشر المحاضرة',
+    uploading: 'جاري الرفع...',
+    lectureTitle: 'عنوان المحاضرة',
+    pdfFile: 'ملف PDF',
+    description: 'الوصف (اختياري)',
+    category: 'المادة',
+    type: 'النوع',
+    clickToUpload: 'اضغط لرفع ملف PDF',
+    maxSize: 'الحد الأقصى 10 ميجابايت',
+    dragDrop: 'أو اسحب وأفلت الملف هنا',
+    success: 'تم الرفع بنجاح!',
+    uploadAnother: 'رفع محاضرة أخرى',
+    close: 'إغلاق',
+    errorNetwork: 'خطأ في الشبكة. يرجى التحقق من اتصالك بالإنترنت.',
+    errorUnauthorized: 'ليس لديك صلاحية للقيام بهذا الإجراء.',
+    errorQuota: 'تم تجاوز حصة التخزين. يرجى التواصل مع الدعم.',
+    errorUnknown: 'حدث خطأ غير معروف أثناء الرفع.',
+    allRights: 'جميع الحقوق محفوظة.',
+    manageAdmins: 'إدارة المسؤولين',
+    username: 'اسم المستخدم',
+    password: 'كلمة المرور',
+    addAdmin: 'إضافة مسؤول',
+    adminList: 'قائمة المسؤولين',
+    delete: 'حذف',
+    subAdminLogin: 'دخول المسؤولين (اسم مستخدم)',
+    login: 'تسجيل الدخول',
+    invalidCredentials: 'اسم المستخدم أو كلمة المرور غير صحيحة',
+    adminCreated: 'تم إنشاء المسؤول بنجاح',
+    confirmDeleteAdmin: 'هل أنت متأكد من حذف هذا المسؤول؟',
+    pharmacyPortal: 'بوابة الصيدلة',
+    resourceHub: 'مركز مصادر المحاضرات',
+    pharmacology: 'علم الأدوية',
+    pharmacognosy: 'علم العقاقير',
+    organic_chemistry: 'الكيمياء العضوية',
+    biochemistry: 'الكيمياء الحيوية',
+    cosmetics: 'مستحضرات التجميل والتحضيرات',
+  },
+  en: {
+    appName: 'محاضراتي',
+    university: 'ALSAFWA UNIVERSITY',
+    department: 'Pharmacy Department',
+    byFenix: 'By Fenix',
+    searchPlaceholder: 'Search lectures...',
+    upload: 'Upload',
+    adminPortal: 'Admin Portal',
+    allSubjects: 'All Subjects',
+    loading: 'Loading lectures...',
+    noLectures: 'No lectures found',
+    noLecturesDesc: "We couldn't find any lectures matching your current filters or search query.",
+    view: 'View',
+    download: 'Download',
+    theoretical: 'Theoretical',
+    practical: 'Practical',
+    recently: 'Recently',
+    adminAccess: 'Admin Access',
+    enterPassword: 'Enter password to manage lectures',
+    verifyPassword: 'Verify Password',
+    confirmIdentity: 'Confirm Identity with Google',
+    passwordCorrect: 'Password correct! Please sign in with your Google Admin account to confirm identity.',
+    incorrectPassword: 'Incorrect password',
+    publishLecture: 'Publish Lecture',
+    uploading: 'Uploading...',
+    lectureTitle: 'Lecture Title',
+    pdfFile: 'PDF File',
+    description: 'Description (Optional)',
+    category: 'Category',
+    type: 'Type',
+    clickToUpload: 'Click to upload PDF file',
+    maxSize: 'Max 10MB',
+    dragDrop: 'or drag and drop file here',
+    success: 'Upload Successful!',
+    uploadAnother: 'Upload another lecture',
+    close: 'Close',
+    errorNetwork: 'Network error. Please check your internet connection.',
+    errorUnauthorized: 'You do not have permission to perform this action.',
+    errorQuota: 'Storage quota exceeded. Please contact support.',
+    errorUnknown: 'An unknown error occurred during upload.',
+    allRights: 'All rights reserved.',
+    manageAdmins: 'Manage Admins',
+    username: 'Username',
+    password: 'Password',
+    addAdmin: 'Add Admin',
+    adminList: 'Admin List',
+    delete: 'Delete',
+    subAdminLogin: 'Admin Login (Username)',
+    login: 'Login',
+    invalidCredentials: 'Invalid username or password',
+    adminCreated: 'Admin created successfully',
+    confirmDeleteAdmin: 'Are you sure you want to delete this admin?',
+    pharmacyPortal: 'Pharmacy Portal',
+    resourceHub: 'Lecture Resource Hub',
+    pharmacology: 'Pharmacology',
+    pharmacognosy: 'Pharmacognosy',
+    organic_chemistry: 'Organic Chemistry',
+    biochemistry: 'Biochemistry',
+    cosmetics: 'Cosmetics and Preparations',
+  }
+};
+
+export const CATEGORIES: { value: Category; labelKey: keyof typeof TRANSLATIONS.en; types: LectureType[] }[] = [
+  { value: 'pharmacology', labelKey: 'pharmacology', types: ['theoretical'] },
+  { value: 'pharmacognosy', labelKey: 'pharmacognosy', types: ['theoretical', 'practical'] },
+  { value: 'organic_chemistry', labelKey: 'organic_chemistry', types: ['theoretical', 'practical'] },
+  { value: 'biochemistry', labelKey: 'biochemistry', types: ['theoretical', 'practical'] },
+  { value: 'cosmetics', labelKey: 'cosmetics', types: ['theoretical', 'practical'] },
+];

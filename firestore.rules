@@ -1,0 +1,94 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: lectures
+// Document ID: {lectureId}
+// Fields:
+//   - title: string (required, 1-100 chars)
+//   - category: string (required, enum: pharmacology, pharmacognosy, organic_chemistry, biochemistry, cosmetics)
+//   - type: string (required, enum: theoretical, practical)
+//   - description: string (optional, 0-500 chars)
+//   - pdfUrl: string (required, valid URL)
+//   - createdAt: timestamp (required)
+//   - uploadedBy: string (required, UID)
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - name: string (required)
+//   - email: string (required, email format)
+//   - role: string (required, enum: admin, student)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (request.auth.token.email != null && request.auth.token.email in ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"] && request.auth.token.email_verified == true) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          exists(/databases/$(database)/documents/active_admins/$(request.auth.uid))
+        );
+    }
+
+    match /sub_admins/{username} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /active_admins/{uid} {
+      // Allow an anonymous user to "activate" themselves as an admin
+      // if they know the password for a valid sub_admin account
+      allow create: if request.auth != null && request.auth.uid == uid &&
+                    get(/databases/$(database)/documents/sub_admins/$(request.resource.data.username)).data.password == request.resource.data.password;
+      allow read, delete: if isAdmin();
+    }
+
+    function isValidLecture(data) {
+      return data.keys().hasAll(['title', 'category', 'type', 'pdfUrl', 'createdAt', 'uploadedBy']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.category in ['pharmacology', 'pharmacognosy', 'organic_chemistry', 'biochemistry', 'cosmetics'] &&
+             data.type in ['theoretical', 'practical'] &&
+             data.pdfUrl is string && data.pdfUrl.matches("^https?://.*") &&
+             data.createdAt is timestamp &&
+             data.uploadedBy == request.auth.uid;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'email', 'role']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             data.role in ['admin', 'student'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'student';
+      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data));
+    }
+
+    match /lectures/{lectureId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}

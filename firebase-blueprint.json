@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Lecture": {
+      "title": "Lecture",
+      "description": "A lecture document containing metadata and a link to the PDF file.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the lecture."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["pharmacology", "pharmacognosy", "organic_chemistry", "biochemistry", "cosmetics"],
+          "description": "The subject category of the lecture."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["theoretical", "practical"],
+          "description": "Whether the lecture is theoretical or practical."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the lecture content."
+        },
+        "pdfUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The URL to the PDF file."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the lecture was uploaded."
+        },
+        "uploadedBy": {
+          "type": "string",
+          "description": "The UID of the admin who uploaded the lecture."
+        }
+      },
+      "required": ["title", "category", "type", "pdfUrl", "createdAt", "uploadedBy"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information and roles.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "student"],
+          "description": "The role of the user."
+        }
+      },
+      "required": ["name", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/lectures/{lectureId}": {
+      "schema": "Lecture",
+      "description": "Collection of all lectures."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    }
+  }
+}
