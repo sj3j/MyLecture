@@ -34,9 +34,9 @@ export default function Auth() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-xl shadow-emerald-100/50 dark:shadow-none p-8 text-center border border-slate-100 dark:border-zinc-800"
+        className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-xl shadow-sky-100/50 dark:shadow-none p-8 text-center border border-slate-100 dark:border-zinc-800"
       >
-        <div className="inline-flex p-4 bg-emerald-600 dark:bg-teal-600 rounded-3xl mb-6 shadow-lg shadow-emerald-200/50 dark:shadow-none">
+        <div className="inline-flex p-4 bg-sky-600 dark:bg-sky-600 rounded-3xl mb-6 shadow-lg shadow-sky-200/50 dark:shadow-none">
           <BookOpen className="w-10 h-10 text-white" />
         </div>
         
@@ -46,7 +46,7 @@ export default function Auth() {
         <div className="space-y-4">
           <button
             onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 rounded-2xl font-bold text-slate-700 dark:text-stone-100 hover:bg-slate-50 dark:hover:bg-zinc-700 hover:border-emerald-100 dark:hover:border-teal-900/50 transition-all group"
+            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 rounded-2xl font-bold text-slate-700 dark:text-stone-100 hover:bg-slate-50 dark:hover:bg-zinc-700 hover:border-sky-100 dark:hover:border-sky-900/50 transition-all group"
           >
             <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
             Sign in with Google

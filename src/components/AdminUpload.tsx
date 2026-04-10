@@ -241,9 +241,9 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-zinc-800"
           >
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-emerald-50/50 dark:bg-teal-900/10">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-50/50 dark:bg-sky-900/10">
               <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
-                <Upload className="w-5 h-5 text-emerald-600 dark:text-teal-400" />
+                <Upload className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                 {lectureToEdit ? t.editLecture : t.publishLecture}
               </h2>
               <button onClick={onClose} className="p-2 hover:bg-white dark:hover:bg-zinc-800 rounded-full transition-colors">
@@ -258,8 +258,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                   animate={{ opacity: 1, scale: 1 }}
                   className="py-12 flex flex-col items-center text-center space-y-6"
                 >
-                  <div className="w-20 h-20 bg-emerald-50 dark:bg-teal-900/30 rounded-full flex items-center justify-center">
-                    <CheckCircle2 className="w-10 h-10 text-emerald-500 dark:text-teal-400" />
+                  <div className="w-20 h-20 bg-sky-50 dark:bg-sky-900/30 rounded-full flex items-center justify-center">
+                    <CheckCircle2 className="w-10 h-10 text-sky-500 dark:text-sky-400" />
                   </div>
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-stone-100 mb-2">
@@ -271,7 +271,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                     {!lectureToEdit && (
                       <button
                         onClick={resetForm}
-                        className="w-full py-4 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 rounded-2xl font-bold hover:bg-emerald-700 dark:hover:bg-teal-600 transition-all shadow-lg shadow-emerald-100 dark:shadow-none"
+                        className="w-full py-4 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-2xl font-bold hover:bg-sky-700 dark:hover:bg-sky-600 transition-all shadow-lg shadow-sky-100 dark:shadow-none"
                       >
                         {t.uploadAnother}
                       </button>
@@ -317,7 +317,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                         type="text"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 focus:border-transparent transition-all outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 focus:border-transparent transition-all outline-none"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -327,7 +327,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                         min="1"
                         value={lectureNumber}
                         onChange={(e) => setLectureNumber(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 focus:border-transparent transition-all outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 focus:border-transparent transition-all outline-none"
                       />
                     </div>
                   </div>
@@ -347,7 +347,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                             if (validCat) setCategory(validCat.value);
                           }
                         }}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                       >
                         <option value="theoretical">{t.theoretical}</option>
                         <option value="practical">{t.practical}</option>
@@ -362,7 +362,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                           const newCat = e.target.value as Category;
                           setCategory(newCat);
                         }}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                       >
                         {CATEGORIES.filter(c => c.types.includes(type)).map((c) => (
                           <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
@@ -377,7 +377,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                       <select
                         value={version}
                         onChange={(e) => setVersion(e.target.value as 'original' | 'translated')}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                       >
                         <option value="original">{t.original}</option>
                         <option value="translated">{t.translated}</option>
@@ -393,7 +393,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                             checked={isWeekly}
                             onChange={(e) => setIsWeekly(e.target.checked)}
                           />
-                          <div className={`block w-10 h-6 rounded-full transition-colors ${isWeekly ? 'bg-emerald-600 dark:bg-teal-500' : 'bg-slate-300 dark:bg-zinc-700'}`}></div>
+                          <div className={`block w-10 h-6 rounded-full transition-colors ${isWeekly ? 'bg-sky-600 dark:bg-sky-500' : 'bg-slate-300 dark:bg-zinc-700'}`}></div>
                           <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isWeekly ? 'transform translate-x-4' : ''}`}></div>
                         </div>
                         <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{t.addToWeekly}</span>
@@ -409,9 +409,9 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                       onDragLeave={handleDragLeave}
                       onDrop={handleDrop}
                       className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
-                        isDragging ? 'border-emerald-500 dark:border-teal-500 bg-emerald-50 dark:bg-teal-900/30 scale-[1.02]' : 
-                        file ? 'border-emerald-200 dark:border-teal-700 bg-emerald-50 dark:bg-teal-900/30' : 
-                        'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 hover:border-emerald-300 dark:hover:border-teal-500 hover:bg-emerald-50 dark:hover:bg-teal-900/10'
+                        isDragging ? 'border-sky-500 dark:border-sky-500 bg-sky-50 dark:bg-sky-900/30 scale-[1.02]' : 
+                        file ? 'border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30' : 
+                        'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 hover:border-sky-300 dark:hover:border-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/10'
                       }`}
                     >
                       <input
@@ -423,13 +423,13 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                       />
                       {file ? (
                         <>
-                          <CheckCircle2 className="w-8 h-8 text-emerald-500 dark:text-teal-400" />
-                          <span className="text-sm font-bold text-emerald-700 dark:text-teal-300 truncate max-w-xs">{file.name}</span>
-                          <span className="text-xs text-emerald-600 dark:text-teal-500">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                          <CheckCircle2 className="w-8 h-8 text-sky-500 dark:text-sky-400" />
+                          <span className="text-sm font-bold text-sky-700 dark:text-sky-300 truncate max-w-xs">{file.name}</span>
+                          <span className="text-xs text-sky-600 dark:text-sky-500">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                         </>
                       ) : (
                         <>
-                          <FileUp className={`w-8 h-8 ${isDragging ? 'text-emerald-500 dark:text-teal-400 animate-bounce' : 'text-slate-400 dark:text-slate-500'}`} />
+                          <FileUp className={`w-8 h-8 ${isDragging ? 'text-sky-500 dark:text-sky-400 animate-bounce' : 'text-slate-400 dark:text-slate-500'}`} />
                           <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{t.clickToUpload}</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500">{t.dragDrop}</span>
                           <span className="text-[10px] text-slate-300 dark:text-slate-600 uppercase tracking-widest mt-1">{t.maxSize}</span>
@@ -443,7 +443,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none transition-all min-h-[80px] resize-none"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all min-h-[80px] resize-none"
                     />
                   </div>
 
@@ -457,7 +457,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${uploadProgress}%` }}
-                          className="bg-emerald-600 dark:bg-teal-500 h-full"
+                          className="bg-sky-600 dark:bg-sky-500 h-full"
                         />
                       </div>
                     </div>
@@ -466,7 +466,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                   <button
                     disabled={isSubmitting || (!lectureToEdit && !file)}
                     type="submit"
-                    className="w-full py-3.5 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-emerald-700 dark:hover:bg-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 dark:shadow-none"
+                    className="w-full py-3.5 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-sky-700 dark:hover:bg-sky-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-sky-200 dark:shadow-none"
                   >
                     {isSubmitting ? (
                       <>

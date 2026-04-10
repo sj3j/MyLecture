@@ -37,6 +37,25 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminManage, setShowAdminManage] = useState(false);
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   useEffect(() => {
     document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
@@ -207,7 +226,7 @@ export default function App() {
   if (!isAuthReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
-        <Loader2 className="w-10 h-10 text-emerald-600 dark:text-teal-400 animate-spin" />
+        <Loader2 className="w-10 h-10 text-sky-600 dark:text-sky-400 animate-spin" />
       </div>
     );
   }
@@ -255,7 +274,7 @@ export default function App() {
               {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
                 <button 
                   onClick={() => setShowAdminManage(true)}
-                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-emerald-600 dark:border-teal-500 rounded-2xl text-sm font-bold text-emerald-600 dark:text-teal-400 hover:bg-emerald-50 dark:hover:bg-teal-900/20 transition-all"
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-sky-600 dark:border-sky-500 rounded-2xl text-sm font-bold text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-all"
                 >
                   <Users className="w-4 h-4" />
                   <span className="hidden sm:inline">{t.manageAdmins}</span>
@@ -306,7 +325,7 @@ export default function App() {
             onClick={() => setSelectedCategory('all')}
             className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
               selectedCategory === 'all'
-                ? 'bg-emerald-600 dark:bg-teal-500/20 text-white dark:text-teal-400 shadow-lg shadow-emerald-200 dark:shadow-none dark:border dark:border-teal-500/30'
+                ? 'bg-sky-600 dark:bg-sky-500/20 text-white dark:text-sky-400 shadow-lg shadow-sky-200 dark:shadow-none dark:border dark:border-sky-500/30'
                 : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
             }`}
           >
@@ -318,7 +337,7 @@ export default function App() {
               onClick={() => setSelectedCategory(cat.value)}
               className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
                 selectedCategory === cat.value
-                  ? 'bg-emerald-600 dark:bg-teal-500/20 text-white dark:text-teal-400 shadow-lg shadow-emerald-200 dark:shadow-none dark:border dark:border-teal-500/30'
+                  ? 'bg-sky-600 dark:bg-sky-500/20 text-white dark:text-sky-400 shadow-lg shadow-sky-200 dark:shadow-none dark:border dark:border-sky-500/30'
                   : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
               }`}
             >
@@ -334,7 +353,7 @@ export default function App() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortField)}
-              className="bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-stone-100 text-sm rounded-xl focus:ring-emerald-500 dark:focus:ring-teal-500 focus:border-emerald-500 dark:focus:border-teal-500 block p-2.5 outline-none font-medium"
+              className="bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-stone-100 text-sm rounded-xl focus:ring-sky-500 dark:focus:ring-sky-500 focus:border-sky-500 dark:focus:border-sky-500 block p-2.5 outline-none font-medium"
             >
               <option value="date">{t.sortDate}</option>
               <option value="title">{t.sortTitle}</option>
@@ -354,7 +373,7 @@ export default function App() {
         {/* Content */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Loader2 className="w-8 h-8 text-emerald-600 dark:text-teal-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
             <p className="text-slate-500 dark:text-slate-400 font-medium">{t.loading}</p>
           </div>
         ) : filteredLectures.length > 0 ? (
@@ -405,6 +424,8 @@ export default function App() {
         lang={lang}
         setLang={setLang}
         currentTab={currentTab}
+        theme={theme}
+        toggleTheme={toggleTheme}
       />
 
       {currentTab === 'lectures' && renderLecturesTab()}

@@ -103,7 +103,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
-          <Megaphone className="w-6 h-6 text-emerald-600 dark:text-teal-400" />
+          <Megaphone className="w-6 h-6 text-sky-600 dark:text-sky-400" />
           {t.navAnnouncements}
         </h1>
       </div>
@@ -121,7 +121,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                 value={newPostContent}
                 onChange={(e) => setNewPostContent(e.target.value)}
                 placeholder={t.postContent}
-                className="w-full p-3 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none resize-none min-h-[100px] mb-3"
+                className="w-full p-3 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none resize-none min-h-[100px] mb-3"
                 required
               />
               <div className="flex justify-end gap-2">
@@ -135,7 +135,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                 <button
                   type="submit"
                   disabled={isSubmitting || !newPostContent.trim()}
-                  className="px-6 py-2 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 text-sm font-bold rounded-xl hover:bg-emerald-700 dark:hover:bg-teal-600 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  className="px-6 py-2 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 text-sm font-bold rounded-xl hover:bg-sky-700 dark:hover:bg-sky-600 disabled:opacity-50 transition-colors flex items-center gap-2"
                 >
                   {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {t.publishPost}
@@ -148,7 +148,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
 
       {isLoading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-teal-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
         </div>
       ) : posts.length > 0 ? (
         <div className="space-y-4">
@@ -161,7 +161,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
               className="bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-slate-200 dark:border-zinc-700 shadow-sm relative group"
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-emerald-100 dark:bg-teal-900/30 rounded-full flex items-center justify-center text-emerald-600 dark:text-teal-400 font-bold overflow-hidden">
+                <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 font-bold overflow-hidden">
                   {post.authorPhotoUrl ? (
                     <img src={post.authorPhotoUrl} alt={post.authorName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
@@ -180,7 +180,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => startEditing(post)}
-                      className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-teal-400 hover:bg-emerald-50 dark:hover:bg-teal-900/30 rounded-lg transition-colors"
+                      className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -199,7 +199,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                   <textarea
                     value={editPostContent}
                     onChange={(e) => setEditPostContent(e.target.value)}
-                    className="w-full p-3 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none resize-none min-h-[100px] mb-3"
+                    className="w-full p-3 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none resize-none min-h-[100px] mb-3"
                   />
                   <div className="flex justify-end gap-2">
                     <button
@@ -212,7 +212,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                     <button
                       onClick={() => handleUpdatePost(post.id)}
                       disabled={isUpdating || !editPostContent.trim()}
-                      className="px-4 py-1.5 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 text-sm font-bold rounded-lg hover:bg-emerald-700 dark:hover:bg-teal-600 disabled:opacity-50 transition-colors flex items-center gap-1"
+                      className="px-4 py-1.5 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 text-sm font-bold rounded-lg hover:bg-sky-700 dark:hover:bg-sky-600 disabled:opacity-50 transition-colors flex items-center gap-1"
                     >
                       {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                       {isRtl ? 'حفظ' : 'Save'}
@@ -235,7 +235,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
       {isAdmin && !showCreate && (
         <button
           onClick={() => setShowCreate(true)}
-          className="fixed bottom-24 right-6 w-14 h-14 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 rounded-full shadow-lg shadow-emerald-200 dark:shadow-none flex items-center justify-center hover:bg-emerald-700 dark:hover:bg-teal-600 hover:scale-105 transition-all z-40"
+          className="fixed bottom-24 right-6 w-14 h-14 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-full shadow-lg shadow-sky-200 dark:shadow-none flex items-center justify-center hover:bg-sky-700 dark:hover:bg-sky-600 hover:scale-105 transition-all z-40"
         >
           <Plus className="w-6 h-6" />
         </button>

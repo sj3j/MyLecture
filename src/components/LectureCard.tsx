@@ -56,15 +56,15 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="group bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 p-5 hover:shadow-xl hover:shadow-slate-200 dark:hover:shadow-none hover:border-emerald-200 dark:hover:border-teal-500/50 transition-all duration-300 flex flex-col h-full"
+        className="group bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 p-5 hover:shadow-xl hover:shadow-slate-200 dark:hover:shadow-none hover:border-sky-200 dark:hover:border-sky-500/50 transition-all duration-300 flex flex-col h-full"
         dir={isRtl ? 'rtl' : 'ltr'}
       >
         <div className="flex justify-between items-start mb-4">
-          <div className={ `p-3 rounded-xl ${lecture.type === 'theoretical' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-emerald-50 dark:bg-teal-900/30 text-emerald-600 dark:text-teal-400'}` }>
+          <div className={ `p-3 rounded-xl ${lecture.type === 'theoretical' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}` }>
             <FileText className="w-6 h-6" />
           </div>
           <div className="flex flex-col items-end gap-2">
-            <span className={ `text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.type === 'theoretical' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-emerald-100 dark:bg-teal-900/50 text-emerald-700 dark:text-teal-300'}` }>
+            <span className={ `text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.type === 'theoretical' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300'}` }>
               {lecture.type === 'theoretical' ? t.theoretical : t.practical}
             </span>
             {lecture.number && (
@@ -80,7 +80,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
           </div>
         </div>
 
-        <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100 mb-2 group-hover:text-emerald-600 dark:group-hover:text-teal-400 transition-colors line-clamp-2">
+        <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100 mb-2 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors line-clamp-2">
           {lecture.title}
         </h3>
         
@@ -110,7 +110,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
           <a
             href={lecture.pdfUrl}
             download
-            className="inline-flex items-center justify-center p-2.5 bg-emerald-50 dark:bg-teal-900/30 text-emerald-600 dark:text-teal-400 rounded-xl hover:bg-emerald-100 dark:hover:bg-teal-900/50 transition-colors"
+            className="inline-flex items-center justify-center p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors"
             title={t.download}
           >
             <Download className="w-5 h-5" />
@@ -198,8 +198,8 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
             >
               <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-900">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-emerald-50 dark:bg-teal-900/30 rounded-lg">
-                    <FileText className="w-5 h-5 text-emerald-600 dark:text-teal-400" />
+                  <div className="p-2 bg-sky-50 dark:bg-sky-900/30 rounded-lg">
+                    <FileText className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h2 className="text-lg font-bold text-slate-900 dark:text-stone-100 truncate max-w-[200px] sm:max-w-md">
                     {lecture.title}
@@ -209,7 +209,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
                   <a
                     href={lecture.pdfUrl}
                     download
-                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"
+                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"
                     title={t.download}
                   >
                     <Download className="w-5 h-5" />

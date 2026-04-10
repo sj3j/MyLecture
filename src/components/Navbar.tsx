@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, LogOut, BookOpen, Upload, Languages } from 'lucide-react';
+import { Search, LogOut, BookOpen, Upload, Languages, Moon, Sun } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { UserProfile, Language, TRANSLATIONS } from '../types';
@@ -13,9 +13,11 @@ interface NavbarProps {
   lang: Language;
   setLang: (lang: Language) => void;
   currentTab: Tab;
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
 }
 
-export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload, lang, setLang, currentTab }: NavbarProps) {
+export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload, lang, setLang, currentTab, theme, toggleTheme }: NavbarProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -24,7 +26,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           <div className="flex items-center gap-2">
-            <div className="bg-emerald-600 dark:bg-teal-500 p-2 rounded-xl">
+            <div className="bg-sky-600 dark:bg-sky-500 p-2 rounded-xl">
               <BookOpen className="w-6 h-6 text-white dark:text-zinc-900" />
             </div>
             <span className="text-xl font-black text-slate-900 dark:text-stone-100 hidden sm:block">{t.appName}</span>
@@ -38,7 +40,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
                 </div>
                 <input
                   type="text"
-                  className={`block w-full ${isRtl ? 'pr-10 pl-3' : 'pl-10 pr-3'} py-2 border border-slate-300 dark:border-zinc-700 rounded-full leading-5 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-stone-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 focus:border-emerald-500 dark:focus:border-teal-500 sm:text-sm transition-all`}
+                  className={`block w-full ${isRtl ? 'pr-10 pl-3' : 'pl-10 pr-3'} py-2 border border-slate-300 dark:border-zinc-700 rounded-full leading-5 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-stone-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 focus:border-sky-500 dark:focus:border-sky-500 sm:text-sm transition-all`}
                   placeholder={t.searchPlaceholder}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -48,6 +50,14 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
           )}
 
           <div className="flex items-center gap-2 sm:gap-4">
+            <button
+              onClick={toggleTheme}
+              className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+
             <button
               onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
               className="flex items-center gap-2 px-3 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all text-sm font-bold"
@@ -60,7 +70,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
             {user?.role === 'admin' && currentTab === 'lectures' && (
               <button
                 onClick={onShowUpload}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 rounded-full hover:bg-emerald-700 dark:hover:bg-teal-600 transition-colors text-sm font-bold"
+                className="flex items-center gap-2 px-4 py-2 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-full hover:bg-sky-700 dark:hover:bg-sky-600 transition-colors text-sm font-bold"
               >
                 <Upload className="w-4 h-4" />
                 <span className="hidden md:inline">{t.upload}</span>

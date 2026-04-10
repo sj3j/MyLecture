@@ -150,7 +150,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-emerald-100 dark:bg-teal-900/30 rounded-2xl text-emerald-600 dark:text-teal-400">
+        <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">
           <User className="w-6 h-6" />
         </div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.navProfile}</h1>
@@ -169,20 +169,20 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
             <div className="relative">
               {isEditing ? (
                 <div 
-                  className="w-20 h-20 bg-emerald-100 dark:bg-teal-900/30 rounded-full flex items-center justify-center text-emerald-600 dark:text-teal-400 text-2xl font-bold cursor-pointer overflow-hidden group border-2 border-dashed border-emerald-300 dark:border-teal-700 hover:border-emerald-500 dark:hover:border-teal-500 transition-colors"
+                  className="w-20 h-20 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 text-2xl font-bold cursor-pointer overflow-hidden group border-2 border-dashed border-sky-300 dark:border-sky-700 hover:border-sky-500 dark:hover:border-sky-500 transition-colors"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   {editPhotoPreview ? (
                     <img src={editPhotoPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <Camera className="w-8 h-8 text-emerald-400 dark:text-teal-500 group-hover:text-emerald-600 dark:group-hover:text-teal-400 transition-colors" />
+                    <Camera className="w-8 h-8 text-sky-400 dark:text-sky-500 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors" />
                   )}
                   <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera className="w-6 h-6 text-white" />
                   </div>
                 </div>
               ) : (
-                <div className="w-16 h-16 bg-emerald-100 dark:bg-teal-900/30 rounded-full flex items-center justify-center text-emerald-600 dark:text-teal-400 text-2xl font-bold overflow-hidden shadow-sm">
+                <div className="w-16 h-16 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 text-2xl font-bold overflow-hidden shadow-sm">
                   {user.photoUrl ? (
                     <img src={user.photoUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
@@ -205,7 +205,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none font-bold text-slate-900 dark:text-stone-100 mb-1"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100 mb-1"
                   placeholder={isRtl ? 'الاسم' : 'Name'}
                 />
               ) : (
@@ -213,7 +213,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
               )}
               <p className="text-slate-500 dark:text-slate-400 text-sm truncate">{user.email}</p>
               {user.role === 'admin' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-teal-900/50 text-emerald-700 dark:text-teal-300 text-xs font-bold mt-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 text-xs font-bold mt-2">
                   <Shield className="w-3 h-3" />
                   Admin
                 </span>
@@ -239,7 +239,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                     <button 
                       onClick={handleSaveProfile}
                       disabled={isSaving}
-                      className="p-2 text-emerald-600 dark:text-teal-400 hover:bg-emerald-50 dark:hover:bg-teal-900/30 rounded-full transition-colors disabled:opacity-50"
+                      className="p-2 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors disabled:opacity-50"
                     >
                       {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
                     </button>
@@ -247,7 +247,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                 ) : (
                   <button 
                     onClick={() => setIsEditing(true)}
-                    className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-teal-400 hover:bg-emerald-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
+                    className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors"
                   >
                     <Edit2 className="w-5 h-5" />
                   </button>
@@ -262,13 +262,13 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
               <div className="flex bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl">
                 <button
                   onClick={() => setLang('ar')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${lang === 'ar' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-teal-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${lang === 'ar' ? 'bg-white dark:bg-zinc-800 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
                 >
                   العربية
                 </button>
                 <button
                   onClick={() => setLang('en')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${lang === 'en' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-teal-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${lang === 'en' ? 'bg-white dark:bg-zinc-800 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
                 >
                   English
                 </button>
@@ -306,10 +306,10 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           <button
             onClick={handleGoogleLogin}
             disabled={isLoggingIn}
-            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-white dark:bg-zinc-800 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-700 dark:text-stone-100 font-bold hover:bg-slate-50 dark:hover:bg-zinc-700 hover:border-emerald-200 dark:hover:border-teal-700 transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-white dark:bg-zinc-800 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-700 dark:text-stone-100 font-bold hover:bg-slate-50 dark:hover:bg-zinc-700 hover:border-sky-200 dark:hover:border-sky-700 transition-all disabled:opacity-50"
           >
             {isLoggingIn ? (
-              <Loader2 className="w-5 h-5 animate-spin text-emerald-600 dark:text-teal-400" />
+              <Loader2 className="w-5 h-5 animate-spin text-sky-600 dark:text-sky-400" />
             ) : (
               <>
                 <svg className="w-5 h-5" viewBox="0 0 24 24">

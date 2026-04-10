@@ -101,7 +101,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-zinc-800"
           >
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-emerald-600 dark:bg-teal-600 text-white">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-600 dark:bg-sky-600 text-white">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Shield className="w-5 h-5" />
                 {t.manageAdmins}
@@ -128,12 +128,12 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     placeholder="Email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500 dark:focus:ring-teal-500 outline-none transition-all"
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                   />
                   <button
                     disabled={isSubmitting}
                     type="submit"
-                    className="w-full py-2.5 bg-emerald-600 dark:bg-teal-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-emerald-700 dark:hover:bg-teal-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 dark:shadow-none"
+                    className="w-full py-2.5 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-sky-700 dark:hover:bg-sky-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-sky-100 dark:shadow-none"
                   >
                     {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserPlus className="w-5 h-5" />}
                     {t.addAdmin}
@@ -146,7 +146,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                 <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.adminList}</h3>
                 {isLoading ? (
                   <div className="flex justify-center py-4">
-                    <Loader2 className="w-6 h-6 animate-spin text-emerald-600 dark:text-teal-400" />
+                    <Loader2 className="w-6 h-6 animate-spin text-sky-600 dark:text-sky-400" />
                   </div>
                 ) : admins.length === 0 ? (
                   <p className="text-center text-slate-400 dark:text-slate-500 text-sm py-4 italic">No sub-admins added yet</p>
@@ -155,7 +155,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     {admins.map((admin) => (
                       <div key={admin.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-emerald-100 dark:bg-teal-900/30 rounded-full flex items-center justify-center text-emerald-600 dark:text-teal-400 font-bold text-xs">
+                          <div className="w-8 h-8 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 font-bold text-xs">
                             {admin.email[0].toUpperCase()}
                           </div>
                           <span className="font-semibold text-slate-700 dark:text-slate-300">{admin.email}</span>

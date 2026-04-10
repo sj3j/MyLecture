@@ -149,15 +149,15 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       {!user && (
-        <div className="mb-6 p-4 bg-emerald-50 dark:bg-teal-900/30 border border-emerald-100 dark:border-teal-900/50 rounded-2xl flex items-center justify-between">
-          <p className="text-sm text-emerald-800 dark:text-teal-300 font-medium">
+        <div className="mb-6 p-4 bg-sky-50 dark:bg-sky-900/30 border border-sky-100 dark:border-sky-900/50 rounded-2xl flex items-center justify-between">
+          <p className="text-sm text-sky-800 dark:text-sky-300 font-medium">
             {isRtl ? 'قم بتسجيل الدخول لحفظ تقدمك عبر الأجهزة المختلفة.' : 'Sign in to save your progress across devices.'}
           </p>
         </div>
       )}
       
       <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-emerald-100 dark:bg-teal-900/30 rounded-2xl text-emerald-600 dark:text-teal-400">
+        <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">
           <ClipboardCheck className="w-6 h-6" />
         </div>
         <div className="flex-1">
@@ -172,14 +172,14 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       <div className="mb-8 bg-white dark:bg-zinc-800 rounded-3xl p-4 border border-slate-200 dark:border-zinc-700 shadow-sm">
         <div className="flex items-center justify-between mb-4 px-2">
           <h2 className="text-lg font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-emerald-600 dark:text-teal-400" />
+            <ImageIcon className="w-5 h-5 text-sky-600 dark:text-sky-400" />
             {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
           </h2>
           {user?.role === 'admin' && (
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingPhoto}
-              className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-teal-900/30 text-emerald-600 dark:text-teal-400 rounded-lg text-sm font-bold hover:bg-emerald-100 dark:hover:bg-teal-900/50 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-1.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-lg text-sm font-bold hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-50"
             >
               {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
               {isRtl ? 'تحديث الجدول' : 'Update Schedule'}
@@ -209,7 +209,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
       {isLoading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-teal-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
         </div>
       ) : weeklyLectures.length > 0 ? (
         <div className="space-y-3">
@@ -225,10 +225,10 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                 className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center gap-4 ${
                   isCompleted 
                     ? 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 opacity-60' 
-                    : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm hover:border-emerald-300 dark:hover:border-teal-500/50'
+                    : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm hover:border-sky-300 dark:hover:border-sky-500/50'
                 }`}
               >
-                <button className={`flex-shrink-0 transition-colors ${isCompleted ? 'text-emerald-500 dark:text-teal-400' : 'text-slate-300 dark:text-zinc-600'}`}>
+                <button className={`flex-shrink-0 transition-colors ${isCompleted ? 'text-sky-500 dark:text-sky-400' : 'text-slate-300 dark:text-zinc-600'}`}>
                   {isCompleted ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                 </button>
                 <div className="flex-grow min-w-0">
@@ -251,7 +251,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                   target="_blank" 
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="px-3 py-1.5 bg-emerald-50 dark:bg-teal-900/30 text-emerald-600 dark:text-teal-400 text-xs font-bold rounded-lg hover:bg-emerald-100 dark:hover:bg-teal-900/50 transition-colors whitespace-nowrap"
+                  className="px-3 py-1.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 text-xs font-bold rounded-lg hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors whitespace-nowrap"
                 >
                   {t.view}
                 </a>

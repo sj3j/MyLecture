@@ -40,7 +40,7 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
               key={tab.id}
               onClick={() => setCurrentTab(tab.id)}
               className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors relative ${
-                isActive ? 'text-emerald-600 dark:text-teal-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                isActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
               }`}
             >
               <div className="relative">
