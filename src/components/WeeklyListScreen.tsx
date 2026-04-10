@@ -1,28 +1,62 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Lecture, Language, TRANSLATIONS } from '../types';
-import { Loader2, ClipboardCheck, CheckCircle2, Circle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../lib/firebase';
+import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES } from '../types';
+import { Loader2, ClipboardCheck, CheckCircle2, Circle, Camera, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface WeeklyListScreenProps {
   lang: Language;
+  user: UserProfile | null;
 }
 
-export default function WeeklyListScreen({ lang }: WeeklyListScreenProps) {
+export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
   const [weeklyLectures, setWeeklyLectures] = useState<Lecture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
+  
+  const [schedulePhotoUrl, setSchedulePhotoUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Load completed tasks from local storage
-    const saved = localStorage.getItem('completedWeeklyTasks');
-    if (saved) {
-      setCompletedTasks(new Set(JSON.parse(saved)));
+    // Load completed tasks
+    if (user) {
+      const loadUserProgress = async () => {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists() && userDoc.data().completedWeeklyTasks) {
+          setCompletedTasks(new Set(userDoc.data().completedWeeklyTasks));
+        } else {
+          // Migrate local storage if exists
+          const saved = localStorage.getItem('completedWeeklyTasks');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            setCompletedTasks(new Set(parsed));
+            await updateDoc(doc(db, 'users', user.uid), {
+              completedWeeklyTasks: parsed
+            });
+            localStorage.removeItem('completedWeeklyTasks');
+          }
+        }
+      };
+      loadUserProgress();
+    } else {
+      const saved = localStorage.getItem('completedWeeklyTasks');
+      if (saved) {
+        setCompletedTasks(new Set(JSON.parse(saved)));
+      }
     }
+
+    // Load schedule photo
+    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'weekly_schedule'), (doc) => {
+      if (doc.exists()) {
+        setSchedulePhotoUrl(doc.data().photoUrl);
+      }
+    });
 
     const q = query(
       collection(db, 'lectures'), 
@@ -43,10 +77,13 @@ export default function WeeklyListScreen({ lang }: WeeklyListScreenProps) {
       setWeeklyLectures(docs);
       setIsLoading(false);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      unsubscribeSettings();
+    };
+  }, [user]);
 
-  const toggleTask = (id: string) => {
+  const toggleTask = async (id: string) => {
     const newSet = new Set(completedTasks);
     if (newSet.has(id)) {
       newSet.delete(id);
@@ -54,20 +91,119 @@ export default function WeeklyListScreen({ lang }: WeeklyListScreenProps) {
       newSet.add(id);
     }
     setCompletedTasks(newSet);
-    localStorage.setItem('completedWeeklyTasks', JSON.stringify(Array.from(newSet)));
+    
+    const tasksArray = Array.from(newSet);
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          completedWeeklyTasks: tasksArray
+        });
+      } catch (error) {
+        console.error('Error saving progress:', error);
+      }
+    } else {
+      localStorage.setItem('completedWeeklyTasks', JSON.stringify(tasksArray));
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0] || user?.role !== 'admin') return;
+    
+    const file = e.target.files[0];
+    if (file.size > 5 * 1024 * 1024) {
+      alert(isRtl ? 'حجم الصورة يجب أن يكون أقل من 5 ميجابايت' : 'Image size must be less than 5MB');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const storagePath = `settings/schedule_${Date.now()}_${safeFileName}`;
+      const storageRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      const photoUrl = await new Promise<string>((resolve, reject) => {
+        uploadTask.on('state_changed', 
+          null, 
+          (err) => reject(err), 
+          async () => {
+            try {
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(url);
+            } catch (err) {
+              reject(err);
+            }
+          }
+        );
+      });
+
+      await setDoc(doc(db, 'settings', 'weekly_schedule'), { photoUrl });
+    } catch (error) {
+      console.error('Error uploading schedule photo:', error);
+      alert(isRtl ? 'حدث خطأ أثناء رفع الصورة' : 'Error uploading photo');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
+      {!user && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between">
+          <p className="text-sm text-blue-800 font-medium">
+            {isRtl ? 'قم بتسجيل الدخول لحفظ تقدمك عبر الأجهزة المختلفة.' : 'Sign in to save your progress across devices.'}
+          </p>
+        </div>
+      )}
+      
       <div className="flex items-center gap-3 mb-8">
         <div className="p-3 bg-blue-100 rounded-2xl text-blue-600">
           <ClipboardCheck className="w-6 h-6" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{t.weeklyTasks}</h1>
           <p className="text-sm text-gray-500">
             {completedTasks.size} / {weeklyLectures.length} {t.completed}
           </p>
+        </div>
+      </div>
+
+      {/* Schedule Photo Section */}
+      <div className="mb-8 bg-white rounded-3xl p-4 border border-gray-200 shadow-sm">
+        <div className="flex items-center justify-between mb-4 px-2">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <ImageIcon className="w-5 h-5 text-blue-600" />
+            {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
+          </h2>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingPhoto}
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors disabled:opacity-50"
+            >
+              {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+              {isRtl ? 'تحديث الجدول' : 'Update Schedule'}
+            </button>
+          )}
+        </div>
+        
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handlePhotoUpload} 
+          accept="image/*" 
+          className="hidden" 
+        />
+
+        <div className="w-full bg-gray-50 rounded-2xl overflow-hidden border border-gray-100 min-h-[200px] flex items-center justify-center">
+          {schedulePhotoUrl ? (
+            <img src={schedulePhotoUrl} alt="Schedule" className="w-full h-auto object-contain max-h-[500px]" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="text-center p-8 text-gray-400">
+              <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>{isRtl ? 'لم يتم رفع جدول بعد' : 'No schedule uploaded yet'}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -132,6 +268,3 @@ export default function WeeklyListScreen({ lang }: WeeklyListScreenProps) {
     </div>
   );
 }
-
-// Need to import CATEGORIES
-import { CATEGORIES } from '../types';

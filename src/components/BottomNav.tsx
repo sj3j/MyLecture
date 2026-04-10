@@ -8,9 +8,10 @@ interface BottomNavProps {
   currentTab: Tab;
   setCurrentTab: (tab: Tab) => void;
   lang: Language;
+  hasUnreadAnnouncements?: boolean;
 }
 
-export default function BottomNav({ currentTab, setCurrentTab, lang }: BottomNavProps) {
+export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAnnouncements }: BottomNavProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -38,11 +39,16 @@ export default function BottomNav({ currentTab, setCurrentTab, lang }: BottomNav
             <button
               key={tab.id}
               onClick={() => setCurrentTab(tab.id)}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors relative ${
                 isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+              <div className="relative">
+                <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+                {tab.id === 'announcements' && hasUnreadAnnouncements && (
+                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full"></span>
+                )}
+              </div>
               <span className={`text-[10px] font-medium ${isActive ? 'font-bold' : ''}`}>
                 {tab.label}
               </span>

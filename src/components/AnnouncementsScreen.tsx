@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Post, Language, TRANSLATIONS, UserProfile } from '../types';
-import { Loader2, Megaphone, Plus } from 'lucide-react';
+import { Loader2, Megaphone, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AnnouncementsScreenProps {
@@ -20,6 +20,13 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
   const [showCreate, setShowCreate] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editPostContent, setEditPostContent] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+  
+  const [postToDelete, setPostToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
@@ -42,6 +49,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
         createdAt: serverTimestamp(),
         createdBy: user.uid,
         authorName: user.name || 'Admin',
+        authorPhotoUrl: user.photoUrl || null,
       });
       setNewPostContent('');
       setShowCreate(false);
@@ -49,6 +57,45 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
       console.error('Error creating post:', error);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!postToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'announcements', postToDelete));
+      setPostToDelete(null);
+    } catch (error) {
+      console.error('Error deleting post:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeletePost = (postId: string) => {
+    setPostToDelete(postId);
+  };
+
+  const startEditing = (post: Post) => {
+    setEditingPostId(post.id);
+    setEditPostContent(post.content);
+  };
+
+  const handleUpdatePost = async (postId: string) => {
+    if (!editPostContent.trim()) return;
+    
+    setIsUpdating(true);
+    try {
+      await updateDoc(doc(db, 'announcements', postId), {
+        content: editPostContent,
+      });
+      setEditingPostId(null);
+    } catch (error) {
+      console.error('Error updating post:', error);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -111,13 +158,17 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               key={post.id}
-              className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm"
+              className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative group"
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
-                  {post.authorName.charAt(0).toUpperCase()}
+                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold overflow-hidden">
+                  {post.authorPhotoUrl ? (
+                    <img src={post.authorPhotoUrl} alt={post.authorName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    post.authorName.charAt(0).toUpperCase()
+                  )}
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="font-bold text-gray-900">{post.authorName}</h3>
                   <p className="text-xs text-gray-500">
                     {post.createdAt?.toDate ? post.createdAt.toDate().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
@@ -125,8 +176,52 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                     }) : ''}
                   </p>
                 </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => startEditing(post)}
+                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePost(post.id)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
-              <p className="text-gray-700 whitespace-pre-wrap">{post.content}</p>
+              
+              {editingPostId === post.id ? (
+                <div className="mt-3">
+                  <textarea
+                    value={editPostContent}
+                    onChange={(e) => setEditPostContent(e.target.value)}
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none min-h-[100px] mb-3"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setEditingPostId(null)}
+                      className="px-3 py-1.5 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <X className="w-4 h-4" />
+                      {t.close}
+                    </button>
+                    <button
+                      onClick={() => handleUpdatePost(post.id)}
+                      disabled={isUpdating || !editPostContent.trim()}
+                      className="px-4 py-1.5 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                    >
+                      {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {isRtl ? 'حفظ' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-700 whitespace-pre-wrap">{post.content}</p>
+              )}
             </motion.div>
           ))}
         </div>
@@ -145,6 +240,44 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
           <Plus className="w-6 h-6" />
         </button>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {postToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl"
+            >
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                {isRtl ? 'حذف المنشور' : 'Delete Post'}
+              </h3>
+              <p className="text-gray-500 mb-6">
+                {isRtl ? 'هل أنت متأكد من حذف هذا المنشور؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure you want to delete this post? This action cannot be undone.'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPostToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold transition-colors disabled:opacity-50"
+                >
+                  {t.close}
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2.5 text-white bg-red-600 hover:bg-red-700 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isDeleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isRtl ? 'حذف' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

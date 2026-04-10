@@ -21,6 +21,7 @@ export interface Post {
   createdAt: any;
   createdBy: string;
   authorName: string;
+  authorPhotoUrl?: string;
 }
 
 export interface UserProfile {
@@ -28,6 +29,8 @@ export interface UserProfile {
   name: string;
   email: string;
   role: 'admin' | 'student';
+  photoUrl?: string;
+  completedWeeklyTasks?: string[];
 }
 
 export type Language = 'ar' | 'en';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit } from 'firebase/firestore';
 import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS, LectureType } from './types';
 import Navbar from './components/Navbar';
 import LectureCard from './components/LectureCard';
@@ -36,6 +36,7 @@ export default function App() {
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminManage, setShowAdminManage] = useState(false);
+  const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
 
   useEffect(() => {
     document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
@@ -49,39 +50,40 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        if (adminEmails.includes(firebaseUser.email || '')) {
-          setUser({ 
-            uid: firebaseUser.uid, 
-            name: 'Master Admin', 
-            email: firebaseUser.email || '', 
-            role: 'admin' 
+        const isMasterAdmin = adminEmails.includes(firebaseUser.email || '');
+        
+        // Listen to user document
+        userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
+          if (userDoc.exists()) {
+            setUser({
+              uid: firebaseUser.uid,
+              name: userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+              email: firebaseUser.email || '',
+              role: isMasterAdmin ? 'admin' : (userDoc.data().role || 'student'),
+              photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined
+            });
+          } else {
+            setUser({
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+              email: firebaseUser.email || '',
+              role: isMasterAdmin ? 'admin' : 'student',
+              photoUrl: firebaseUser.photoURL || undefined
+            });
+          }
+          setIsAuthReady(true);
+        }, (error) => {
+          console.error("Error fetching user role:", error);
+          // Fallback if permission denied
+          setUser({
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+            email: firebaseUser.email || '',
+            role: isMasterAdmin ? 'admin' : 'student',
+            photoUrl: firebaseUser.photoURL || undefined
           });
           setIsAuthReady(true);
-        } else {
-          // Listen to user document
-          userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
-            if (userDoc.exists()) {
-              setUser({
-                uid: firebaseUser.uid,
-                name: userDoc.data().name || firebaseUser.displayName || 'Student',
-                email: firebaseUser.email || '',
-                role: userDoc.data().role || 'student'
-              });
-            } else {
-              setUser({
-                uid: firebaseUser.uid,
-                name: firebaseUser.displayName || 'Student',
-                email: firebaseUser.email || '',
-                role: 'student'
-              });
-            }
-            setIsAuthReady(true);
-          }, (error) => {
-            console.error("Error fetching user role:", error);
-            setUser(null);
-            setIsAuthReady(true);
-          });
-        }
+        });
       } else {
         if (userUnsubscribe) {
           userUnsubscribe();
@@ -97,6 +99,30 @@ export default function App() {
       }
     };
   }, []);
+
+  // Announcements Listener for Notifications
+  useEffect(() => {
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(1));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const latestPost = snapshot.docs[0].data();
+        const latestTime = latestPost.createdAt?.toMillis?.() || 0;
+        const lastRead = parseInt(localStorage.getItem('lastReadAnnouncement') || '0', 10);
+        
+        if (latestTime > lastRead && currentTab !== 'announcements') {
+          setHasUnreadAnnouncements(true);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [currentTab]);
+
+  useEffect(() => {
+    if (currentTab === 'announcements') {
+      setHasUnreadAnnouncements(false);
+      localStorage.setItem('lastReadAnnouncement', Date.now().toString());
+    }
+  }, [currentTab]);
 
   // Lectures Listener
   useEffect(() => {
@@ -333,7 +359,7 @@ export default function App() {
 
       {currentTab === 'lectures' && renderLecturesTab()}
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} />}
-      {currentTab === 'weekly' && <WeeklyListScreen lang={lang} />}
+      {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
 
       <AdminUpload 
@@ -347,7 +373,7 @@ export default function App() {
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       
-      <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} />
+      <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
     </div>
   );
 }

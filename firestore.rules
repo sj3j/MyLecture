@@ -67,12 +67,19 @@ service cloud.firestore {
       return data.keys().hasAll(['name', 'email', 'role']) &&
              data.name is string && data.name.size() > 0 &&
              data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
-             data.role in ['admin', 'student'];
+             data.role in ['admin', 'student'] &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
+             (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list);
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
+
+    match /settings/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
 
     match /allowed_admins/{email} {
       allow read: if isAuthenticated();
@@ -95,6 +102,11 @@ service cloud.firestore {
     match /announcements/{postId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }

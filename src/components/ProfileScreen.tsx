@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { auth, db } from '../lib/firebase';
+import React, { useState, useRef } from 'react';
+import { auth, db, storage } from '../lib/firebase';
 import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X } from 'lucide-react';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -16,6 +17,21 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState('');
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(user?.name || '');
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Update local state when user prop changes
+  React.useEffect(() => {
+    if (user && !isEditing) {
+      setEditName(user.name);
+      setEditPhotoPreview(user.photoUrl || null);
+    }
+  }, [user, isEditing]);
 
   const handleGoogleLogin = async () => {
     setIsLoggingIn(true);
@@ -66,6 +82,71 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
     await signOut(auth);
   };
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) {
+        setError(isRtl ? 'حجم الصورة يجب أن يكون أقل من 5 ميجابايت' : 'Image size must be less than 5MB');
+        return;
+      }
+      setEditPhotoFile(file);
+      setEditPhotoPreview(URL.createObjectURL(file));
+      setError('');
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    if (!editName.trim()) {
+      setError(isRtl ? 'الاسم مطلوب' : 'Name is required');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      let photoUrl = user.photoUrl;
+
+      if (editPhotoFile) {
+        const safeFileName = editPhotoFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const storagePath = `profiles/${user.uid}_${Date.now()}_${safeFileName}`;
+        const storageRef = ref(storage, storagePath);
+        const uploadTask = uploadBytesResumable(storageRef, editPhotoFile);
+
+        photoUrl = await new Promise<string>((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            null, 
+            (err) => reject(err), 
+            async () => {
+              try {
+                const url = await getDownloadURL(uploadTask.snapshot.ref);
+                resolve(url);
+              } catch (err) {
+                reject(err);
+              }
+            }
+          );
+        });
+      }
+
+      await setDoc(doc(db, 'users', user.uid), {
+        name: editName.trim(),
+        role: user.role,
+        email: user.email,
+        ...(photoUrl ? { photoUrl } : {})
+      }, { merge: true });
+
+      setIsEditing(false);
+      setEditPhotoFile(null);
+    } catch (err) {
+      console.error('Error updating profile:', err);
+      setError(isRtl ? 'حدث خطأ أثناء حفظ التغييرات' : 'Error saving changes');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex items-center gap-3 mb-8">
@@ -77,13 +158,60 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
 
       {user ? (
         <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm mb-6">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-2xl font-bold">
-              {user.name.charAt(0).toUpperCase()}
+          {error && isEditing && (
+            <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {error}
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">{user.name}</h2>
-              <p className="text-gray-500">{user.email}</p>
+          )}
+          
+          <div className="flex items-center gap-4 mb-6 relative">
+            <div className="relative">
+              {isEditing ? (
+                <div 
+                  className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-2xl font-bold cursor-pointer overflow-hidden group border-2 border-dashed border-blue-300 hover:border-blue-500 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {editPhotoPreview ? (
+                    <img src={editPhotoPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <Camera className="w-8 h-8 text-blue-400 group-hover:text-blue-600 transition-colors" />
+                  )}
+                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              ) : (
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-2xl font-bold overflow-hidden shadow-sm">
+                  {user.photoUrl ? (
+                    <img src={user.photoUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    user.name.charAt(0).toUpperCase()
+                  )}
+                </div>
+              )}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handlePhotoChange} 
+                accept="image/*" 
+                className="hidden" 
+              />
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-900 mb-1"
+                  placeholder={isRtl ? 'الاسم' : 'Name'}
+                />
+              ) : (
+                <h2 className="text-xl font-bold text-gray-900 truncate">{user.name}</h2>
+              )}
+              <p className="text-gray-500 text-sm truncate">{user.email}</p>
               {user.role === 'admin' && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mt-2">
                   <Shield className="w-3 h-3" />
@@ -91,6 +219,41 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                 </span>
               )}
             </div>
+
+            {user.role === 'admin' && (
+              <div className="absolute top-0 right-0 (isRtl ? 'left-0 right-auto' : '')">
+                {isEditing ? (
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditName(user.name);
+                        setEditPhotoPreview(user.photoUrl || null);
+                        setEditPhotoFile(null);
+                        setError('');
+                      }}
+                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={handleSaveProfile}
+                      disabled={isSaving}
+                      className="p-2 text-green-600 hover:bg-green-50 rounded-full transition-colors disabled:opacity-50"
+                    >
+                      {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => setIsEditing(true)}
+                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                  >
+                    <Edit2 className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-4 pt-6 border-t border-gray-100">
@@ -124,11 +287,13 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
       ) : (
         <div className="bg-white rounded-3xl p-8 border border-gray-200 shadow-sm text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-8 h-8 text-gray-400" />
+            <User className="w-8 h-8 text-gray-400" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">{t.adminPortal}</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{isRtl ? 'تسجيل الدخول' : 'Sign In'}</h2>
           <p className="text-gray-500 mb-6 text-sm">
-            {isRtl ? 'قم بتسجيل الدخول بحساب جوجل للوصول إلى لوحة التحكم' : 'Sign in with Google to access the admin dashboard'}
+            {isRtl 
+              ? 'قم بتسجيل الدخول بحساب جوجل لحفظ تقدمك في المهام الأسبوعية، أو للوصول إلى لوحة تحكم الإدارة.' 
+              : 'Sign in with Google to save your weekly tasks progress, or to access the admin dashboard.'}
           </p>
           
           {error && (
