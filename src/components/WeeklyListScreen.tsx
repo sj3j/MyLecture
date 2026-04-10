@@ -149,37 +149,37 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       {!user && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between">
-          <p className="text-sm text-blue-800 font-medium">
+        <div className="mb-6 p-4 bg-emerald-50 dark:bg-teal-900/30 border border-emerald-100 dark:border-teal-900/50 rounded-2xl flex items-center justify-between">
+          <p className="text-sm text-emerald-800 dark:text-teal-300 font-medium">
             {isRtl ? 'قم بتسجيل الدخول لحفظ تقدمك عبر الأجهزة المختلفة.' : 'Sign in to save your progress across devices.'}
           </p>
         </div>
       )}
       
       <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-blue-100 rounded-2xl text-blue-600">
+        <div className="p-3 bg-emerald-100 dark:bg-teal-900/30 rounded-2xl text-emerald-600 dark:text-teal-400">
           <ClipboardCheck className="w-6 h-6" />
         </div>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">{t.weeklyTasks}</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.weeklyTasks}</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {completedTasks.size} / {weeklyLectures.length} {t.completed}
           </p>
         </div>
       </div>
 
       {/* Schedule Photo Section */}
-      <div className="mb-8 bg-white rounded-3xl p-4 border border-gray-200 shadow-sm">
+      <div className="mb-8 bg-white dark:bg-zinc-800 rounded-3xl p-4 border border-slate-200 dark:border-zinc-700 shadow-sm">
         <div className="flex items-center justify-between mb-4 px-2">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-blue-600" />
+          <h2 className="text-lg font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
+            <ImageIcon className="w-5 h-5 text-emerald-600 dark:text-teal-400" />
             {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
           </h2>
           {user?.role === 'admin' && (
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingPhoto}
-              className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-teal-900/30 text-emerald-600 dark:text-teal-400 rounded-lg text-sm font-bold hover:bg-emerald-100 dark:hover:bg-teal-900/50 transition-colors disabled:opacity-50"
             >
               {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
               {isRtl ? 'تحديث الجدول' : 'Update Schedule'}
@@ -195,11 +195,11 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           className="hidden" 
         />
 
-        <div className="w-full bg-gray-50 rounded-2xl overflow-hidden border border-gray-100 min-h-[200px] flex items-center justify-center">
+        <div className="w-full bg-slate-50 dark:bg-zinc-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-zinc-800 min-h-[200px] flex items-center justify-center">
           {schedulePhotoUrl ? (
             <img src={schedulePhotoUrl} alt="Schedule" className="w-full h-auto object-contain max-h-[500px]" referrerPolicy="no-referrer" />
           ) : (
-            <div className="text-center p-8 text-gray-400">
+            <div className="text-center p-8 text-slate-400 dark:text-slate-500">
               <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
               <p>{isRtl ? 'لم يتم رفع جدول بعد' : 'No schedule uploaded yet'}</p>
             </div>
@@ -209,7 +209,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
       {isLoading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-teal-400 animate-spin" />
         </div>
       ) : weeklyLectures.length > 0 ? (
         <div className="space-y-3">
@@ -224,23 +224,23 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                 onClick={() => toggleTask(lecture.id)}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center gap-4 ${
                   isCompleted 
-                    ? 'bg-gray-50 border-gray-200 opacity-60' 
-                    : 'bg-white border-gray-200 shadow-sm hover:border-blue-300'
+                    ? 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 opacity-60' 
+                    : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm hover:border-emerald-300 dark:hover:border-teal-500/50'
                 }`}
               >
-                <button className={`flex-shrink-0 transition-colors ${isCompleted ? 'text-green-500' : 'text-gray-300'}`}>
+                <button className={`flex-shrink-0 transition-colors ${isCompleted ? 'text-emerald-500 dark:text-teal-400' : 'text-slate-300 dark:text-zinc-600'}`}>
                   {isCompleted ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                 </button>
                 <div className="flex-grow min-w-0">
-                  <h3 className={`font-bold truncate ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                  <h3 className={`font-bold truncate ${isCompleted ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-900 dark:text-stone-100'}`}>
                     {lecture.title}
                   </h3>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-slate-300 uppercase">
                       {t[CATEGORIES.find(c => c.value === lecture.category)?.labelKey || 'pharmacology']}
                     </span>
                     {lecture.version === 'translated' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 uppercase">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 uppercase">
                         {t.translated}
                       </span>
                     )}
@@ -251,7 +251,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                   target="_blank" 
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap"
+                  className="px-3 py-1.5 bg-emerald-50 dark:bg-teal-900/30 text-emerald-600 dark:text-teal-400 text-xs font-bold rounded-lg hover:bg-emerald-100 dark:hover:bg-teal-900/50 transition-colors whitespace-nowrap"
                 >
                   {t.view}
                 </a>
@@ -260,9 +260,9 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           })}
         </div>
       ) : (
-        <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 border-dashed">
-          <ClipboardCheck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">{t.noWeeklyTasks}</p>
+        <div className="text-center py-12 bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 border-dashed">
+          <ClipboardCheck className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400 font-medium">{t.noWeeklyTasks}</p>
         </div>
       )}
     </div>

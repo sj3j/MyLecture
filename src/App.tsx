@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit, updateDoc } from 'firebase/firestore';
 import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS, LectureType } from './types';
 import Navbar from './components/Navbar';
 import LectureCard from './components/LectureCard';
@@ -11,7 +11,7 @@ import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
 import ProfileScreen from './components/ProfileScreen';
-import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 
@@ -60,7 +60,9 @@ export default function App() {
               name: userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
               email: firebaseUser.email || '',
               role: isMasterAdmin ? 'admin' : (userDoc.data().role || 'student'),
-              photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined
+              photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
+              streakCount: userDoc.data().streakCount || 0,
+              lastActiveDate: userDoc.data().lastActiveDate || undefined
             });
           } else {
             setUser({
@@ -99,6 +101,38 @@ export default function App() {
       }
     };
   }, []);
+
+  // Streak Logic
+  useEffect(() => {
+    if (user && user.uid) {
+      const today = new Date().toISOString().split('T')[0];
+      const lastActive = user.lastActiveDate;
+      
+      if (lastActive !== today) {
+        let newStreak = user.streakCount || 0;
+        
+        if (lastActive) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+          
+          if (lastActive === yesterdayStr) {
+            newStreak += 1;
+          } else {
+            newStreak = 1;
+          }
+        } else {
+          newStreak = 1;
+        }
+        
+        // Update in Firestore
+        updateDoc(doc(db, 'users', user.uid), {
+          lastActiveDate: today,
+          streakCount: newStreak
+        }).catch(console.error);
+      }
+    }
+  }, [user?.uid, user?.lastActiveDate]);
 
   // Announcements Listener for Notifications
   useEffect(() => {
@@ -172,43 +206,59 @@ export default function App() {
 
   if (!isAuthReady) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
+        <Loader2 className="w-10 h-10 text-emerald-600 dark:text-teal-400 animate-spin" />
       </div>
     );
   }
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return isRtl ? 'صباح الخير' : 'Good morning';
+    if (hour < 18) return isRtl ? 'مساء الخير' : 'Good afternoon';
+    return isRtl ? 'مساء الخير' : 'Good evening';
+  };
+
   const renderLecturesTab = () => (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-      {/* University Header */}
-      <div className={`mb-12 text-center ${isRtl ? 'sm:text-right' : 'sm:text-left'}`}>
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-          <div>
-            <div className={`flex items-center justify-center ${isRtl ? 'sm:justify-start' : 'sm:justify-start'} gap-3 mb-3`}>
-              <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full uppercase tracking-[0.2em]">
-                {t.byFenix}
-              </span>
-              <span className="text-gray-400 font-bold text-xs uppercase tracking-widest">
-                {t.university}
-              </span>
+      {/* Personalized Greeting Header */}
+      <div className={`mb-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isRtl ? 'sm:text-right' : 'sm:text-left'}`}>
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-stone-100 tracking-tight mb-1">
+            {getGreeting()}, {user?.name?.split(' ')[0] || (isRtl ? 'طالب' : 'Student')}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 font-medium text-lg">
+            {t.department} - {t.university}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          {/* Streak Badge */}
+          {user && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl shadow-sm">
+              <div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
+                <Flame className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  {isRtl ? 'النشاط اليومي' : 'Daily Streak'}
+                </div>
+                <div className="text-lg font-black text-slate-900 dark:text-stone-100 leading-none">
+                  {user.streakCount || 0} {isRtl ? 'أيام' : 'days'}
+                </div>
+              </div>
             </div>
-            <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight mb-2">
-              {t.department}
-            </h1>
-            <p className="text-gray-500 font-medium text-lg">
-              {t.resourceHub}
-            </p>
-          </div>
-          
+          )}
+
           {user?.role === 'admin' && (
             <div className="flex gap-2">
               {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
                 <button 
                   onClick={() => setShowAdminManage(true)}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-indigo-600 rounded-2xl text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-all"
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-emerald-600 dark:border-teal-500 rounded-2xl text-sm font-bold text-emerald-600 dark:text-teal-400 hover:bg-emerald-50 dark:hover:bg-teal-900/20 transition-all"
                 >
                   <Users className="w-4 h-4" />
-                  {t.manageAdmins}
+                  <span className="hidden sm:inline">{t.manageAdmins}</span>
                 </button>
               )}
             </div>
@@ -222,8 +272,8 @@ export default function App() {
             onClick={() => setSelectedType('all')}
             className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
               selectedType === 'all'
-                ? 'bg-indigo-900 text-white shadow-lg shadow-indigo-200'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                ? 'bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 shadow-lg shadow-slate-200 dark:shadow-none'
+                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
             }`}
           >
             {isRtl ? 'الكل' : 'All'}
@@ -232,8 +282,8 @@ export default function App() {
             onClick={() => setSelectedType('theoretical')}
             className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
               selectedType === 'theoretical'
-                ? 'bg-indigo-900 text-white shadow-lg shadow-indigo-200'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                ? 'bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 shadow-lg shadow-slate-200 dark:shadow-none'
+                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
             }`}
           >
             {t.theoretical}
@@ -242,8 +292,8 @@ export default function App() {
             onClick={() => setSelectedType('practical')}
             className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
               selectedType === 'practical'
-                ? 'bg-indigo-900 text-white shadow-lg shadow-indigo-200'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                ? 'bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 shadow-lg shadow-slate-200 dark:shadow-none'
+                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
             }`}
           >
             {t.practical}
@@ -256,8 +306,8 @@ export default function App() {
             onClick={() => setSelectedCategory('all')}
             className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
               selectedCategory === 'all'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                ? 'bg-emerald-600 dark:bg-teal-500/20 text-white dark:text-teal-400 shadow-lg shadow-emerald-200 dark:shadow-none dark:border dark:border-teal-500/30'
+                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
             }`}
           >
             {t.allSubjects}
@@ -268,8 +318,8 @@ export default function App() {
               onClick={() => setSelectedCategory(cat.value)}
               className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
                 selectedCategory === cat.value
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  ? 'bg-emerald-600 dark:bg-teal-500/20 text-white dark:text-teal-400 shadow-lg shadow-emerald-200 dark:shadow-none dark:border dark:border-teal-500/30'
+                  : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
               }`}
             >
               {t[cat.labelKey]}
@@ -278,13 +328,13 @@ export default function App() {
         </div>
 
         {/* Sorting Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 bg-white dark:bg-zinc-800 p-4 rounded-2xl border border-slate-100 dark:border-zinc-700 shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-gray-500">{t.sortBy}:</span>
+            <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{t.sortBy}:</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortField)}
-              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 outline-none font-medium"
+              className="bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-stone-100 text-sm rounded-xl focus:ring-emerald-500 dark:focus:ring-teal-500 focus:border-emerald-500 dark:focus:border-teal-500 block p-2.5 outline-none font-medium"
             >
               <option value="date">{t.sortDate}</option>
               <option value="title">{t.sortTitle}</option>
@@ -293,7 +343,7 @@ export default function App() {
           </div>
           <button
             onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-gray-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm font-bold text-slate-700 dark:text-stone-100 transition-colors"
             title={sortOrder === 'asc' ? t.sortAsc : t.sortDesc}
           >
             {sortOrder === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
@@ -304,8 +354,8 @@ export default function App() {
         {/* Content */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-            <p className="text-gray-500 font-medium">{t.loading}</p>
+            <Loader2 className="w-8 h-8 text-emerald-600 dark:text-teal-400 animate-spin" />
+            <p className="text-slate-500 dark:text-slate-400 font-medium">{t.loading}</p>
           </div>
         ) : filteredLectures.length > 0 ? (
           <motion.div
@@ -331,13 +381,13 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-[2rem] border border-dashed border-gray-300"
+            className="flex flex-col items-center justify-center py-20 text-center bg-white dark:bg-zinc-800 rounded-[2rem] border border-dashed border-slate-300 dark:border-zinc-700"
           >
-            <div className="bg-gray-50 p-6 rounded-full mb-4">
-              <SearchX className="w-12 h-12 text-gray-300" />
+            <div className="bg-slate-50 dark:bg-zinc-900 p-6 rounded-full mb-4">
+              <SearchX className="w-12 h-12 text-slate-300 dark:text-zinc-600" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-1">{t.noLectures}</h3>
-            <p className="text-gray-500 max-w-xs mx-auto">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-1">{t.noLectures}</h3>
+            <p className="text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
               {t.noLecturesDesc}
             </p>
           </motion.div>
@@ -346,7 +396,7 @@ export default function App() {
     );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 font-sans" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 pb-20 font-sans transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
       <Navbar
         user={user}
         searchQuery={searchQuery}

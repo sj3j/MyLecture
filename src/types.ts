@@ -31,6 +31,8 @@ export interface UserProfile {
   role: 'admin' | 'student';
   photoUrl?: string;
   completedWeeklyTasks?: string[];
+  streakCount?: number;
+  lastActiveDate?: string;
 }
 
 export type Language = 'ar' | 'en';

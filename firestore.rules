@@ -69,7 +69,9 @@ service cloud.firestore {
              data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
              data.role in ['admin', 'student'] &&
              (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
-             (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list);
+             (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
+             (!('streakCount' in data) || data.streakCount is number) &&
+             (!('lastActiveDate' in data) || data.lastActiveDate is string);
     }
 
     // ===============================================================
