@@ -22,6 +22,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
   const [category, setCategory] = useState<Category>('pharmacology');
   const [type, setType] = useState<LectureType>('theoretical');
   const [description, setDescription] = useState('');
+  const [version, setVersion] = useState<'original' | 'translated'>('original');
+  const [isWeekly, setIsWeekly] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,6 +39,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
       setCategory(lectureToEdit.category);
       setType(lectureToEdit.type);
       setDescription(lectureToEdit.description || '');
+      setVersion(lectureToEdit.version || 'original');
+      setIsWeekly(lectureToEdit.isWeekly || false);
       setFile(null); // Optional to upload a new file
     } else {
       resetForm();
@@ -93,7 +97,10 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
 
   const resetForm = () => {
     setTitle('');
+    setLectureNumber('');
     setDescription('');
+    setVersion('original');
+    setIsWeekly(false);
     setFile(null);
     setUploadProgress(null);
     setShowSuccess(false);
@@ -161,6 +168,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
         description,
         pdfUrl: downloadUrl,
         uploadedBy: auth.currentUser.uid,
+        version,
+        isWeekly,
       };
       
       if (lectureNumber) {
@@ -359,6 +368,36 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                           <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-gray-700 ml-1">{isRtl ? 'النسخة' : 'Version'}</label>
+                      <select
+                        value={version}
+                        onChange={(e) => setVersion(e.target.value as 'original' | 'translated')}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      >
+                        <option value="original">{t.original}</option>
+                        <option value="translated">{t.translated}</option>
+                      </select>
+                    </div>
+                    
+                    <div className="flex items-center mt-6">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <div className="relative">
+                          <input 
+                            type="checkbox" 
+                            className="sr-only" 
+                            checked={isWeekly}
+                            onChange={(e) => setIsWeekly(e.target.checked)}
+                          />
+                          <div className={`block w-10 h-6 rounded-full transition-colors ${isWeekly ? 'bg-indigo-600' : 'bg-gray-300'}`}></div>
+                          <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isWeekly ? 'transform translate-x-4' : ''}`}></div>
+                        </div>
+                        <span className="text-sm font-bold text-gray-700">{t.addToWeekly}</span>
+                      </label>
                     </div>
                   </div>
 

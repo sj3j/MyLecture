@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInAnonymously } from 'firebase/auth';
-import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS, LectureType } from './types';
 import Navbar from './components/Navbar';
 import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
+import BottomNav, { Tab } from './components/BottomNav';
+import AnnouncementsScreen from './components/AnnouncementsScreen';
+import WeeklyListScreen from './components/WeeklyListScreen';
+import ProfileScreen from './components/ProfileScreen';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
@@ -27,19 +31,11 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [currentTab, setCurrentTab] = useState<Tab>('lectures');
   const [showUpload, setShowUpload] = useState(false);
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginStep, setLoginStep] = useState<'password' | 'choice' | 'google' | 'subadmin'>('password');
   const [showAdminManage, setShowAdminManage] = useState(false);
-  
-  // Sub-admin login states
-  const [subUsername, setSubUsername] = useState('');
-  const [subPassword, setSubPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
@@ -49,39 +45,57 @@ export default function App() {
   // Auth Listener
   useEffect(() => {
     const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+    let userUnsubscribe: (() => void) | undefined;
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         if (adminEmails.includes(firebaseUser.email || '')) {
           setUser({ 
             uid: firebaseUser.uid, 
-            name: 'Admin', 
+            name: 'Master Admin', 
             email: firebaseUser.email || '', 
             role: 'admin' 
           });
-        } else if (firebaseUser.isAnonymous) {
-          const subAdmin = localStorage.getItem('subAdmin');
-          if (subAdmin) {
-            setUser(JSON.parse(subAdmin));
-          }
-          // We don't sign out immediately here anymore, because the login flow
-          // needs time to set the localStorage after signInAnonymously completes.
+          setIsAuthReady(true);
+        } else {
+          // Listen to user document
+          userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
+            if (userDoc.exists()) {
+              setUser({
+                uid: firebaseUser.uid,
+                name: userDoc.data().name || firebaseUser.displayName || 'Student',
+                email: firebaseUser.email || '',
+                role: userDoc.data().role || 'student'
+              });
+            } else {
+              setUser({
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || 'Student',
+                email: firebaseUser.email || '',
+                role: 'student'
+              });
+            }
+            setIsAuthReady(true);
+          }, (error) => {
+            console.error("Error fetching user role:", error);
+            setUser(null);
+            setIsAuthReady(true);
+          });
         }
       } else {
-        const subAdmin = localStorage.getItem('subAdmin');
-        if (subAdmin) {
-          // We have sub-admin info but no firebase user? 
-          // This happens on refresh. We need to re-auth anonymously.
-          // But we can't easily re-verify the password here without storing it (insecure).
-          // For now, we'll just clear it and force login, or assume the session is dead.
-          localStorage.removeItem('subAdmin');
-          setUser(null);
-        } else {
-          setUser(null);
+        if (userUnsubscribe) {
+          userUnsubscribe();
         }
+        setUser(null);
+        setIsAuthReady(true);
       }
-      setIsAuthReady(true);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (userUnsubscribe) {
+        userUnsubscribe();
+      }
+    };
   }, []);
 
   // Lectures Listener
@@ -98,77 +112,6 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
-
-  const handleAdminLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPassword === '1234FENIX') {
-      setLoginStep('google');
-      setLoginError('');
-    } else {
-      setLoginError(t.incorrectPassword);
-    }
-  };
-
-  const loginWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      setShowAdminLogin(false);
-    } catch (error) {
-      console.error('Login failed:', error);
-      setLoginError(isRtl ? 'فشل تسجيل الدخول' : 'Login failed');
-    }
-  };
-
-  const loginAsSubAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setLoginError('');
-
-    try {
-      // 1. Sign in anonymously first to get a real Firebase UID
-      const anonUser = await signInAnonymously(auth);
-      
-      // 2. Try to register this UID as an active admin session in Firestore
-      // The security rules will ONLY allow this if the username/password matches the sub_admins record
-      try {
-        await setDoc(doc(db, 'active_admins', anonUser.user.uid), {
-          username: subUsername,
-          password: subPassword, // Passed to rules for validation
-          createdAt: serverTimestamp()
-        });
-
-        // 3. If successful, set the user state
-        const subAdminUser: UserProfile = {
-          uid: anonUser.user.uid,
-          name: subUsername,
-          email: 'sub-admin@lectures.com',
-          role: 'admin'
-        };
-        setUser(subAdminUser);
-        localStorage.setItem('subAdmin', JSON.stringify(subAdminUser));
-        setShowAdminLogin(false);
-        setSubUsername('');
-        setSubPassword('');
-      } catch (firestoreError: any) {
-        // If Firestore write fails, it means invalid credentials (blocked by security rules)
-        await signOut(auth);
-        console.error('Invalid credentials or permission denied:', firestoreError);
-        setLoginError(t.invalidCredentials);
-      }
-    } catch (err) {
-      console.error('Sub-admin login error:', err);
-      setLoginError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error during login');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    localStorage.removeItem('subAdmin');
-    setUser(null);
-  };
 
   let baseLectures = lectures.filter(lecture => {
     const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;
@@ -209,74 +152,43 @@ export default function App() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 pb-20 font-sans" dir={isRtl ? 'rtl' : 'ltr'}>
-      <Navbar
-        user={user}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        onShowUpload={() => setShowUpload(true)}
-        lang={lang}
-        setLang={setLang}
-      />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        {/* University Header */}
-        <div className={`mb-12 text-center ${isRtl ? 'sm:text-right' : 'sm:text-left'}`}>
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-            <div>
-              <div className={`flex items-center justify-center ${isRtl ? 'sm:justify-start' : 'sm:justify-start'} gap-3 mb-3`}>
-                <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full uppercase tracking-[0.2em]">
-                  {t.byFenix}
-                </span>
-                <span className="text-gray-400 font-bold text-xs uppercase tracking-widest">
-                  {t.university}
-                </span>
-              </div>
-              <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight mb-2">
-                {t.department}
-              </h1>
-              <p className="text-gray-500 font-medium text-lg">
-                {t.resourceHub}
-              </p>
+  const renderLecturesTab = () => (
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+      {/* University Header */}
+      <div className={`mb-12 text-center ${isRtl ? 'sm:text-right' : 'sm:text-left'}`}>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div>
+            <div className={`flex items-center justify-center ${isRtl ? 'sm:justify-start' : 'sm:justify-start'} gap-3 mb-3`}>
+              <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full uppercase tracking-[0.2em]">
+                {t.byFenix}
+              </span>
+              <span className="text-gray-400 font-bold text-xs uppercase tracking-widest">
+                {t.university}
+              </span>
             </div>
-            
-            {user && (
-              <div className="flex gap-2">
-                {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
-                  <button 
-                    onClick={() => setShowAdminManage(true)}
-                    className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-indigo-600 rounded-2xl text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-all"
-                  >
-                    <Users className="w-4 h-4" />
-                    {t.manageAdmins}
-                  </button>
-                )}
-                <button 
-                  onClick={handleLogout}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-red-50 border-2 border-red-100 rounded-2xl text-sm font-bold text-red-600 hover:bg-red-100 transition-all"
-                >
-                  <Lock className="w-4 h-4" />
-                  {isRtl ? 'تسجيل الخروج' : 'Logout'}
-                </button>
-              </div>
-            )}
-            {!user && (
-              <button 
-                onClick={() => {
-                  setShowAdminLogin(true);
-                  setLoginStep('choice');
-                  setAdminPassword('');
-                  setLoginError('');
-                }}
-                className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-gray-100 rounded-2xl text-sm font-bold text-gray-400 hover:text-indigo-600 hover:border-indigo-100 transition-all"
-              >
-                <Lock className="w-4 h-4" />
-                {t.adminPortal}
-              </button>
-            )}
+            <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight mb-2">
+              {t.department}
+            </h1>
+            <p className="text-gray-500 font-medium text-lg">
+              {t.resourceHub}
+            </p>
           </div>
+          
+          {user?.role === 'admin' && (
+            <div className="flex gap-2">
+              {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
+                <button 
+                  onClick={() => setShowAdminManage(true)}
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-indigo-600 rounded-2xl text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-all"
+                >
+                  <Users className="w-4 h-4" />
+                  {t.manageAdmins}
+                </button>
+              )}
+            </div>
+          )}
         </div>
+      </div>
 
         {/* Primary Filters (Type) */}
         <div className="flex flex-wrap gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
@@ -405,139 +317,24 @@ export default function App() {
           </motion.div>
         )}
       </main>
+    );
 
-      {/* Admin Login Modal */}
-      <AnimatePresence>
-        {showAdminLogin && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowAdminLogin(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
-            >
-              <div className="p-8">
-                <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                  <Shield className="w-8 h-8 text-indigo-600" />
-                </div>
-                <h2 className="text-2xl font-black text-center text-gray-900 mb-8">{t.adminAccess}</h2>
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20 font-sans" dir={isRtl ? 'rtl' : 'ltr'}>
+      <Navbar
+        user={user}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onShowUpload={() => setShowUpload(true)}
+        lang={lang}
+        setLang={setLang}
+        currentTab={currentTab}
+      />
 
-                {loginStep === 'choice' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-3">
-                      <button
-                        onClick={() => setLoginStep('password')}
-                        className="flex items-center justify-center gap-3 w-full py-4 bg-white border-2 border-gray-200 rounded-2xl font-bold hover:bg-gray-50 transition-all"
-                      >
-                        <Shield className="w-5 h-5 text-indigo-600" />
-                        {isRtl ? 'تسجيل الدخول كمسؤول رئيسي' : 'Master Admin Login'}
-                      </button>
-                      <button
-                        onClick={() => setLoginStep('subadmin')}
-                        className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
-                      >
-                        <Users className="w-5 h-5" />
-                        {t.subAdminLogin}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {loginStep === 'password' && (
-                  <form onSubmit={handleAdminLogin} className="space-y-4">
-                    <p className="text-center text-gray-500 mb-4">{t.enterPassword}</p>
-                    <input
-                      type="password"
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      placeholder={t.password}
-                      className="w-full px-6 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-center text-xl tracking-widest"
-                    />
-                    {loginError && (
-                      <div className="flex items-center gap-2 text-red-600 text-sm font-bold justify-center">
-                        <AlertCircle className="w-4 h-4" />
-                        {loginError}
-                      </div>
-                    )}
-                    <button
-                      type="submit"
-                      className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-                    >
-                      {t.verifyPassword}
-                    </button>
-                    <button type="button" onClick={() => setLoginStep('choice')} className="w-full text-sm text-gray-400 font-bold hover:text-gray-600 mt-4">
-                      {isRtl ? 'رجوع' : 'Back'}
-                    </button>
-                  </form>
-                )}
-
-                {loginStep === 'google' && (
-                  <div className="space-y-6">
-                    <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-700 text-sm font-bold text-center mb-6">
-                      {t.passwordCorrect}
-                    </div>
-                    <button
-                      onClick={loginWithGoogle}
-                      className="flex items-center justify-center gap-3 w-full py-4 bg-white border-2 border-gray-200 rounded-2xl font-bold hover:bg-gray-50 transition-all"
-                    >
-                      <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-                      {t.confirmIdentity}
-                    </button>
-                    <button onClick={() => setLoginStep('password')} className="w-full text-sm text-gray-400 font-bold hover:text-gray-600">
-                      {isRtl ? 'رجوع' : 'Back'}
-                    </button>
-                  </div>
-                )}
-
-                {loginStep === 'subadmin' && (
-                  <form onSubmit={loginAsSubAdmin} className="space-y-4">
-                    <input
-                      required
-                      type="text"
-                      placeholder={t.username}
-                      value={subUsername}
-                      onChange={(e) => setSubUsername(e.target.value)}
-                      className="w-full px-6 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    />
-                    <input
-                      required
-                      type="password"
-                      placeholder={t.password}
-                      value={subPassword}
-                      onChange={(e) => setSubPassword(e.target.value)}
-                      className="w-full px-6 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    />
-                    {loginError && (
-                      <div className="flex items-center gap-2 text-red-600 text-sm font-bold justify-center">
-                        <AlertCircle className="w-4 h-4" />
-                        {loginError}
-                      </div>
-                    )}
-                    <button
-                      disabled={isSubmitting}
-                      type="submit"
-                      className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                    >
-                      {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Users className="w-5 h-5" />}
-                      {t.login}
-                    </button>
-                    <button type="button" onClick={() => setLoginStep('choice')} className="w-full text-sm text-gray-400 font-bold hover:text-gray-600">
-                      {isRtl ? 'رجوع' : 'Back'}
-                    </button>
-                  </form>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {currentTab === 'lectures' && renderLecturesTab()}
+      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} />}
+      {currentTab === 'weekly' && <WeeklyListScreen lang={lang} />}
+      {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
 
       <AdminUpload 
         isOpen={showUpload} 
@@ -550,20 +347,7 @@ export default function App() {
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       
-      <footer className="mt-20 border-t border-gray-200 py-10">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <BookOpen className="w-5 h-5 text-indigo-600" />
-            <span className="font-bold text-gray-900">{t.appName}</span>
-          </div>
-          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-2">
-            {t.university} • {t.department}
-          </p>
-          <p className="text-[10px] text-gray-400 font-medium">
-            &copy; 2026 {t.byFenix}. {t.allRights}
-          </p>
-        </div>
-      </footer>
+      <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} />
     </div>
   );
 }

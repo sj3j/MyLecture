@@ -44,23 +44,11 @@ service cloud.firestore {
     function isAdmin() {
       return isMasterAdmin() ||
         (
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          exists(/databases/$(database)/documents/active_admins/$(request.auth.uid))
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         );
     }
 
-    match /sub_admins/{username} {
-      allow read: if isMasterAdmin();
-      allow write: if isMasterAdmin();
-    }
-
-    match /active_admins/{uid} {
-      // Allow an anonymous user to "activate" themselves as an admin
-      // if they know the password for a valid sub_admin account
-      allow create, update: if request.auth != null && request.auth.uid == uid &&
-                    get(/databases/$(database)/documents/sub_admins/$(request.resource.data.username)).data.password == request.resource.data.password;
-      allow read, delete: if isAdmin();
-    }
+    // Removed sub_admins and active_admins
 
     function isValidLecture(data) {
       return data.keys().hasAll(['title', 'category', 'type', 'pdfUrl', 'createdAt', 'uploadedBy']) &&
@@ -70,7 +58,9 @@ service cloud.firestore {
              data.pdfUrl is string && data.pdfUrl.matches("^https?://.*") &&
              data.createdAt is timestamp &&
              data.uploadedBy == request.auth.uid &&
-             (!('number' in data) || (data.number is number && data.number > 0));
+             (!('number' in data) || data.number == null || (data.number is number && data.number > 0)) &&
+             (!('isWeekly' in data) || data.isWeekly is bool) &&
+             (!('version' in data) || data.version in ['original', 'translated']);
     }
 
     function isValidUser(data) {
@@ -84,13 +74,25 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    match /allowed_admins/{email} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterAdmin();
+    }
+
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'student';
-      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data));
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == 'student' || 
+                     (request.resource.data.role == 'admin' && (isMasterAdmin() || exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))));
+      allow update: if isMasterAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data));
     }
 
     match /lectures/{lectureId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /announcements/{postId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
     }

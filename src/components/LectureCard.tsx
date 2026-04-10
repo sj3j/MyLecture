@@ -72,6 +72,11 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
                 {isRtl ? 'محاضرة' : 'Lecture'} {lecture.number}
               </span>
             )}
+            {lecture.version === 'translated' && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-amber-100 text-amber-700">
+                {t.translated}
+              </span>
+            )}
           </div>
         </div>
 

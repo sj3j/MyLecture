@@ -11,6 +11,16 @@ export interface Lecture {
   createdAt: any; // Firestore Timestamp
   uploadedBy: string;
   number?: number;
+  isWeekly?: boolean;
+  version?: 'original' | 'translated';
+}
+
+export interface Post {
+  id: string;
+  content: string;
+  createdAt: any;
+  createdBy: string;
+  authorName: string;
 }
 
 export interface UserProfile {
@@ -94,6 +104,21 @@ export const TRANSLATIONS = {
     organic_chemistry: 'عضوية',
     biochemistry: 'بايو',
     cosmetics: 'تكنو',
+    navAnnouncements: 'تبليغات',
+    navLectures: 'محاضرات',
+    navWeekly: 'واجبات الأسبوع',
+    navProfile: 'الملف الشخصي',
+    original: 'أصلي',
+    translated: 'مترجم',
+    addToWeekly: 'إضافة لواجبات الأسبوع',
+    createPost: 'إنشاء منشور',
+    postContent: 'محتوى المنشور',
+    publishPost: 'نشر',
+    noPosts: 'لا توجد تبليغات حالياً',
+    weeklyTasks: 'المهام الأسبوعية',
+    noWeeklyTasks: 'لا توجد واجبات لهذا الأسبوع',
+    markCompleted: 'تحديد كمكتمل',
+    completed: 'مكتمل',
   },
   en: {
     appName: 'محاضراتي',
@@ -166,6 +191,21 @@ export const TRANSLATIONS = {
     organic_chemistry: 'Organic Chemistry',
     biochemistry: 'Biochemistry',
     cosmetics: 'Cosmetics and Preparations',
+    navAnnouncements: 'Announcements',
+    navLectures: 'Lectures',
+    navWeekly: 'Weekly List',
+    navProfile: 'Profile',
+    original: 'Original',
+    translated: 'Translated',
+    addToWeekly: 'Add to Weekly List',
+    createPost: 'Create Post',
+    postContent: 'Post Content',
+    publishPost: 'Publish',
+    noPosts: 'No announcements yet',
+    weeklyTasks: 'Weekly Tasks',
+    noWeeklyTasks: 'No tasks for this week',
+    markCompleted: 'Mark Completed',
+    completed: 'Completed',
   }
 };
 

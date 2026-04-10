@@ -15,9 +15,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [admins, setAdmins] = useState<{ id: string; username: string }[]>([]);
+  const [email, setEmail] = useState('');
+  const [admins, setAdmins] = useState<{ id: string; email: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +24,11 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const fetchAdmins = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'sub_admins'));
+      const q = query(collection(db, 'allowed_admins'));
       const snapshot = await getDocs(q);
       const adminList = snapshot.docs.map(doc => ({
         id: doc.id,
-        username: doc.data().username
+        email: doc.id
       }));
       setAdmins(adminList);
     } catch (err) {
@@ -51,25 +50,19 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     setError(null);
 
     try {
-      // Check if username exists
-      const q = query(collection(db, 'sub_admins'), where('username', '==', username));
-      const snapshot = await getDocs(q);
-      
-      if (!snapshot.empty) {
-        setError(isRtl ? 'اسم المستخدم موجود بالفعل' : 'Username already exists');
+      if (!email.includes('@')) {
+        setError(isRtl ? 'بريد إلكتروني غير صالح' : 'Invalid email');
         setIsSubmitting(false);
         return;
       }
 
-      await setDoc(doc(db, 'sub_admins', username), {
-        username,
-        password, // In a real production app, this should be hashed. For this platform, we store as requested.
+      await setDoc(doc(db, 'allowed_admins', email.toLowerCase()), {
+        email: email.toLowerCase(),
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.uid
       });
 
-      setUsername('');
-      setPassword('');
+      setEmail('');
       fetchAdmins();
     } catch (err) {
       console.error('Error adding admin:', err);
@@ -83,7 +76,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     if (!window.confirm(t.confirmDeleteAdmin)) return;
     
     try {
-      await deleteDoc(doc(db, 'sub_admins', id));
+      await deleteDoc(doc(db, 'allowed_admins', id));
       fetchAdmins();
     } catch (err) {
       console.error('Error deleting admin:', err);
@@ -131,18 +124,10 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                 <div className="space-y-3">
                   <input
                     required
-                    type="text"
-                    placeholder={t.username}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                  />
-                  <input
-                    required
-                    type="password"
-                    placeholder={t.password}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   />
                   <button
@@ -171,9 +156,9 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                       <div key={admin.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-xs">
-                            {admin.username[0].toUpperCase()}
+                            {admin.email[0].toUpperCase()}
                           </div>
-                          <span className="font-semibold text-gray-700">{admin.username}</span>
+                          <span className="font-semibold text-gray-700">{admin.email}</span>
                         </div>
                         <button
                           onClick={() => handleDeleteAdmin(admin.id)}
