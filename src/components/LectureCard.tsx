@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2 } from 'lucide-react';
+import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
+import { useOfflinePDF } from '../hooks/useOfflinePDF';
 
 interface LectureCardProps {
   lecture: Lecture;
@@ -24,6 +25,8 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
   const categoryData = CATEGORIES.find(c => c.value === lecture.category);
   const categoryLabel = categoryData ? t[categoryData.labelKey] : lecture.category;
   const date = lecture.createdAt?.toDate ? lecture.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently;
+
+  const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl);
 
   const handleDelete = async () => {
     if (!user || user.role !== 'admin') return;
@@ -107,10 +110,38 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
             <Maximize2 className="w-4 h-4" />
             {t.view}
           </button>
+          
+          {isDownloaded ? (
+            <button
+              onClick={removePDF}
+              className="inline-flex items-center justify-center p-2.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors group"
+              title={isRtl ? 'حذف من التنزيلات' : 'Remove offline download'}
+            >
+              <CheckCircle2 className="w-5 h-5 group-hover:hidden" />
+              <CloudOff className="w-5 h-5 hidden group-hover:block" />
+            </button>
+          ) : (
+            <button
+              onClick={downloadPDF}
+              disabled={isDownloading}
+              className="inline-flex items-center justify-center p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-50 relative overflow-hidden"
+              title={isRtl ? 'تنزيل للمشاهدة بدون إنترنت' : 'Download for offline viewing'}
+            >
+              {isDownloading ? (
+                <>
+                  <div className="absolute inset-0 bg-sky-200 dark:bg-sky-800/50" style={{ width: `${downloadProgress}%`, transition: 'width 0.3s' }} />
+                  <Loader2 className="w-5 h-5 animate-spin relative z-10" />
+                </>
+              ) : (
+                <CloudDownload className="w-5 h-5 relative z-10" />
+              )}
+            </button>
+          )}
+
           <a
             href={lecture.pdfUrl}
             download
-            className="inline-flex items-center justify-center p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors"
+            className="inline-flex items-center justify-center p-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
             title={t.download}
           >
             <Download className="w-5 h-5" />
@@ -225,7 +256,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
               
               <div className="flex-1 bg-slate-100 dark:bg-zinc-950 relative">
                 <iframe
-                  src={`${lecture.pdfUrl}#toolbar=0`}
+                  src={`${offlineUrl || lecture.pdfUrl}#toolbar=0`}
                   className="w-full h-full border-none"
                   title={lecture.title}
                 />

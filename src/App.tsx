@@ -14,6 +14,7 @@ import ProfileScreen from './components/ProfileScreen';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
+import { usePushNotifications } from './hooks/usePushNotifications';
 
 type SortField = 'title' | 'date' | 'number';
 type SortOrder = 'asc' | 'desc';
@@ -43,6 +44,8 @@ export default function App() {
     }
     return 'light';
   });
+
+  const { permission, requestPermission } = usePushNotifications(user);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -427,6 +430,23 @@ export default function App() {
         theme={theme}
         toggleTheme={toggleTheme}
       />
+
+      {user && permission === 'default' && (
+        <div className="bg-sky-600 text-white px-4 py-3 sm:px-6 lg:px-8 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5" />
+            <p className="text-sm font-medium">
+              {isRtl ? 'قم بتفعيل الإشعارات لتلقي تنبيهات عند إضافة محاضرات جديدة.' : 'Enable notifications to receive alerts when new lectures are added.'}
+            </p>
+          </div>
+          <button
+            onClick={requestPermission}
+            className="px-4 py-1.5 bg-white text-sky-600 text-sm font-bold rounded-lg hover:bg-sky-50 transition-colors whitespace-nowrap"
+          >
+            {isRtl ? 'تفعيل' : 'Enable'}
+          </button>
+        </div>
+      )}
 
       {currentTab === 'lectures' && renderLecturesTab()}
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} />}
