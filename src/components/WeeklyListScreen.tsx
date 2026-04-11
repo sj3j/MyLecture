@@ -107,7 +107,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0] || user?.role !== 'admin') return;
+    if (!e.target.files || !e.target.files[0] || !user || !['admin', 'moderator'].includes(user.role)) return;
     
     const file = e.target.files[0];
     if (file.size > 5 * 1024 * 1024) {
@@ -175,7 +175,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
             <ImageIcon className="w-5 h-5 text-sky-600 dark:text-sky-400" />
             {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
           </h2>
-          {user?.role === 'admin' && (
+          {user && ['admin', 'moderator'].includes(user.role) && (
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingPhoto}
@@ -239,9 +239,9 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-slate-300 uppercase">
                       {t[CATEGORIES.find(c => c.value === lecture.category)?.labelKey || 'pharmacology']}
                     </span>
-                    {lecture.version === 'translated' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 uppercase">
-                        {t.translated}
+                    {lecture.version && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${lecture.version === 'translated' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'}`}>
+                        {lecture.version === 'translated' ? t.translated : t.original}
                       </span>
                     )}
                   </div>

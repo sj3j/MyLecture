@@ -13,7 +13,7 @@ interface AnnouncementsScreenProps {
 export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user && user.role === 'admin';
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);

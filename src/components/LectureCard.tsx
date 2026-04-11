@@ -29,7 +29,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
   const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl);
 
   const handleDelete = async () => {
-    if (!user || user.role !== 'admin') return;
+    if (!user || !['admin', 'moderator'].includes(user.role)) return;
     
     setIsDeleting(true);
     try {
@@ -75,9 +75,9 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
                 {isRtl ? 'محاضرة' : 'Lecture'} {lecture.number}
               </span>
             )}
-            {lecture.version === 'translated' && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
-                {t.translated}
+            {lecture.version && (
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.version === 'translated' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'}`}>
+                {lecture.version === 'translated' ? t.translated : t.original}
               </span>
             )}
           </div>
@@ -146,7 +146,7 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
           >
             <Download className="w-5 h-5" />
           </a>
-          {user?.role === 'admin' && (
+          {user && ['admin', 'moderator'].includes(user.role) && (
             <>
               <button
                 onClick={() => onEdit?.(lecture)}

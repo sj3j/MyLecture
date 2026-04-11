@@ -4,7 +4,8 @@ import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive } from 'lucide-react';
+import ManageDownloadsScreen from './ManageDownloadsScreen';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -17,6 +18,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState('');
+  const [showManageDownloads, setShowManageDownloads] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
@@ -52,12 +54,12 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
         // Check if email is in allowed_admins
         const allowedDoc = await getDoc(doc(db, 'allowed_admins', (result.user.email || '').toLowerCase()));
         if (allowedDoc.exists()) {
-          role = 'admin';
+          role = allowedDoc.data().role || 'admin';
         } else {
-          // Check if they are already an admin in users collection
+          // Check if they are already an admin or moderator in users collection
           const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-          if (userDoc.exists() && userDoc.data().role === 'admin') {
-            role = 'admin';
+          if (userDoc.exists() && ['admin', 'moderator'].includes(userDoc.data().role)) {
+            role = userDoc.data().role;
           }
         }
       }
@@ -147,6 +149,20 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
     }
   };
 
+  const handleToggleNotification = async (type: 'lectures' | 'announcements') => {
+    if (!user) return;
+    const currentPrefs = user.notificationPreferences || { lectures: true, announcements: true };
+    const newPrefs = { ...currentPrefs, [type]: !currentPrefs[type] };
+    
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        notificationPreferences: newPrefs
+      });
+    } catch (error) {
+      console.error('Error updating notification preferences:', error);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex items-center gap-3 mb-8">
@@ -218,9 +234,15 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                   Admin
                 </span>
               )}
+              {user.role === 'moderator' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold mt-2">
+                  <Shield className="w-3 h-3" />
+                  Moderator
+                </span>
+              )}
             </div>
 
-            {user.role === 'admin' && (
+            {['admin', 'moderator'].includes(user.role) && (
               <div className="absolute top-0 right-0 (isRtl ? 'left-0 right-auto' : '')">
                 {isEditing ? (
                   <div className="flex gap-2">
@@ -257,6 +279,44 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </div>
 
           <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700">
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'إعدادات الإشعارات' : 'Notification Settings'}</h3>
+            
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات المحاضرات الجديدة' : 'New Lecture Notifications'}</span>
+              <button
+                onClick={() => handleToggleNotification('lectures')}
+                className={`w-12 h-6 rounded-full transition-colors relative ${user.notificationPreferences?.lectures !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+              >
+                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user.notificationPreferences?.lectures !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات التبليغات' : 'Announcement Notifications'}</span>
+              <button
+                onClick={() => handleToggleNotification('announcements')}
+                className={`w-12 h-6 rounded-full transition-colors relative ${user.notificationPreferences?.announcements !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+              >
+                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user.notificationPreferences?.announcements !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-6 mt-6 border-t border-slate-100 dark:border-zinc-700">
+            <button
+              onClick={() => setShowManageDownloads(true)}
+              className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-zinc-900 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors border border-slate-200 dark:border-zinc-800"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg text-sky-600 dark:text-sky-400">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <span className="font-bold text-slate-700 dark:text-slate-300">{t.manageDownloads}</span>
+              </div>
+            </button>
+          </div>
+
+          <div className="space-y-4 pt-6 mt-6 border-t border-slate-100 dark:border-zinc-700">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'اللغة' : 'Language'}</span>
               <div className="flex bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl">
@@ -324,6 +384,12 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </button>
         </div>
       )}
+
+      <ManageDownloadsScreen
+        isOpen={showManageDownloads}
+        onClose={() => setShowManageDownloads(false)}
+        lang={lang}
+      />
     </div>
   );
 }

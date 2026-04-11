@@ -18,7 +18,7 @@
 // Fields:
 //   - name: string (required)
 //   - email: string (required, email format)
-//   - role: string (required, enum: admin, student)
+//   - role: string (required, enum: admin, moderator, student)
 //
 // ===============================================================
 
@@ -48,7 +48,15 @@ service cloud.firestore {
         );
     }
 
-    // Removed sub_admins and active_admins
+    function isModerator() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator';
+    }
+
+    function isAdminOrModerator() {
+      return isAdmin() || isModerator();
+    }
 
     function isValidLecture(data) {
       return data.keys().hasAll(['title', 'category', 'type', 'pdfUrl', 'createdAt', 'uploadedBy']) &&
@@ -66,12 +74,15 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.keys().hasAll(['name', 'email', 'role']) &&
              data.name is string && data.name.size() > 0 &&
-             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
-             data.role in ['admin', 'student'] &&
-             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
+             data.email is string && (data.email == '' || data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) &&
+             data.role in ['admin', 'moderator', 'student'] &&
+             (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
              (!('streakCount' in data) || data.streakCount is number) &&
-             (!('lastActiveDate' in data) || data.lastActiveDate is string);
+             (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
+             (!('notificationPreferences' in data) || (data.notificationPreferences is map && 
+               (!('lectures' in data.notificationPreferences) || data.notificationPreferences.lectures is bool) &&
+               (!('announcements' in data.notificationPreferences) || data.notificationPreferences.announcements is bool)));
     }
 
     // ===============================================================
@@ -80,7 +91,7 @@ service cloud.firestore {
 
     match /settings/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrModerator();
     }
 
     match /allowed_admins/{email} {
@@ -92,23 +103,25 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
                     (request.resource.data.role == 'student' || 
-                     (request.resource.data.role == 'admin' && (isMasterAdmin() || exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))));
-      allow update: if isMasterAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data));
+                     (request.resource.data.role in ['admin', 'moderator'] && (isMasterAdmin() || (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower()))))));
+      allow update: if isMasterAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && (
+                      request.resource.data.role == (resource.data.role != null ? resource.data.role : 'student') ||
+                      (request.resource.data.role in ['admin', 'moderator'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
+                    ));
     }
 
     match /lectures/{lectureId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdminOrModerator();
     }
 
     match /announcements/{postId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
     }
-
-    match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin();
+    
+    match /fcm_tokens/{userId} {
+      allow read, write: if isOwner(userId);
     }
   }
 }

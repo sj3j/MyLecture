@@ -30,8 +30,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
-  const [sortBy, setSortBy] = useState<SortField>('date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [sortBy, setSortBy] = useState<SortField>('number');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [currentTab, setCurrentTab] = useState<Tab>('lectures');
   const [showUpload, setShowUpload] = useState(false);
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
@@ -84,7 +84,8 @@ export default function App() {
               role: isMasterAdmin ? 'admin' : (userDoc.data().role || 'student'),
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
               streakCount: userDoc.data().streakCount || 0,
-              lastActiveDate: userDoc.data().lastActiveDate || undefined
+              lastActiveDate: userDoc.data().lastActiveDate || undefined,
+              notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true }
             });
           } else {
             setUser({
@@ -92,7 +93,8 @@ export default function App() {
               name: firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
               email: firebaseUser.email || '',
               role: isMasterAdmin ? 'admin' : 'student',
-              photoUrl: firebaseUser.photoURL || undefined
+              photoUrl: firebaseUser.photoURL || undefined,
+              notificationPreferences: { lectures: true, announcements: true }
             });
           }
           setIsAuthReady(true);
@@ -104,7 +106,8 @@ export default function App() {
             name: firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
             email: firebaseUser.email || '',
             role: isMasterAdmin ? 'admin' : 'student',
-            photoUrl: firebaseUser.photoURL || undefined
+            photoUrl: firebaseUser.photoURL || undefined,
+            notificationPreferences: { lectures: true, announcements: true }
           });
           setIsAuthReady(true);
         });
@@ -272,7 +275,7 @@ export default function App() {
             </div>
           )}
 
-          {user?.role === 'admin' && (
+          {user && ['admin', 'moderator'].includes(user.role) && (
             <div className="flex gap-2">
               {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
                 <button 

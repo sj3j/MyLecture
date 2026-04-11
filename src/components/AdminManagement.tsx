@@ -16,7 +16,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const isRtl = lang === 'ar';
   
   const [email, setEmail] = useState('');
-  const [admins, setAdmins] = useState<{ id: string; email: string }[]>([]);
+  const [role, setRole] = useState<'admin' | 'moderator'>('admin');
+  const [admins, setAdmins] = useState<{ id: string; email: string; role?: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +29,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       const snapshot = await getDocs(q);
       const adminList = snapshot.docs.map(doc => ({
         id: doc.id,
-        email: doc.id
+        email: doc.id,
+        role: doc.data().role || 'admin'
       }));
       setAdmins(adminList);
     } catch (err) {
@@ -58,6 +60,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
 
       await setDoc(doc(db, 'allowed_admins', email.toLowerCase()), {
         email: email.toLowerCase(),
+        role: role,
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.uid
       });
@@ -130,6 +133,14 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                   />
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as 'admin' | 'moderator')}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                  >
+                    <option value="admin">Admin (Full Access)</option>
+                    <option value="moderator">Moderator (Content Only)</option>
+                  </select>
                   <button
                     disabled={isSubmitting}
                     type="submit"
@@ -155,10 +166,15 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     {admins.map((admin) => (
                       <div key={admin.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 font-bold text-xs">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${admin.role === 'moderator' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}`}>
                             {admin.email[0].toUpperCase()}
                           </div>
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">{admin.email}</span>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${admin.role === 'moderator' ? 'text-amber-600 dark:text-amber-400' : 'text-sky-600 dark:text-sky-400'}`}>
+                              {admin.role || 'admin'}
+                            </span>
+                          </div>
                         </div>
                         <button
                           onClick={() => handleDeleteAdmin(admin.id)}

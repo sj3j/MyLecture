@@ -28,11 +28,15 @@ export interface UserProfile {
   uid: string;
   name: string;
   email: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'moderator' | 'student';
   photoUrl?: string;
   completedWeeklyTasks?: string[];
   streakCount?: number;
   lastActiveDate?: string;
+  notificationPreferences?: {
+    lectures: boolean;
+    announcements: boolean;
+  };
 }
 
 export type Language = 'ar' | 'en';
@@ -124,6 +128,12 @@ export const TRANSLATIONS = {
     noWeeklyTasks: 'لا توجد واجبات لهذا الأسبوع',
     markCompleted: 'تحديد كمكتمل',
     completed: 'مكتمل',
+    manageDownloads: 'إدارة التنزيلات',
+    offlineDownloads: 'التنزيلات بدون إنترنت',
+    clearAll: 'مسح الكل',
+    noDownloads: 'لا توجد تنزيلات',
+    remove: 'إزالة',
+    confirmClearAll: 'هل أنت متأكد من مسح جميع التنزيلات؟',
   },
   en: {
     appName: 'محاضراتي',
@@ -211,6 +221,12 @@ export const TRANSLATIONS = {
     noWeeklyTasks: 'No tasks for this week',
     markCompleted: 'Mark Completed',
     completed: 'Completed',
+    manageDownloads: 'Manage Downloads',
+    offlineDownloads: 'Offline Downloads',
+    clearAll: 'Clear All',
+    noDownloads: 'No downloads yet',
+    remove: 'Remove',
+    confirmClearAll: 'Are you sure you want to clear all downloads?',
   }
 };
 
