@@ -231,43 +231,10 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
                     placeholder={isRtl ? 'الاسم' : 'Name'}
                   />
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={editExamCode}
-                      onChange={(e) => setEditExamCode(e.target.value)}
-                      className="w-1/2 px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
-                      placeholder={isRtl ? 'الكود الامتحاني' : 'Exam Code'}
-                    />
-                    <select
-                      value={editGroup}
-                      onChange={(e) => setEditGroup(e.target.value)}
-                      className="w-1/2 px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
-                    >
-                      <option value="">{isRtl ? 'الكروب' : 'Group'}</option>
-                      {['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4', 'C1', 'C2', 'C3', 'C4', 'D1', 'D2', 'D3', 'D4'].map(g => (
-                        <option key={g} value={g}>{g}</option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
               ) : (
                 <>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100 truncate">{user.name}</h2>
-                  {(user.examCode || user.group) && (
-                    <div className="flex items-center gap-2 mt-2 mb-1">
-                      {user.examCode && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-lg font-black border border-indigo-100 dark:border-indigo-800">
-                          {user.examCode}
-                        </span>
-                      )}
-                      {user.group && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-lg font-black border border-emerald-100 dark:border-emerald-800">
-                          {user.group}
-                        </span>
-                      )}
-                    </div>
-                  )}
                 </>
               )}
               <p className="text-slate-500 dark:text-slate-400 text-sm truncate mt-1">{user.email}</p>
@@ -285,40 +252,80 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
               )}
             </div>
 
-            {['admin', 'moderator'].includes(user.role) && (
-              <div className="absolute top-0 right-0 (isRtl ? 'left-0 right-auto' : '')">
-                {isEditing ? (
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => {
-                        setIsEditing(false);
-                        setEditName(user.name);
-                        setEditPhotoPreview(user.photoUrl || null);
-                        setEditExamCode(user.examCode || '');
-                        setEditGroup(user.group || '');
-                        setEditPhotoFile(null);
-                        setError('');
-                      }}
-                      className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                    <button 
-                      onClick={handleSaveProfile}
-                      disabled={isSaving}
-                      className="p-2 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors disabled:opacity-50"
-                    >
-                      {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
-                    </button>
-                  </div>
-                ) : (
+            <div className={`absolute top-0 ${isRtl ? 'left-0' : 'right-0'}`}>
+              {isEditing ? (
+                <div className="flex gap-2">
                   <button 
-                    onClick={() => setIsEditing(true)}
-                    className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditName(user.name);
+                      setEditPhotoPreview(user.photoUrl || null);
+                      setEditExamCode(user.examCode || '');
+                      setEditGroup(user.group || '');
+                      setEditPhotoFile(null);
+                      setError('');
+                    }}
+                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors"
                   >
-                    <Edit2 className="w-5 h-5" />
+                    <X className="w-5 h-5" />
                   </button>
-                )}
+                  <button 
+                    onClick={handleSaveProfile}
+                    disabled={isSaving}
+                    className="p-2 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors disabled:opacity-50"
+                  >
+                    {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors"
+                >
+                  <Edit2 className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700 mb-6">
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المعلومات الأكاديمية' : 'Academic Information'}</h3>
+            {isEditing ? (
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs text-slate-500 mb-1">{isRtl ? 'الكود الامتحاني' : 'Exam Code'}</label>
+                  <input
+                    type="text"
+                    value={editExamCode}
+                    onChange={(e) => setEditExamCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
+                    placeholder={isRtl ? 'الكود الامتحاني' : 'Exam Code'}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs text-slate-500 mb-1">{isRtl ? 'الكروب' : 'Group'}</label>
+                  <select
+                    value={editGroup}
+                    onChange={(e) => setEditGroup(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
+                  >
+                    <option value="">{isRtl ? 'اختر الكروب' : 'Select Group'}</option>
+                    {['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4', 'C1', 'C2', 'C3', 'C4', 'D1', 'D2', 'D3', 'D4'].map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-4">
+                <div className="flex-1 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-800/50">
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400 mb-1 font-medium">{isRtl ? 'الكود الامتحاني' : 'Exam Code'}</p>
+                  <p className="text-2xl font-black text-indigo-700 dark:text-indigo-300">{user.examCode || '---'}</p>
+                </div>
+                <div className="flex-1 bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/50">
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-1 font-medium">{isRtl ? 'الكروب' : 'Group'}</p>
+                  <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300">{user.group || '---'}</p>
+                </div>
               </div>
             )}
           </div>

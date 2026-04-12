@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import React, { useState, useEffect, useRef } from 'react';
+import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES, Homework } from '../types';
-import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar } from 'lucide-react';
+import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Camera, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface WeeklyListScreenProps {
@@ -16,6 +17,11 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
   const [homeworks, setHomeworks] = useState<Homework[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Schedule photo state
+  const [schedulePhotoUrl, setSchedulePhotoUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Admin form state
   const [showAdminForm, setShowAdminForm] = useState(false);
@@ -40,6 +46,15 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       handleFirestoreError(error, OperationType.LIST, 'homeworks');
     });
 
+    // Load schedule photo
+    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'weekly_schedule'), (docSnap) => {
+      if (docSnap.exists()) {
+        setSchedulePhotoUrl(docSnap.data().photoUrl);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/weekly_schedule');
+    });
+
     // Load all lectures for admin dropdown
     if (user && ['admin', 'moderator'].includes(user.role)) {
       const fetchLectures = async () => {
@@ -50,8 +65,44 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       fetchLectures();
     }
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeSettings();
+    };
   }, [user]);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const storageRef = ref(storage, `schedules/weekly_${Date.now()}`);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on('state_changed', 
+        null,
+        (error) => {
+          console.error("Upload error:", error);
+          setIsUploadingPhoto(false);
+          alert(t.errorUnknown);
+        },
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          await setDoc(doc(db, 'settings', 'weekly_schedule'), {
+            photoUrl: downloadURL,
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid
+          });
+          setIsUploadingPhoto(false);
+        }
+      );
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      setIsUploadingPhoto(false);
+      alert(t.errorUnknown);
+    }
+  };
 
   const handleAddLecture = (lecture: Lecture) => {
     if (!selectedLectures.find(l => l.lectureId === lecture.id)) {
@@ -128,6 +179,45 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
             <span className="hidden sm:inline">{showAdminForm ? t.close : t.postHomework}</span>
           </button>
         )}
+      </div>
+
+      {/* Schedule Photo Section */}
+      <div className="mb-8 bg-white dark:bg-zinc-800 rounded-3xl p-4 border border-slate-200 dark:border-zinc-700 shadow-sm">
+        <div className="flex items-center justify-between mb-4 px-2">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
+            <ImageIcon className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+            {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
+          </h2>
+          {user && ['admin', 'moderator'].includes(user.role) && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingPhoto}
+              className="flex items-center gap-2 px-3 py-1.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-lg text-sm font-bold hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-50"
+            >
+              {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+              {isRtl ? 'تحديث الجدول' : 'Update Schedule'}
+            </button>
+          )}
+        </div>
+        
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handlePhotoUpload} 
+          accept="image/*" 
+          className="hidden" 
+        />
+
+        <div className="w-full bg-slate-50 dark:bg-zinc-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-zinc-800 min-h-[200px] flex items-center justify-center">
+          {schedulePhotoUrl ? (
+            <img src={schedulePhotoUrl} alt="Schedule" className="w-full h-auto object-contain max-h-[500px]" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="text-center p-8 text-slate-400 dark:text-slate-500">
+              <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>{isRtl ? 'لم يتم رفع جدول بعد' : 'No schedule uploaded yet'}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <AnimatePresence>
