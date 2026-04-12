@@ -4,8 +4,11 @@ const axios = require('axios');
 
 admin.initializeApp();
 
+const db = admin.firestore();
+db.settings({ databaseId: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330' });
+
 async function getTokensWithPreferences(preferenceKey) {
-  const tokensSnapshot = await admin.firestore().collection('fcm_tokens').get();
+  const tokensSnapshot = await db.collection('fcm_tokens').get();
   
   if (tokensSnapshot.empty) {
     return { tokens: [], tokenDocs: [] };
@@ -33,7 +36,7 @@ async function getTokensWithPreferences(preferenceKey) {
 
   for (let i = 0; i < userIds.length; i += 30) {
     const chunk = userIds.slice(i, i + 30);
-    const usersSnapshot = await admin.firestore().collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+    const usersSnapshot = await db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
     
     usersSnapshot.forEach((doc) => {
       fetchedUserIds.add(doc.id);
@@ -78,9 +81,9 @@ async function cleanupTokens(response, tokenDocs) {
 
     if (failedTokens.length > 0) {
       console.log(`Cleaning up ${failedTokens.length} invalid tokens.`);
-      const batch = admin.firestore().batch();
+      const batch = db.batch();
       failedTokens.forEach((userId) => {
-        const ref = admin.firestore().collection('fcm_tokens').doc(userId);
+        const ref = db.collection('fcm_tokens').doc(userId);
         batch.delete(ref);
       });
       await batch.commit();
@@ -90,6 +93,7 @@ async function cleanupTokens(response, tokenDocs) {
 }
 
 exports.sendLectureNotification = functions.firestore
+  .database('ai-studio-1fd860de-3355-4bca-990e-7c49646ae330')
   .document('lectures/{lectureId}')
   .onCreate(async (snap, context) => {
     const lectureData = snap.data();
@@ -138,6 +142,7 @@ exports.sendLectureNotification = functions.firestore
   });
 
 exports.sendAnnouncementNotification = functions.firestore
+  .database('ai-studio-1fd860de-3355-4bca-990e-7c49646ae330')
   .document('announcements/{announcementId}')
   .onCreate(async (snap, context) => {
     const announcementData = snap.data();
@@ -252,7 +257,7 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
       return res.status(200).send('Unsupported message type');
     }
 
-    await admin.firestore().collection('announcements').add(announcement);
+    await db.collection('announcements').add(announcement);
     return res.status(200).send('OK');
   } catch (error) {
     console.error('Error processing Telegram update:', error.response?.data || error.message);
@@ -261,6 +266,7 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
 });
 
 exports.sendHomeworkNotification = functions.firestore
+  .database('ai-studio-1fd860de-3355-4bca-990e-7c49646ae330')
   .document('homeworks/{homeworkId}')
   .onCreate(async (snap, context) => {
     const homeworkData = snap.data();
