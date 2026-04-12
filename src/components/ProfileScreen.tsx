@@ -303,20 +303,6 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </div>
 
           <div className="space-y-4 pt-6 mt-6 border-t border-slate-100 dark:border-zinc-700">
-            <button
-              onClick={() => setShowManageDownloads(true)}
-              className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-zinc-900 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors border border-slate-200 dark:border-zinc-800"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg text-sky-600 dark:text-sky-400">
-                  <HardDrive className="w-5 h-5" />
-                </div>
-                <span className="font-bold text-slate-700 dark:text-slate-300">{t.manageDownloads}</span>
-              </div>
-            </button>
-          </div>
-
-          <div className="space-y-4 pt-6 mt-6 border-t border-slate-100 dark:border-zinc-700">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'اللغة' : 'Language'}</span>
               <div className="flex bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl">
@@ -384,12 +370,6 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </button>
         </div>
       )}
-
-      <ManageDownloadsScreen
-        isOpen={showManageDownloads}
-        onClose={() => setShowManageDownloads(false)}
-        lang={lang}
-      />
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Bell, BookOpen, ClipboardCheck, User } from 'lucide-react';
+import { Bell, BookOpen, ClipboardCheck, User, HardDrive } from 'lucide-react';
 import { Language, TRANSLATIONS } from '../types';
 
-export type Tab = 'announcements' | 'lectures' | 'weekly' | 'profile';
+export type Tab = 'announcements' | 'lectures' | 'weekly' | 'downloads' | 'profile';
 
 interface BottomNavProps {
   currentTab: Tab;
@@ -19,6 +19,7 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
     { id: 'announcements' as Tab, icon: Bell, label: t.navAnnouncements },
     { id: 'lectures' as Tab, icon: BookOpen, label: t.navLectures },
     { id: 'weekly' as Tab, icon: ClipboardCheck, label: t.navWeekly },
+    { id: 'downloads' as Tab, icon: HardDrive, label: t.navDownloads },
     { id: 'profile' as Tab, icon: User, label: t.navProfile },
   ];
 

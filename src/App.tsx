@@ -11,6 +11,8 @@ import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
 import ProfileScreen from './components/ProfileScreen';
+import DownloadsTab from './components/DownloadsTab';
+import SubjectBrowser from './components/SubjectBrowser';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
@@ -291,132 +293,17 @@ export default function App() {
         </div>
       </div>
 
-        {/* Primary Filters (Type) */}
-        <div className="flex flex-wrap gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-          <button
-            onClick={() => setSelectedType('all')}
-            className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
-              selectedType === 'all'
-                ? 'bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 shadow-lg shadow-slate-200 dark:shadow-none'
-                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
-            }`}
-          >
-            {isRtl ? 'الكل' : 'All'}
-          </button>
-          <button
-            onClick={() => setSelectedType('theoretical')}
-            className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
-              selectedType === 'theoretical'
-                ? 'bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 shadow-lg shadow-slate-200 dark:shadow-none'
-                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
-            }`}
-          >
-            {t.theoretical}
-          </button>
-          <button
-            onClick={() => setSelectedType('practical')}
-            className={`px-6 py-3 rounded-2xl text-sm font-black transition-all whitespace-nowrap ${
-              selectedType === 'practical'
-                ? 'bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 shadow-lg shadow-slate-200 dark:shadow-none'
-                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
-            }`}
-          >
-            {t.practical}
-          </button>
-        </div>
-
-        {/* Secondary Filters (Sub-categories) */}
-        <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
-              selectedCategory === 'all'
-                ? 'bg-sky-600 dark:bg-sky-500/20 text-white dark:text-sky-400 shadow-lg shadow-sky-200 dark:shadow-none dark:border dark:border-sky-500/30'
-                : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
-            }`}
-          >
-            {t.allSubjects}
-          </button>
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.value}
-              onClick={() => setSelectedCategory(cat.value)}
-              className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
-                selectedCategory === cat.value
-                  ? 'bg-sky-600 dark:bg-sky-500/20 text-white dark:text-sky-400 shadow-lg shadow-sky-200 dark:shadow-none dark:border dark:border-sky-500/30'
-                  : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700'
-              }`}
-            >
-              {t[cat.labelKey]}
-            </button>
-          ))}
-        </div>
-
-        {/* Sorting Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 bg-white dark:bg-zinc-800 p-4 rounded-2xl border border-slate-100 dark:border-zinc-700 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{t.sortBy}:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortField)}
-              className="bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-stone-100 text-sm rounded-xl focus:ring-sky-500 dark:focus:ring-sky-500 focus:border-sky-500 dark:focus:border-sky-500 block p-2.5 outline-none font-medium"
-            >
-              <option value="date">{t.sortDate}</option>
-              <option value="title">{t.sortTitle}</option>
-              <option value="number">{t.sortNumber}</option>
-            </select>
-          </div>
-          <button
-            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm font-bold text-slate-700 dark:text-stone-100 transition-colors"
-            title={sortOrder === 'asc' ? t.sortAsc : t.sortDesc}
-          >
-            {sortOrder === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-            {sortOrder === 'asc' ? t.sortAsc : t.sortDesc}
-          </button>
-        </div>
-
-        {/* Content */}
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
-            <p className="text-slate-500 dark:text-slate-400 font-medium">{t.loading}</p>
-          </div>
-        ) : filteredLectures.length > 0 ? (
-          <motion.div
-            layout
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-          >
-            <AnimatePresence mode="popLayout">
-              {filteredLectures.map((lecture: Lecture) => (
-                <LectureCard 
-                  key={lecture.id} 
-                  lecture={lecture} 
-                  lang={lang} 
-                  user={user} 
-                  onEdit={(l) => {
-                    setLectureToEdit(l);
-                    setShowUpload(true);
-                  }}
-                />
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-20 text-center bg-white dark:bg-zinc-800 rounded-[2rem] border border-dashed border-slate-300 dark:border-zinc-700"
-          >
-            <div className="bg-slate-50 dark:bg-zinc-900 p-6 rounded-full mb-4">
-              <SearchX className="w-12 h-12 text-slate-300 dark:text-zinc-600" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-1">{t.noLectures}</h3>
-            <p className="text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-              {t.noLecturesDesc}
-            </p>
-          </motion.div>
-        )}
+      <SubjectBrowser
+        lectures={lectures}
+        lang={lang}
+        user={user}
+        searchQuery={searchQuery}
+        isLoading={isLoading}
+        onEdit={(l) => {
+          setLectureToEdit(l);
+          setShowUpload(true);
+        }}
+      />
       </main>
     );
 
@@ -454,6 +341,7 @@ export default function App() {
       {currentTab === 'lectures' && renderLecturesTab()}
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} />}
       {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
+      {currentTab === 'downloads' && <DownloadsTab user={user} lang={lang} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
 
       <AdminUpload 

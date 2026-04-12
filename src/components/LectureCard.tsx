@@ -12,10 +12,11 @@ interface LectureCardProps {
   lang: Language;
   user: UserProfile | null;
   onEdit?: (lecture: Lecture) => void;
+  onRemoveDownload?: (lecture: Lecture) => void;
   key?: string;
 }
 
-export default function LectureCard({ lecture, lang, user, onEdit }: LectureCardProps) {
+export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload }: LectureCardProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [showPreview, setShowPreview] = useState(false);
@@ -113,7 +114,10 @@ export default function LectureCard({ lecture, lang, user, onEdit }: LectureCard
           
           {isDownloaded ? (
             <button
-              onClick={removePDF}
+              onClick={async () => {
+                await removePDF();
+                if (onRemoveDownload) onRemoveDownload(lecture);
+              }}
               className="inline-flex items-center justify-center p-2.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors group"
               title={isRtl ? 'حذف من التنزيلات' : 'Remove offline download'}
             >
