@@ -33,10 +33,21 @@ export interface UserProfile {
   completedWeeklyTasks?: string[];
   streakCount?: number;
   lastActiveDate?: string;
+  examCode?: string;
+  group?: string;
   notificationPreferences?: {
     lectures: boolean;
     announcements: boolean;
   };
+}
+
+export interface Homework {
+  id: string;
+  subject: Category;
+  type: LectureType;
+  lectures: { label: string; lectureId: string }[];
+  note?: string;
+  createdAt: any;
 }
 
 export type Language = 'ar' | 'en';
@@ -125,7 +136,7 @@ export const TRANSLATIONS = {
     postContent: 'محتوى المنشور',
     publishPost: 'نشر',
     noPosts: 'لا توجد تبليغات حالياً',
-    weeklyTasks: 'المهام الأسبوعية',
+    weeklyTasks: 'الواجبات',
     noWeeklyTasks: 'لا توجد واجبات لهذا الأسبوع',
     markCompleted: 'تحديد كمكتمل',
     completed: 'مكتمل',
@@ -134,6 +145,11 @@ export const TRANSLATIONS = {
     clearAll: 'مسح الكل',
     noDownloads: 'لا توجد تنزيلات',
     remove: 'إزالة',
+    postHomework: 'نشر واجب',
+    examLectures: 'محاضرات الامتحان',
+    addLecture: 'إضافة محاضرة',
+    additionalNote: 'ملاحظة إضافية (اختياري)',
+    examIncludes: 'الامتحان يتضمن:',
     confirmClearAll: 'هل أنت متأكد من مسح جميع التنزيلات؟',
   },
   en: {
@@ -219,8 +235,8 @@ export const TRANSLATIONS = {
     postContent: 'Post Content',
     publishPost: 'Publish',
     noPosts: 'No announcements yet',
-    weeklyTasks: 'Weekly Tasks',
-    noWeeklyTasks: 'No tasks for this week',
+    weeklyTasks: 'Homework',
+    noWeeklyTasks: 'No homework for this week',
     markCompleted: 'Mark Completed',
     completed: 'Completed',
     manageDownloads: 'Manage Downloads',
@@ -228,6 +244,11 @@ export const TRANSLATIONS = {
     clearAll: 'Clear All',
     noDownloads: 'No downloads yet',
     remove: 'Remove',
+    postHomework: 'Post Homework',
+    examLectures: 'Exam Lectures',
+    addLecture: 'Add Lecture',
+    additionalNote: 'Additional Note (Optional)',
+    examIncludes: 'Exam includes:',
     confirmClearAll: 'Are you sure you want to clear all downloads?',
   }
 };

@@ -186,3 +186,61 @@ exports.sendAnnouncementNotification = functions.firestore
 
     return null;
   });
+
+exports.sendHomeworkNotification = functions.firestore
+  .document('homeworks/{homeworkId}')
+  .onCreate(async (snap, context) => {
+    const homeworkData = snap.data();
+    const subject = homeworkData.subject || 'Unknown Subject';
+    const type = homeworkData.type === 'theoretical' ? 'نظري' : 'عملي';
+    
+    // Extract lecture numbers
+    const lectureNumbers = homeworkData.lectures
+      .map(l => l.label)
+      .join(', ');
+
+    const title = '📚 واجب جديد!';
+    const body = `${subject} - ${type} | ${lectureNumbers}`;
+
+    console.log('New homework created:', body);
+
+    // Assuming we want to send to everyone who wants announcements for now
+    // Or we could add a specific 'homework' preference later
+    const { tokens, tokenDocs } = await getTokensWithPreferences('announcements');
+
+    if (tokens.length === 0) {
+      console.log('No valid tokens found for homework notifications.');
+      return null;
+    }
+
+    const payload = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      data: {
+        url: `/?tab=weekly`,
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+    };
+
+    console.log(`Sending homework notifications to ${tokens.length} devices.`);
+
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: tokens,
+      notification: payload.notification,
+      data: payload.data,
+      webpush: {
+        fcmOptions: {
+          link: `/?tab=weekly`
+        }
+      }
+    });
+
+    console.log('Successfully sent messages:', response.successCount);
+    console.log('Failed messages:', response.failureCount);
+
+    await cleanupTokens(response, tokenDocs);
+
+    return null;
+  });

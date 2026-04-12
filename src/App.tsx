@@ -87,6 +87,8 @@ export default function App() {
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
               streakCount: userDoc.data().streakCount || 0,
               lastActiveDate: userDoc.data().lastActiveDate || undefined,
+              examCode: userDoc.data().examCode || undefined,
+              group: userDoc.data().group || undefined,
               notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true }
             });
           } else {
@@ -101,7 +103,7 @@ export default function App() {
           }
           setIsAuthReady(true);
         }, (error) => {
-          console.error("Error fetching user role:", error);
+          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
           // Fallback if permission denied
           setUser({
             uid: firebaseUser.uid,
@@ -174,6 +176,8 @@ export default function App() {
           setHasUnreadAnnouncements(true);
         }
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
     return () => unsubscribe();
   }, [currentTab]);
@@ -193,7 +197,7 @@ export default function App() {
       setLectures(docs);
       setIsLoading(false);
     }, (error) => {
-      console.error('Firestore Error:', error);
+      handleFirestoreError(error, OperationType.LIST, 'lectures');
       setIsLoading(false);
     });
 

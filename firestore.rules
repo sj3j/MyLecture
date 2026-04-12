@@ -80,6 +80,8 @@ service cloud.firestore {
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
              (!('streakCount' in data) || data.streakCount is number) &&
              (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
+             (!('examCode' in data) || data.examCode is string) &&
+             (!('group' in data) || data.group is string) &&
              (!('notificationPreferences' in data) || (data.notificationPreferences is map && 
                (!('lectures' in data.notificationPreferences) || data.notificationPreferences.lectures is bool) &&
                (!('announcements' in data.notificationPreferences) || data.notificationPreferences.announcements is bool)));
@@ -118,6 +120,11 @@ service cloud.firestore {
     match /announcements/{postId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
+    }
+    
+    match /homeworks/{homeworkId} {
+      allow read: if true;
+      allow create, update, delete: if isAdminOrModerator();
     }
     
     match /fcm_tokens/{userId} {

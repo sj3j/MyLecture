@@ -22,6 +22,8 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
   
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
+  const [editExamCode, setEditExamCode] = useState(user?.examCode || '');
+  const [editGroup, setEditGroup] = useState(user?.group || '');
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -31,6 +33,8 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
   React.useEffect(() => {
     if (user && !isEditing) {
       setEditName(user.name);
+      setEditExamCode(user.examCode || '');
+      setEditGroup(user.group || '');
       setEditPhotoPreview(user.photoUrl || null);
     }
   }, [user, isEditing]);
@@ -136,6 +140,8 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
         name: editName.trim(),
         role: user.role,
         email: user.email,
+        examCode: editExamCode.trim(),
+        group: editGroup.trim(),
         ...(photoUrl ? { photoUrl } : {})
       }, { merge: true });
 
@@ -217,17 +223,54 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
             
             <div className="flex-1 min-w-0">
               {isEditing ? (
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100 mb-1"
-                  placeholder={isRtl ? 'الاسم' : 'Name'}
-                />
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
+                    placeholder={isRtl ? 'الاسم' : 'Name'}
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={editExamCode}
+                      onChange={(e) => setEditExamCode(e.target.value)}
+                      className="w-1/2 px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
+                      placeholder={isRtl ? 'الكود الامتحاني' : 'Exam Code'}
+                    />
+                    <select
+                      value={editGroup}
+                      onChange={(e) => setEditGroup(e.target.value)}
+                      className="w-1/2 px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none font-bold text-slate-900 dark:text-stone-100"
+                    >
+                      <option value="">{isRtl ? 'الكروب' : 'Group'}</option>
+                      {['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4', 'C1', 'C2', 'C3', 'C4', 'D1', 'D2', 'D3', 'D4'].map(g => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               ) : (
-                <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100 truncate">{user.name}</h2>
+                <>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100 truncate">{user.name}</h2>
+                  {(user.examCode || user.group) && (
+                    <div className="flex items-center gap-2 mt-2 mb-1">
+                      {user.examCode && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-lg font-black border border-indigo-100 dark:border-indigo-800">
+                          {user.examCode}
+                        </span>
+                      )}
+                      {user.group && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-lg font-black border border-emerald-100 dark:border-emerald-800">
+                          {user.group}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
-              <p className="text-slate-500 dark:text-slate-400 text-sm truncate">{user.email}</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm truncate mt-1">{user.email}</p>
               {user.role === 'admin' && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 text-xs font-bold mt-2">
                   <Shield className="w-3 h-3" />
@@ -251,6 +294,8 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                         setIsEditing(false);
                         setEditName(user.name);
                         setEditPhotoPreview(user.photoUrl || null);
+                        setEditExamCode(user.examCode || '');
+                        setEditGroup(user.group || '');
                         setEditPhotoFile(null);
                         setError('');
                       }}

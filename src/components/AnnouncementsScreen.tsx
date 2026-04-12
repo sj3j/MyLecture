@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Post, Language, TRANSLATIONS, UserProfile } from '../types';
 import { Loader2, Megaphone, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -34,6 +34,8 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
       setPosts(docs);
       setIsLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
     return () => unsubscribe();
   }, []);

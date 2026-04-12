@@ -26,8 +26,12 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           <div className="flex items-center gap-2">
-            <div className="bg-sky-600 dark:bg-sky-500 p-2 rounded-xl">
-              <BookOpen className="w-6 h-6 text-white dark:text-zinc-900" />
+            <div className="w-10 h-10 overflow-hidden rounded-xl bg-sky-50 dark:bg-sky-900/20 flex items-center justify-center">
+              <img src="/icon.png" alt="Logo" className="w-8 h-8 object-contain" onError={(e) => {
+                // Fallback if image is not found
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-sky-600 dark:text-sky-400"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>';
+              }} />
             </div>
             <span className="text-xl font-black text-slate-900 dark:text-stone-100 hidden sm:block">{t.appName}</span>
           </div>
