@@ -22,6 +22,11 @@ export interface Post {
   createdBy: string;
   authorName: string;
   authorPhotoUrl?: string;
+  type?: 'text' | 'image' | 'video';
+  text?: string;
+  date?: any;
+  imageUrl?: string;
+  videoUrl?: string;
 }
 
 export interface UserProfile {

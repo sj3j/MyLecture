@@ -1,5 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const axios = require('axios');
 
 admin.initializeApp();
 
@@ -140,7 +141,7 @@ exports.sendAnnouncementNotification = functions.firestore
   .document('announcements/{announcementId}')
   .onCreate(async (snap, context) => {
     const announcementData = snap.data();
-    let content = announcementData.content || 'New Announcement';
+    let content = announcementData.text || announcementData.content || 'إعلان جديد';
     // Truncate content for notification body
     if (content.length > 100) {
       content = content.substring(0, 97) + '...';
@@ -157,7 +158,7 @@ exports.sendAnnouncementNotification = functions.firestore
 
     const payload = {
       notification: {
-        title: 'New Announcement!',
+        title: 'إعلان جديد 📢',
         body: content,
       },
       data: {
@@ -186,6 +187,78 @@ exports.sendAnnouncementNotification = functions.firestore
 
     return null;
   });
+
+exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const channelId = process.env.TELEGRAM_CHANNEL_ID;
+
+  const update = req.body;
+  
+  // Telegram sends channel posts as 'channel_post'
+  if (!update || !update.channel_post) {
+    return res.status(200).send('Not a channel post');
+  }
+
+  const post = update.channel_post;
+  
+  // Filter by channel ID or username
+  if (channelId) {
+    const chat = post.chat;
+    const isMatch = String(chat.id) === String(channelId) || 
+                    (chat.username && chat.username === channelId.replace('@', ''));
+    
+    if (!isMatch) {
+      console.log('Message from unauthorized channel:', chat.id, chat.username);
+      return res.status(200).send('Unauthorized channel');
+    }
+  }
+
+  let announcement = {
+    date: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(), // For backward compatibility
+    type: 'text',
+    text: '',
+    content: '', // For backward compatibility
+    createdBy: 'telegram_bot',
+    authorName: 'Telegram Channel',
+  };
+
+  try {
+    if (post.text) {
+      announcement.type = 'text';
+      announcement.text = post.text;
+      announcement.content = post.text;
+    } else if (post.photo) {
+      announcement.type = 'image';
+      announcement.text = post.caption || '';
+      announcement.content = post.caption || '';
+      
+      const photo = post.photo[post.photo.length - 1];
+      const fileId = photo.file_id;
+      
+      const fileResponse = await axios.get(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
+      const filePath = fileResponse.data.result.file_path;
+      announcement.imageUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+    } else if (post.video) {
+      announcement.type = 'video';
+      announcement.text = post.caption || '';
+      announcement.content = post.caption || '';
+      
+      const fileId = post.video.file_id;
+      const fileResponse = await axios.get(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
+      const filePath = fileResponse.data.result.file_path;
+      announcement.videoUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+    } else {
+      return res.status(200).send('Unsupported message type');
+    }
+
+    await admin.firestore().collection('announcements').add(announcement);
+    return res.status(200).send('OK');
+  } catch (error) {
+    console.error('Error processing Telegram update:', error.response?.data || error.message);
+    return res.status(200).send('Error but acknowledged'); // Acknowledge to Telegram to stop retries
+  }
+});
 
 exports.sendHomeworkNotification = functions.firestore
   .document('homeworks/{homeworkId}')

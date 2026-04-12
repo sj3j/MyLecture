@@ -59,6 +59,55 @@
         }
       },
       "required": ["name", "email", "role"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "An announcement post, potentially synced from Telegram.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The text content of the announcement."
+        },
+        "content": {
+          "type": "string",
+          "description": "Alias for text (backward compatibility)."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["text", "image", "video"],
+          "description": "The type of announcement content."
+        },
+        "imageUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional URL for an image."
+        },
+        "videoUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional URL for a video."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp of the announcement."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Alias for date (backward compatibility)."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "The source or user who created the announcement."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "The name of the author (e.g., Telegram Channel)."
+        }
+      },
+      "required": ["type", "createdBy", "authorName"]
     }
   },
   "firestore": {
@@ -69,6 +118,10 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection of user profiles."
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Collection of announcements and notifications."
     }
   }
 }

@@ -173,7 +173,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                 <div className="flex-1">
                   <h3 className="font-bold text-slate-900 dark:text-stone-100">{post.authorName}</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {post.createdAt?.toDate ? post.createdAt.toDate().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+                    {(post.date?.toDate || post.createdAt?.toDate) ? (post.date || post.createdAt).toDate().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
                       year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                     }) : ''}
                   </p>
@@ -222,7 +222,32 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                   </div>
                 </div>
               ) : (
-                <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{post.content}</p>
+                <div className="space-y-3">
+                  <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+                    {post.text || post.content}
+                  </p>
+                  
+                  {post.type === 'image' && post.imageUrl && (
+                    <div className="rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700">
+                      <img 
+                        src={post.imageUrl} 
+                        alt="Announcement" 
+                        className="w-full h-auto max-h-[400px] object-contain bg-slate-50 dark:bg-zinc-900 mx-auto" 
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  )}
+                  
+                  {post.type === 'video' && post.videoUrl && (
+                    <div className="rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700">
+                      <video 
+                        src={post.videoUrl} 
+                        controls 
+                        className="w-full h-auto max-h-[400px] bg-black mx-auto"
+                      />
+                    </div>
+                  )}
+                </div>
               )}
             </motion.div>
           ))}
