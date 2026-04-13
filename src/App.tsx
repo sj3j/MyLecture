@@ -91,6 +91,7 @@ export default function App() {
               group: userDoc.data().group || undefined,
               favorites: userDoc.data().favorites || [],
               studied: userDoc.data().studied || [],
+              completedWeeklyTasks: userDoc.data().completedWeeklyTasks || [],
               notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true }
             });
           } else {
@@ -102,6 +103,7 @@ export default function App() {
               photoUrl: firebaseUser.photoURL || undefined,
               favorites: [],
               studied: [],
+              completedWeeklyTasks: [],
               notificationPreferences: { lectures: true, announcements: true }
             });
           }
@@ -117,6 +119,7 @@ export default function App() {
             photoUrl: firebaseUser.photoURL || undefined,
             favorites: [],
             studied: [],
+            completedWeeklyTasks: [],
             notificationPreferences: { lectures: true, announcements: true }
           });
           setIsAuthReady(true);
@@ -199,7 +202,7 @@ export default function App() {
   useEffect(() => {
     const q = query(collection(db, 'lectures'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Lecture));
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Lecture));
       setLectures(docs);
       setIsLoading(false);
     }, (error) => {

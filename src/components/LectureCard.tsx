@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, deleteDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, deleteDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useOfflinePDF } from '../hooks/useOfflinePDF';
@@ -37,10 +37,10 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
     try {
       const userRef = doc(db, 'users', user.uid);
       if (isFavorite) {
-        await updateDoc(userRef, { favorites: arrayRemove(lecture.id) });
+        await setDoc(userRef, { favorites: arrayRemove(lecture.id) }, { merge: true });
         if (onRemoveDownload) onRemoveDownload(lecture);
       } else {
-        await updateDoc(userRef, { favorites: arrayUnion(lecture.id) });
+        await setDoc(userRef, { favorites: arrayUnion(lecture.id) }, { merge: true });
       }
     } catch (error) {
       console.error('Error toggling favorite:', error);
@@ -52,9 +52,9 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
     try {
       const userRef = doc(db, 'users', user.uid);
       if (isStudied) {
-        await updateDoc(userRef, { studied: arrayRemove(lecture.id) });
+        await setDoc(userRef, { studied: arrayRemove(lecture.id) }, { merge: true });
       } else {
-        await updateDoc(userRef, { studied: arrayUnion(lecture.id) });
+        await setDoc(userRef, { studied: arrayUnion(lecture.id) }, { merge: true });
       }
     } catch (error) {
       console.error('Error toggling studied:', error);

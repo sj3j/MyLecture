@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES, Homework } from '../types';
-import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Camera, Image as ImageIcon } from 'lucide-react';
+import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Camera, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface WeeklyListScreenProps {
@@ -34,12 +34,14 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const [allLectures, setAllLectures] = useState<Lecture[]>([]);
   const [lectureSearch, setLectureSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [homeworkToDelete, setHomeworkToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     // Load homeworks
     const q = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Homework));
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Homework));
       setHomeworks(docs);
       setIsLoading(false);
     }, (error) => {
@@ -159,12 +161,26 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
     try {
       const userRef = doc(db, 'users', user.uid);
       if (isCompleted) {
-        await updateDoc(userRef, { completedWeeklyTasks: arrayRemove(homeworkId) });
+        await setDoc(userRef, { completedWeeklyTasks: arrayRemove(homeworkId) }, { merge: true });
       } else {
-        await updateDoc(userRef, { completedWeeklyTasks: arrayUnion(homeworkId) });
+        await setDoc(userRef, { completedWeeklyTasks: arrayUnion(homeworkId) }, { merge: true });
       }
     } catch (error) {
       console.error('Error toggling complete:', error);
+    }
+  };
+
+  const handleDeleteHomework = async () => {
+    if (!homeworkToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'homeworks', homeworkToDelete));
+      setHomeworkToDelete(null);
+    } catch (error) {
+      console.error('Error deleting homework:', error);
+      alert(t.errorUnknown);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -236,6 +252,51 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {homeworkToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-zinc-800 rounded-3xl p-6 max-w-sm w-full shadow-xl border border-slate-200 dark:border-zinc-700"
+            >
+              <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mb-4 mx-auto">
+                <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-xl font-bold text-center text-slate-900 dark:text-stone-100 mb-2">
+                {isRtl ? 'حذف الواجب' : 'Delete Homework'}
+              </h3>
+              <p className="text-center text-slate-500 dark:text-slate-400 mb-6">
+                {t.confirmDeleteHomework || (isRtl ? 'هل أنت متأكد من حذف هذا الواجب؟' : 'Are you sure you want to delete this homework?')}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setHomeworkToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors"
+                >
+                  {t.close || (isRtl ? 'إلغاء' : 'Cancel')}
+                </button>
+                <button
+                  onClick={handleDeleteHomework}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                  {t.delete || (isRtl ? 'حذف' : 'Delete')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showAdminForm && (
@@ -404,7 +465,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                       </span>
                     )}
                   </div>
-                  {hw.createdAt && (
+                  {hw.createdAt?.toDate && (
                     <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
                       <Calendar className="w-3 h-3" />
                       {hw.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' })}
@@ -412,19 +473,30 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                   )}
                 </div>
                 
-                {user && (
-                  <button
-                    onClick={() => handleToggleComplete(hw.id)}
-                    className={`p-2 rounded-xl transition-colors ${
-                      isCompleted
-                        ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/70'
-                        : 'bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-600 hover:text-emerald-500'
-                    }`}
-                    title={isCompleted ? (isRtl ? 'إلغاء الاكتمال' : 'Mark as incomplete') : (t.markCompleted || (isRtl ? 'تحديد كمكتمل' : 'Mark as completed'))}
-                  >
-                    <ClipboardCheck className="w-5 h-5" />
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {user && ['admin', 'moderator'].includes(user.role) && (
+                    <button
+                      onClick={() => setHomeworkToDelete(hw.id)}
+                      className="p-2 rounded-xl transition-colors bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400"
+                      title={t.delete || (isRtl ? 'حذف' : 'Delete')}
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  )}
+                  {user && (
+                    <button
+                      onClick={() => handleToggleComplete(hw.id)}
+                      className={`p-2 rounded-xl transition-colors ${
+                        isCompleted
+                          ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/70'
+                          : 'bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-600 hover:text-emerald-500'
+                      }`}
+                      title={isCompleted ? (isRtl ? 'إلغاء الاكتمال' : 'Mark as incomplete') : (t.markCompleted || (isRtl ? 'تحديد كمكتمل' : 'Mark as completed'))}
+                    >
+                      <ClipboardCheck className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-2xl p-4 mb-4 border border-slate-100 dark:border-zinc-800">

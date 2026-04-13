@@ -160,9 +160,9 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
     const newPrefs = { ...currentPrefs, [type]: !currentPrefs[type] };
     
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, 'users', user.uid), {
         notificationPreferences: newPrefs
-      });
+      }, { merge: true });
     } catch (error) {
       console.error('Error updating notification preferences:', error);
     }

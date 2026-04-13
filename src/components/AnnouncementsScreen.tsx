@@ -31,7 +31,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
   useEffect(() => {
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Post));
       setPosts(docs);
       setIsLoading(false);
     }, (error) => {
