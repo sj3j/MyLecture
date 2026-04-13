@@ -64,7 +64,20 @@ export function usePushNotifications(user: UserProfile | null) {
         // Handle foreground messages
         onMessage(msg, (payload) => {
           console.log('Message received. ', payload);
-          // You could show a toast notification here
+          
+          // Show a native notification even when the app is in the foreground
+          if (Notification.permission === 'granted') {
+            const title = payload.notification?.title || 'New Notification';
+            const options = {
+              body: payload.notification?.body || '',
+              icon: '/icon-192.png',
+              data: payload.data,
+            };
+            
+            navigator.serviceWorker.ready.then((registration) => {
+              registration.showNotification(title, options);
+            });
+          }
         });
       } catch (error) {
         console.error('Error setting up foreground listener:', error);
