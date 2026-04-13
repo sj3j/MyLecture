@@ -95,7 +95,7 @@ async function cleanupTokens(response, tokenDocs) {
 
 exports.sendLectureNotificationV3 = onDocumentCreated({
   document: 'lectures/{lectureId}',
-  database: '(default)'
+  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -146,7 +146,7 @@ exports.sendLectureNotificationV3 = onDocumentCreated({
 
 exports.sendAnnouncementNotificationV3 = onDocumentCreated({
   document: 'announcements/{announcementId}',
-  database: '(default)'
+  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -272,7 +272,7 @@ exports.telegramWebhookV3 = onRequest(async (req, res) => {
 
 exports.sendHomeworkNotificationV3 = onDocumentCreated({
   document: 'homeworks/{homeworkId}',
-  database: '(default)'
+  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
