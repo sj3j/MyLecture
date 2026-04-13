@@ -64,14 +64,14 @@ export default defineConfig(({mode}) => {
           theme_color: '#0284c7',
           icons: [
             {
-              src: '/icon.png',
+              src: '/icon.svg',
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/svg+xml'
             },
             {
-              src: '/icon.png',
+              src: '/icon.svg',
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/svg+xml'
             }
           ]
         }
