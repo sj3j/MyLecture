@@ -6,7 +6,7 @@ const axios = require('axios');
 admin.initializeApp();
 
 const db = admin.firestore();
-db.settings({ databaseId: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330' });
+db.settings({ databaseId: '(default)' });
 
 async function getTokensWithPreferences(preferenceKey) {
   const tokensSnapshot = await db.collection('fcm_tokens').get();
@@ -95,7 +95,7 @@ async function cleanupTokens(response, tokenDocs) {
 
 exports.sendLectureNotification = onDocumentCreated({
   document: 'lectures/{lectureId}',
-  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
+  database: '(default)'
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -146,7 +146,7 @@ exports.sendLectureNotification = onDocumentCreated({
 
 exports.sendAnnouncementNotification = onDocumentCreated({
   document: 'announcements/{announcementId}',
-  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
+  database: '(default)'
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -272,7 +272,7 @@ exports.telegramWebhook = onRequest(async (req, res) => {
 
 exports.sendHomeworkNotification = onDocumentCreated({
   document: 'homeworks/{homeworkId}',
-  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
+  database: '(default)'
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
