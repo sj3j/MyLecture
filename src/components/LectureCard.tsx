@@ -92,61 +92,61 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="group bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 p-5 hover:shadow-xl hover:shadow-slate-200 dark:hover:shadow-none hover:border-sky-200 dark:hover:border-sky-500/50 transition-all duration-300 flex flex-col h-full"
+        className="group bg-white dark:bg-zinc-800 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-zinc-700 p-2.5 sm:p-5 hover:shadow-xl hover:shadow-slate-200 dark:hover:shadow-none hover:border-sky-200 dark:hover:border-sky-500/50 transition-all duration-300 flex flex-col h-full"
         dir={isRtl ? 'rtl' : 'ltr'}
       >
-        <div className="flex justify-between items-start mb-4">
-          <div className={ `p-3 rounded-xl ${lecture.type === 'theoretical' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}` }>
-            <FileText className="w-6 h-6" />
+        <div className="flex justify-between items-start mb-2 sm:mb-4">
+          <div className={ `p-1.5 sm:p-3 rounded-lg sm:rounded-xl ${lecture.type === 'theoretical' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}` }>
+            <FileText className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <span className={ `text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.type === 'theoretical' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300'}` }>
+          <div className="flex flex-col sm:flex-row items-end gap-1 sm:gap-2 flex-wrap justify-end">
+            <span className={ `text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider ${lecture.type === 'theoretical' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300'}` }>
               {lecture.type === 'theoretical' ? t.theoretical : t.practical}
             </span>
             {lecture.number && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+              <span className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
                 {isRtl ? 'محاضرة' : 'Lecture'} {lecture.number}
               </span>
             )}
             {lecture.version && (
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${lecture.version === 'translated' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'}`}>
+              <span className={`text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider ${lecture.version === 'translated' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'}`}>
                 {lecture.version === 'translated' ? t.translated : t.original}
               </span>
             )}
             {isStudied && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 flex items-center gap-1">
-                <CheckCircle className="w-3 h-3" />
+              <span className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 flex items-center gap-1">
+                <CheckCircle className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t.studied}
               </span>
             )}
           </div>
         </div>
 
-        <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100 mb-2 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors line-clamp-2">
+        <h3 className="text-[13px] sm:text-lg font-bold text-slate-900 dark:text-stone-100 mb-1 sm:mb-2 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors line-clamp-2 leading-tight sm:leading-normal">
           {lecture.title}
         </h3>
         
-        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 line-clamp-3 flex-grow">
+        <p className="text-[11px] sm:text-sm text-slate-500 dark:text-slate-400 mb-2 sm:mb-4 line-clamp-2 sm:line-clamp-3 flex-grow">
           {lecture.description || ''}
         </p>
 
-        <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-zinc-700">
-          <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
-            <Tag className="w-3.5 h-3.5" />
-            <span>{categoryLabel}</span>
+        <div className="space-y-1 sm:space-y-3 pt-2 sm:pt-4 border-t border-slate-100 dark:border-zinc-700">
+          <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">
+            <Tag className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span className="truncate">{categoryLabel}</span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
-            <Clock className="w-3.5 h-3.5" />
-            <span>{date}</span>
+          <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">
+            <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span className="truncate">{date}</span>
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2">
+        <div className="mt-3 sm:mt-6 flex flex-wrap gap-1 sm:gap-2">
           <button
             onClick={() => setShowPreview(true)}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 rounded-xl hover:bg-slate-800 dark:hover:bg-white transition-colors text-sm font-semibold min-w-[100px]"
+            className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-4 sm:py-2.5 bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 rounded-lg sm:rounded-xl hover:bg-slate-800 dark:hover:bg-white transition-colors text-[11px] sm:text-sm font-semibold min-w-0 sm:min-w-[100px]"
           >
-            <Maximize2 className="w-4 h-4" />
+            <Maximize2 className="w-3 h-3 sm:w-4 sm:h-4" />
             {t.view}
           </button>
           
@@ -154,17 +154,17 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
             <>
               <button
                 onClick={handleToggleFavorite}
-                className={`inline-flex items-center justify-center p-2.5 rounded-xl transition-colors ${isFavorite ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-rose-500'}`}
+                className={`inline-flex items-center justify-center p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-colors ${isFavorite ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-rose-500'}`}
                 title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
               >
-                <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+                <Heart className={`w-3.5 h-3.5 sm:w-5 sm:h-5 ${isFavorite ? 'fill-current' : ''}`} />
               </button>
               <button
                 onClick={handleToggleStudied}
-                className={`inline-flex items-center justify-center p-2.5 rounded-xl transition-colors ${isStudied ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-green-500'}`}
+                className={`inline-flex items-center justify-center p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-colors ${isStudied ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-green-500'}`}
                 title={isStudied ? t.unmarkStudied : t.markStudied}
               >
-                <CheckCircle2 className={`w-5 h-5 ${isStudied ? 'fill-current' : ''}`} />
+                <CheckCircle2 className={`w-3.5 h-3.5 sm:w-5 sm:h-5 ${isStudied ? 'fill-current' : ''}`} />
               </button>
             </>
           )}
@@ -175,26 +175,26 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                 await removePDF();
                 if (onRemoveDownload) onRemoveDownload(lecture);
               }}
-              className="inline-flex items-center justify-center p-2.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors group"
+              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg sm:rounded-xl hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors group"
               title={isRtl ? 'حذف من التنزيلات' : 'Remove offline download'}
             >
-              <CheckCircle2 className="w-5 h-5 group-hover:hidden" />
-              <CloudOff className="w-5 h-5 hidden group-hover:block" />
+              <CheckCircle2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 group-hover:hidden" />
+              <CloudOff className="w-3.5 h-3.5 sm:w-5 sm:h-5 hidden group-hover:block" />
             </button>
           ) : (
             <button
               onClick={downloadPDF}
               disabled={isDownloading}
-              className="inline-flex items-center justify-center p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-50 relative overflow-hidden"
+              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-lg sm:rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-50 relative overflow-hidden"
               title={isRtl ? 'تنزيل للمشاهدة بدون إنترنت' : 'Download for offline viewing'}
             >
               {isDownloading ? (
                 <>
                   <div className="absolute inset-0 bg-sky-200 dark:bg-sky-800/50" style={{ width: `${downloadProgress}%`, transition: 'width 0.3s' }} />
-                  <Loader2 className="w-5 h-5 animate-spin relative z-10" />
+                  <Loader2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 animate-spin relative z-10" />
                 </>
               ) : (
-                <CloudDownload className="w-5 h-5 relative z-10" />
+                <CloudDownload className="w-3.5 h-3.5 sm:w-5 sm:h-5 relative z-10" />
               )}
             </button>
           )}
@@ -202,26 +202,26 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
           <a
             href={lecture.pdfUrl}
             download
-            className="inline-flex items-center justify-center p-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+            className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 rounded-lg sm:rounded-xl hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
             title={t.download}
           >
-            <Download className="w-5 h-5" />
+            <Download className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
           </a>
           {user && ['admin', 'moderator'].includes(user.role) && (
             <>
               <button
                 onClick={() => onEdit?.(lecture)}
-                className="inline-flex items-center justify-center p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg sm:rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
                 title={t.editLecture}
               >
-                <Edit2 className="w-5 h-5" />
+                <Edit2 className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                className="inline-flex items-center justify-center p-2.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+                className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg sm:rounded-xl hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
                 title={t.deleteLecture}
               >
-                <Trash2 className="w-5 h-5" />
+                <Trash2 className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
               </button>
             </>
           )}

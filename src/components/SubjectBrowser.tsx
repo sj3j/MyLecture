@@ -87,7 +87,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
             </button>
           </div>
         </div>
-        <div className={`grid gap-6 px-4 sm:px-0 ${
+        <div className={`grid gap-2 sm:gap-4 md:gap-6 px-2 sm:px-0 ${
           gridColumns === 1 ? 'grid-cols-1' : 
           gridColumns === 2 ? 'grid-cols-2' : 
           'grid-cols-3'
@@ -221,7 +221,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
               </button>
             </div>
           </div>
-          <motion.div layout className={`grid gap-6 ${
+          <motion.div layout className={`grid gap-2 sm:gap-4 md:gap-6 px-2 sm:px-0 ${
             gridColumns === 1 ? 'grid-cols-1' : 
             gridColumns === 2 ? 'grid-cols-2' : 
             'grid-cols-3'
