@@ -13,6 +13,7 @@ export default defineConfig(({mode}) => {
       VitePWA({
         registerType: 'autoUpdate',
         workbox: {
+          importScripts: ['/firebase-messaging-sw.js'],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           maximumFileSizeToCacheInBytes: 5000000,
           runtimeCaching: [
@@ -101,6 +102,18 @@ export default defineConfig(({mode}) => {
               label: 'Desktop view'
             }
           ],
+          shortcuts: [
+            { name: 'محاضرات', url: '/lectures', icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
+            { name: 'واجبات', url: '/homeworks', icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
+            { name: 'إعلانات', url: '/announcements', icons: [{ src: '/icon-192.png', sizes: '192x192' }] }
+          ],
+          share_target: {
+            action: '/share',
+            method: 'POST',
+            enctype: 'multipart/form-data',
+            params: { title: 'title', text: 'text', url: 'url' }
+          },
+          display_override: ['window-controls-overlay', 'standalone'],
           prefer_related_applications: false
         }
       })

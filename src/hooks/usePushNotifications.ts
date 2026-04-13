@@ -27,7 +27,12 @@ export function usePushNotifications(user: UserProfile | null) {
 
       if (perm === 'granted') {
         console.log('Notification permission granted.');
+        
+        // Get the service worker registration registered by vite-plugin-pwa
+        const registration = await navigator.serviceWorker.ready;
+
         const currentToken = await getToken(msg, {
+          serviceWorkerRegistration: registration,
           // vapidKey: 'YOUR_PUBLIC_VAPID_KEY_HERE'
         });
 
