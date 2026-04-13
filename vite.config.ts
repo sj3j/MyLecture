@@ -114,7 +114,11 @@ export default defineConfig(({mode}) => {
             params: { title: 'title', text: 'text', url: 'url' }
           },
           display_override: ['window-controls-overlay', 'standalone'],
-          prefer_related_applications: false
+          prefer_related_applications: false,
+          iarc_rating_id: 'e84b072d-71b3-4d3e-86ae-31a8ce4e53b7',
+          scope_extensions: [
+            { origin: 'https://my-lecture.vercel.app' }
+          ]
         }
       })
     ],
