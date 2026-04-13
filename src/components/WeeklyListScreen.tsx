@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES, Homework } from '../types';
@@ -55,15 +55,17 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       handleFirestoreError(error, OperationType.GET, 'settings/weekly_schedule');
     });
 
-    // Load all lectures for admin dropdown
-    if (user && ['admin', 'moderator'].includes(user.role)) {
-      const fetchLectures = async () => {
+    // Load all lectures for everyone (needed for links and admin dropdown)
+    const fetchLectures = async () => {
+      try {
         const lecturesSnapshot = await getDocs(collection(db, 'lectures'));
         const lecturesData = lecturesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Lecture));
         setAllLectures(lecturesData);
-      };
-      fetchLectures();
-    }
+      } catch (error) {
+        console.error('Error fetching lectures:', error);
+      }
+    };
+    fetchLectures();
 
     return () => {
       unsubscribe();
@@ -148,6 +150,21 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       alert(t.errorUnknown);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleComplete = async (homeworkId: string) => {
+    if (!user) return;
+    const isCompleted = user.completedWeeklyTasks?.includes(homeworkId);
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      if (isCompleted) {
+        await updateDoc(userRef, { completedWeeklyTasks: arrayRemove(homeworkId) });
+      } else {
+        await updateDoc(userRef, { completedWeeklyTasks: arrayUnion(homeworkId) });
+      }
+    } catch (error) {
+      console.error('Error toggling complete:', error);
     }
   };
 
@@ -353,13 +370,19 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
         </div>
       ) : homeworks.length > 0 ? (
         <div className="space-y-4">
-          {homeworks.map(hw => (
+          {homeworks.map(hw => {
+            const isCompleted = user?.completedWeeklyTasks?.includes(hw.id) || false;
+            return (
             <motion.div
               layout
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               key={hw.id}
-              className="bg-white dark:bg-zinc-800 p-5 sm:p-6 rounded-3xl border border-slate-200 dark:border-zinc-700 shadow-sm"
+              className={`bg-white dark:bg-zinc-800 p-5 sm:p-6 rounded-3xl border shadow-sm transition-all ${
+                isCompleted 
+                  ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/10' 
+                  : 'border-slate-200 dark:border-zinc-700'
+              }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -374,6 +397,12 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                     }`}>
                       {hw.type === 'theoretical' ? t.theoretical : t.practical}
                     </span>
+                    {isCompleted && (
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold uppercase bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                        <ClipboardCheck className="w-3 h-3" />
+                        {t.completed || (isRtl ? 'مكتمل' : 'Completed')}
+                      </span>
+                    )}
                   </div>
                   {hw.createdAt && (
                     <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -382,6 +411,20 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                     </div>
                   )}
                 </div>
+                
+                {user && (
+                  <button
+                    onClick={() => handleToggleComplete(hw.id)}
+                    className={`p-2 rounded-xl transition-colors ${
+                      isCompleted
+                        ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/70'
+                        : 'bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-600 hover:text-emerald-500'
+                    }`}
+                    title={isCompleted ? (isRtl ? 'إلغاء الاكتمال' : 'Mark as incomplete') : (t.markCompleted || (isRtl ? 'تحديد كمكتمل' : 'Mark as completed'))}
+                  >
+                    <ClipboardCheck className="w-5 h-5" />
+                  </button>
+                )}
               </div>
 
               <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-2xl p-4 mb-4 border border-slate-100 dark:border-zinc-800">
@@ -417,7 +460,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                 </div>
               )}
             </motion.div>
-          ))}
+          )})}
         </div>
       ) : (
         <div className="text-center py-12 bg-white dark:bg-zinc-800 rounded-3xl border border-slate-200 dark:border-zinc-700 border-dashed">

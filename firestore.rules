@@ -78,6 +78,8 @@ service cloud.firestore {
              data.role in ['admin', 'moderator', 'student'] &&
              (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
+             (!('favorites' in data) || data.favorites is list) &&
+             (!('studied' in data) || data.studied is list) &&
              (!('streakCount' in data) || data.streakCount is number) &&
              (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
              (!('examCode' in data) || data.examCode is string) &&

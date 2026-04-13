@@ -89,6 +89,8 @@ export default function App() {
               lastActiveDate: userDoc.data().lastActiveDate || undefined,
               examCode: userDoc.data().examCode || undefined,
               group: userDoc.data().group || undefined,
+              favorites: userDoc.data().favorites || [],
+              studied: userDoc.data().studied || [],
               notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true }
             });
           } else {
@@ -98,6 +100,8 @@ export default function App() {
               email: firebaseUser.email || '',
               role: isMasterAdmin ? 'admin' : 'student',
               photoUrl: firebaseUser.photoURL || undefined,
+              favorites: [],
+              studied: [],
               notificationPreferences: { lectures: true, announcements: true }
             });
           }
@@ -111,6 +115,8 @@ export default function App() {
             email: firebaseUser.email || '',
             role: isMasterAdmin ? 'admin' : 'student',
             photoUrl: firebaseUser.photoURL || undefined,
+            favorites: [],
+            studied: [],
             notificationPreferences: { lectures: true, announcements: true }
           });
           setIsAuthReady(true);

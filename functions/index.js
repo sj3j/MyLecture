@@ -1,4 +1,5 @@
-const functions = require('firebase-functions');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const axios = require('axios');
 
@@ -92,13 +93,15 @@ async function cleanupTokens(response, tokenDocs) {
   }
 }
 
-exports.sendLectureNotification = functions.firestore
-  .database('ai-studio-1fd860de-3355-4bca-990e-7c49646ae330')
-  .document('lectures/{lectureId}')
-  .onCreate(async (snap, context) => {
+exports.sendLectureNotification = onDocumentCreated({
+  document: 'lectures/{lectureId}',
+  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
+}, async (event) => {
+    const snap = event.data;
+    if (!snap) return;
     const lectureData = snap.data();
     const lectureTitle = lectureData.title || 'New Lecture';
-    const lectureId = context.params.lectureId;
+    const lectureId = event.params.lectureId;
 
     console.log('New lecture created:', lectureTitle);
 
@@ -141,10 +144,12 @@ exports.sendLectureNotification = functions.firestore
     return null;
   });
 
-exports.sendAnnouncementNotification = functions.firestore
-  .database('ai-studio-1fd860de-3355-4bca-990e-7c49646ae330')
-  .document('announcements/{announcementId}')
-  .onCreate(async (snap, context) => {
+exports.sendAnnouncementNotification = onDocumentCreated({
+  document: 'announcements/{announcementId}',
+  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
+}, async (event) => {
+    const snap = event.data;
+    if (!snap) return;
     const announcementData = snap.data();
     let content = announcementData.text || announcementData.content || 'إعلان جديد';
     // Truncate content for notification body
@@ -193,7 +198,7 @@ exports.sendAnnouncementNotification = functions.firestore
     return null;
   });
 
-exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
+exports.telegramWebhook = onRequest(async (req, res) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const channelId = process.env.TELEGRAM_CHANNEL_ID;
 
@@ -265,12 +270,23 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
   }
 });
 
-exports.sendHomeworkNotification = functions.firestore
-  .database('ai-studio-1fd860de-3355-4bca-990e-7c49646ae330')
-  .document('homeworks/{homeworkId}')
-  .onCreate(async (snap, context) => {
+exports.sendHomeworkNotification = onDocumentCreated({
+  document: 'homeworks/{homeworkId}',
+  database: 'ai-studio-1fd860de-3355-4bca-990e-7c49646ae330'
+}, async (event) => {
+    const snap = event.data;
+    if (!snap) return;
     const homeworkData = snap.data();
-    const subject = homeworkData.subject || 'Unknown Subject';
+    
+    // Translate subject to Arabic
+    const subjectMap = {
+      'pharmacology': 'فارما',
+      'pharmacognosy': 'عقاقير',
+      'organic_chemistry': 'عضوية',
+      'biochemistry': 'بايو',
+      'cosmetics': 'تكنو'
+    };
+    const subject = subjectMap[homeworkData.subject] || homeworkData.subject || 'مادة غير معروفة';
     const type = homeworkData.type === 'theoretical' ? 'نظري' : 'عملي';
     
     // Extract lecture numbers

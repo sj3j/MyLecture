@@ -36,6 +36,8 @@ export interface UserProfile {
   role: 'admin' | 'moderator' | 'student';
   photoUrl?: string;
   completedWeeklyTasks?: string[];
+  favorites?: string[];
+  studied?: string[];
   streakCount?: number;
   lastActiveDate?: string;
   examCode?: string;
@@ -133,7 +135,7 @@ export const TRANSLATIONS = {
     navLectures: 'محاضرات',
     navWeekly: 'واجبات الأسبوع',
     navProfile: 'الملف الشخصي',
-    navDownloads: 'التنزيلات',
+    navDownloads: 'المفضلة',
     original: 'أصلي',
     translated: 'مترجم',
     addToWeekly: 'إضافة لواجبات الأسبوع',
@@ -145,17 +147,22 @@ export const TRANSLATIONS = {
     noWeeklyTasks: 'لا توجد واجبات لهذا الأسبوع',
     markCompleted: 'تحديد كمكتمل',
     completed: 'مكتمل',
-    manageDownloads: 'إدارة التنزيلات',
-    offlineDownloads: 'التنزيلات بدون إنترنت',
+    manageDownloads: 'إدارة المحاضرات المفضلة',
+    offlineDownloads: 'محاضرات مفضلة',
     clearAll: 'مسح الكل',
-    noDownloads: 'لا توجد تنزيلات',
+    noDownloads: 'لا توجد محاضرات مفضلة',
     remove: 'إزالة',
     postHomework: 'نشر واجب',
     examLectures: 'محاضرات الامتحان',
     addLecture: 'إضافة محاضرة',
     additionalNote: 'ملاحظة إضافية (اختياري)',
     examIncludes: 'الامتحان يتضمن:',
-    confirmClearAll: 'هل أنت متأكد من مسح جميع التنزيلات؟',
+    confirmClearAll: 'هل أنت متأكد من مسح جميع المفضلة؟',
+    studied: 'درستها',
+    markStudied: 'تحديد كمدروسة',
+    unmarkStudied: 'إلغاء التحديد',
+    addToFavorites: 'إضافة للمفضلة',
+    removeFromFavorites: 'إزالة من المفضلة',
   },
   en: {
     appName: 'محاضراتي',
@@ -232,7 +239,7 @@ export const TRANSLATIONS = {
     navLectures: 'Lectures',
     navWeekly: 'Weekly List',
     navProfile: 'Profile',
-    navDownloads: 'Downloads',
+    navDownloads: 'Favorites',
     original: 'Original',
     translated: 'Translated',
     addToWeekly: 'Add to Weekly List',
@@ -244,17 +251,22 @@ export const TRANSLATIONS = {
     noWeeklyTasks: 'No homework for this week',
     markCompleted: 'Mark Completed',
     completed: 'Completed',
-    manageDownloads: 'Manage Downloads',
-    offlineDownloads: 'Offline Downloads',
+    manageDownloads: 'Manage Favorites',
+    offlineDownloads: 'Favorite Lectures',
     clearAll: 'Clear All',
-    noDownloads: 'No downloads yet',
+    noDownloads: 'No favorites yet',
     remove: 'Remove',
     postHomework: 'Post Homework',
     examLectures: 'Exam Lectures',
     addLecture: 'Add Lecture',
     additionalNote: 'Additional Note (Optional)',
     examIncludes: 'Exam includes:',
-    confirmClearAll: 'Are you sure you want to clear all downloads?',
+    confirmClearAll: 'Are you sure you want to clear all favorites?',
+    studied: 'Studied',
+    markStudied: 'Mark as Studied',
+    unmarkStudied: 'Unmark Studied',
+    addToFavorites: 'Add to Favorites',
+    removeFromFavorites: 'Remove from Favorites',
   }
 };
 

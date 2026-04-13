@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff } from 'lucide-react';
+import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { doc, deleteDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useOfflinePDF } from '../hooks/useOfflinePDF';
@@ -28,6 +28,38 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
   const date = lecture.createdAt?.toDate ? lecture.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently;
 
   const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl);
+
+  const isFavorite = user?.favorites?.includes(lecture.id) || false;
+  const isStudied = user?.studied?.includes(lecture.id) || false;
+
+  const handleToggleFavorite = async () => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      if (isFavorite) {
+        await updateDoc(userRef, { favorites: arrayRemove(lecture.id) });
+        if (onRemoveDownload) onRemoveDownload(lecture);
+      } else {
+        await updateDoc(userRef, { favorites: arrayUnion(lecture.id) });
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
+
+  const handleToggleStudied = async () => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      if (isStudied) {
+        await updateDoc(userRef, { studied: arrayRemove(lecture.id) });
+      } else {
+        await updateDoc(userRef, { studied: arrayUnion(lecture.id) });
+      }
+    } catch (error) {
+      console.error('Error toggling studied:', error);
+    }
+  };
 
   const handleDelete = async () => {
     if (!user || !['admin', 'moderator'].includes(user.role)) return;
@@ -81,6 +113,12 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                 {lecture.version === 'translated' ? t.translated : t.original}
               </span>
             )}
+            {isStudied && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                {t.studied}
+              </span>
+            )}
           </div>
         </div>
 
@@ -103,15 +141,34 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
           </div>
         </div>
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           <button
             onClick={() => setShowPreview(true)}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 rounded-xl hover:bg-slate-800 dark:hover:bg-white transition-colors text-sm font-semibold"
+            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 rounded-xl hover:bg-slate-800 dark:hover:bg-white transition-colors text-sm font-semibold min-w-[100px]"
           >
             <Maximize2 className="w-4 h-4" />
             {t.view}
           </button>
           
+          {user && (
+            <>
+              <button
+                onClick={handleToggleFavorite}
+                className={`inline-flex items-center justify-center p-2.5 rounded-xl transition-colors ${isFavorite ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-rose-500'}`}
+                title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
+              >
+                <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+              </button>
+              <button
+                onClick={handleToggleStudied}
+                className={`inline-flex items-center justify-center p-2.5 rounded-xl transition-colors ${isStudied ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-green-500'}`}
+                title={isStudied ? t.unmarkStudied : t.markStudied}
+              >
+                <CheckCircle2 className={`w-5 h-5 ${isStudied ? 'fill-current' : ''}`} />
+              </button>
+            </>
+          )}
+
           {isDownloaded ? (
             <button
               onClick={async () => {

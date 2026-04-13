@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Language, TRANSLATIONS, Lecture, UserProfile } from '../types';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import SubjectBrowser from './SubjectBrowser';
 import { Loader2 } from 'lucide-react';
@@ -10,57 +10,60 @@ interface DownloadsTabProps {
   user: UserProfile | null;
 }
 
-const CACHE_NAME = 'offline-pdfs-v1';
-
 export default function DownloadsTab({ lang, user }: DownloadsTabProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
-  const [downloadedLectures, setDownloadedLectures] = useState<Lecture[]>([]);
+  const [favoriteLectures, setFavoriteLectures] = useState<Lecture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadDownloads();
-  }, []);
+    loadFavorites();
+  }, [user?.favorites]);
 
-  const loadDownloads = async () => {
+  const loadFavorites = async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      if (!('caches' in window)) {
-        setIsLoading(false);
-        return;
-      }
-
-      const cache = await caches.open(CACHE_NAME);
-      const keys = await cache.keys();
+      const favorites = user.favorites || [];
       
-      if (keys.length === 0) {
-        setDownloadedLectures([]);
+      if (favorites.length === 0) {
+        setFavoriteLectures([]);
         setIsLoading(false);
         return;
       }
 
-      // Fetch all lectures to match with URLs
-      // Using getDocs will use offline cache if available due to enableIndexedDbPersistence
       const lecturesSnapshot = await getDocs(collection(db, 'lectures'));
-      const lectures = lecturesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Lecture));
+      const allLectures = lecturesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Lecture));
 
-      const items: Lecture[] = [];
-      
-      for (const request of keys) {
-        const url = request.url;
-        const matchedLecture = lectures.find(l => l.pdfUrl === url);
-        
-        if (matchedLecture) {
-          items.push(matchedLecture);
-        }
-      }
-      
-      setDownloadedLectures(items);
+      const items = allLectures.filter(l => favorites.includes(l.id));
+      setFavoriteLectures(items);
     } catch (error) {
-      console.error('Error loading downloads:', error);
+      console.error('Error loading favorites:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRemoveFavorite = async (lecture: Lecture) => {
+    if (!user) return;
+    
+    try {
+      // Optimistic UI update
+      setFavoriteLectures(prev => prev.filter(l => l.id !== lecture.id));
+      
+      // Update Firestore
+      await updateDoc(doc(db, 'users', user.uid), {
+        favorites: arrayRemove(lecture.id)
+      });
+    } catch (error) {
+      console.error('Error removing favorite:', error);
+      // Revert on error
+      loadFavorites();
     }
   };
 
@@ -76,13 +79,11 @@ export default function DownloadsTab({ lang, user }: DownloadsTabProps) {
       </div>
 
       <SubjectBrowser
-        lectures={downloadedLectures}
+        lectures={favoriteLectures}
         lang={lang}
         user={user}
         isLoading={isLoading}
-        onRemoveDownload={(lecture) => {
-          setDownloadedLectures(prev => prev.filter(l => l.id !== lecture.id));
-        }}
+        onRemoveDownload={handleRemoveFavorite}
       />
     </main>
   );

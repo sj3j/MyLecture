@@ -5,7 +5,6 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive } from 'lucide-react';
-import ManageDownloadsScreen from './ManageDownloadsScreen';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
