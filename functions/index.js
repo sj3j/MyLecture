@@ -93,7 +93,7 @@ async function cleanupTokens(response, tokenDocs) {
   }
 }
 
-exports.sendLectureNotification = onDocumentCreated({
+exports.sendLectureNotificationV2 = onDocumentCreated({
   document: 'lectures/{lectureId}',
   database: '(default)'
 }, async (event) => {
@@ -144,7 +144,7 @@ exports.sendLectureNotification = onDocumentCreated({
     return null;
   });
 
-exports.sendAnnouncementNotification = onDocumentCreated({
+exports.sendAnnouncementNotificationV2 = onDocumentCreated({
   document: 'announcements/{announcementId}',
   database: '(default)'
 }, async (event) => {
@@ -198,7 +198,7 @@ exports.sendAnnouncementNotification = onDocumentCreated({
     return null;
   });
 
-exports.telegramWebhook = onRequest(async (req, res) => {
+exports.telegramWebhookV2 = onRequest(async (req, res) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const channelId = process.env.TELEGRAM_CHANNEL_ID;
 
@@ -270,7 +270,7 @@ exports.telegramWebhook = onRequest(async (req, res) => {
   }
 });
 
-exports.sendHomeworkNotification = onDocumentCreated({
+exports.sendHomeworkNotificationV2 = onDocumentCreated({
   document: 'homeworks/{homeworkId}',
   database: '(default)'
 }, async (event) => {
