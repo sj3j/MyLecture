@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lecture, Category, CATEGORIES, Language, TRANSLATIONS, LectureType, UserProfile } from '../types';
 import LectureCard from './LectureCard';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, Loader2, SearchX } from 'lucide-react';
+import { BookOpen, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, Loader2, SearchX, List, LayoutGrid, Grid } from 'lucide-react';
 
 interface SubjectBrowserProps {
   lectures: Lecture[];
@@ -20,6 +20,19 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
   
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedType, setSelectedType] = useState<LectureType>('theoretical');
+  const [gridColumns, setGridColumns] = useState<1 | 2 | 3>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gridColumns');
+      if (saved === '1' || saved === '2' || saved === '3') {
+        return parseInt(saved) as 1 | 2 | 3;
+      }
+    }
+    return 1;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gridColumns', gridColumns.toString());
+  }, [gridColumns]);
 
   // If searching, show all matching lectures regardless of category
   if (searchQuery.trim()) {
@@ -45,10 +58,44 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
     }
 
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
-        {lectures.map(lecture => (
-          <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} />
-        ))}
+      <div className="pb-24">
+        <div className="flex items-center justify-between mb-4 px-4 sm:px-0">
+          <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            {lectures.length} {t.navLectures}
+          </div>
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/50 p-1 rounded-xl">
+            <button
+              onClick={() => setGridColumns(1)}
+              className={`p-1.5 rounded-lg transition-colors ${gridColumns === 1 ? 'bg-white dark:bg-zinc-700 shadow-sm text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+              title="1 Column"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setGridColumns(2)}
+              className={`p-1.5 rounded-lg transition-colors ${gridColumns === 2 ? 'bg-white dark:bg-zinc-700 shadow-sm text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+              title="2 Columns"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setGridColumns(3)}
+              className={`p-1.5 rounded-lg transition-colors ${gridColumns === 3 ? 'bg-white dark:bg-zinc-700 shadow-sm text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+              title="3 Columns"
+            >
+              <Grid className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <div className={`grid gap-6 px-4 sm:px-0 ${
+          gridColumns === 1 ? 'grid-cols-1' : 
+          gridColumns === 2 ? 'grid-cols-2' : 
+          'grid-cols-3'
+        }`}>
+          {lectures.map(lecture => (
+            <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -145,13 +192,47 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
           <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100 mb-1">{t.noLectures}</h3>
         </div>
       ) : (
-        <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          <AnimatePresence mode="popLayout">
-            {filteredLectures.map(lecture => (
-              <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} />
-            ))}
-          </AnimatePresence>
-        </motion.div>
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              {filteredLectures.length} {t.navLectures}
+            </div>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/50 p-1 rounded-xl">
+              <button
+                onClick={() => setGridColumns(1)}
+                className={`p-1.5 rounded-lg transition-colors ${gridColumns === 1 ? 'bg-white dark:bg-zinc-700 shadow-sm text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                title="1 Column"
+              >
+                <List className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setGridColumns(2)}
+                className={`p-1.5 rounded-lg transition-colors ${gridColumns === 2 ? 'bg-white dark:bg-zinc-700 shadow-sm text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                title="2 Columns"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setGridColumns(3)}
+                className={`p-1.5 rounded-lg transition-colors ${gridColumns === 3 ? 'bg-white dark:bg-zinc-700 shadow-sm text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                title="3 Columns"
+              >
+                <Grid className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <motion.div layout className={`grid gap-6 ${
+            gridColumns === 1 ? 'grid-cols-1' : 
+            gridColumns === 2 ? 'grid-cols-2' : 
+            'grid-cols-3'
+          }`}>
+            <AnimatePresence mode="popLayout">
+              {filteredLectures.map(lecture => (
+                <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        </>
       )}
     </div>
   );
