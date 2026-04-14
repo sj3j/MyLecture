@@ -36,6 +36,10 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [homeworkToDelete, setHomeworkToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Image viewer state
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   useEffect(() => {
     // Load homeworks
@@ -243,7 +247,13 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
         <div className="w-full bg-slate-50 dark:bg-zinc-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-zinc-800 min-h-[200px] flex items-center justify-center">
           {schedulePhotoUrl ? (
-            <img src={schedulePhotoUrl} alt="Schedule" className="w-full h-auto object-contain max-h-[500px]" referrerPolicy="no-referrer" />
+            <img 
+              src={schedulePhotoUrl} 
+              alt="Schedule" 
+              className="w-full h-auto object-contain max-h-[500px] cursor-pointer hover:opacity-90 transition-opacity" 
+              referrerPolicy="no-referrer" 
+              onClick={() => setSelectedImage(schedulePhotoUrl)}
+            />
           ) : (
             <div className="text-center p-8 text-slate-400 dark:text-slate-500">
               <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
@@ -252,6 +262,44 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 sm:p-8 cursor-zoom-out"
+            onClick={() => {
+              setSelectedImage(null);
+              setZoomLevel(1);
+            }}
+          >
+            <button 
+              className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedImage(null);
+                setZoomLevel(1);
+              }}
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <div className="w-full h-full flex items-center justify-center overflow-auto">
+              <motion.img
+                src={selectedImage}
+                alt="Schedule Fullscreen"
+                className={`max-w-full max-h-full object-contain transition-transform duration-300 ${zoomLevel > 1 ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+                style={{ scale: zoomLevel, transformOrigin: 'center center' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomLevel(prev => prev === 1 ? 2.5 : 1);
+                }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {homeworkToDelete && (
