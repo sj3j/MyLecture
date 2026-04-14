@@ -2,11 +2,11 @@ importScripts('https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.11.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-  projectId: "gen-lang-client-0712465288",
-  appId: "1:204896817368:web:976ca869b597c3c427c7ad",
-  apiKey: "AIzaSyBd27jVmdRBCP2kHTMHqxHfupyDQUUZCg4",
-  authDomain: "gen-lang-client-0712465288.firebaseapp.com",
-  messagingSenderId: "204896817368",
+  apiKey: "AIzaSyArbS6XkOSkHP-uFxEPdLioHmtCR_9swjA",
+  authDomain: "mylectures-app.firebaseapp.com",
+  projectId: "mylectures-app",
+  messagingSenderId: "449403914422",
+  appId: "1:449403914422:web:45993e042fdf96d2dd7e17"
 };
 
 firebase.initializeApp(firebaseConfig);
