@@ -76,13 +76,13 @@ export default defineConfig(({mode}) => {
           categories: ['education'],
           icons: [
             {
-              src: '/icon-192.png',
+              src: 'https://i.imgur.com/UzvAulM.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/icon-512.png',
+              src: 'https://i.imgur.com/SWAXlX3.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
@@ -105,9 +105,9 @@ export default defineConfig(({mode}) => {
             }
           ],
           shortcuts: [
-            { name: 'محاضرات', url: '/lectures', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
-            { name: 'واجبات', url: '/homeworks', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
-            { name: 'إعلانات', url: '/announcements', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] }
+            { name: 'محاضرات', url: '/lectures', icons: [{ src: 'https://i.imgur.com/UzvAulM.png', sizes: '192x192', type: 'image/png' }] },
+            { name: 'واجبات', url: '/homeworks', icons: [{ src: 'https://i.imgur.com/UzvAulM.png', sizes: '192x192', type: 'image/png' }] },
+            { name: 'إعلانات', url: '/announcements', icons: [{ src: 'https://i.imgur.com/UzvAulM.png', sizes: '192x192', type: 'image/png' }] }
           ],
           share_target: {
             action: '/share',
