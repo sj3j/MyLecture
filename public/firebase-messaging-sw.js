@@ -25,7 +25,7 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification?.title || 'New Notification';
   const notificationOptions = {
     body: payload.notification?.body || '',
-    icon: 'https://i.imgur.com/UzvAulM.png', // We will assume the user puts their icon here or we will create a placeholder
+    icon: 'https://i.imgur.com/uZ5tK40.png', // We will assume the user puts their icon here or we will create a placeholder
     data: payload.data,
   };
 

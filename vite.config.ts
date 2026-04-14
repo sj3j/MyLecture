@@ -105,9 +105,9 @@ export default defineConfig(({mode}) => {
             }
           ],
           shortcuts: [
-            { name: 'محاضرات', url: '/lectures', icons: [{ src: 'https://i.imgur.com/UzvAulM.png', sizes: '192x192', type: 'image/png' }] },
-            { name: 'واجبات', url: '/homeworks', icons: [{ src: 'https://i.imgur.com/UzvAulM.png', sizes: '192x192', type: 'image/png' }] },
-            { name: 'إعلانات', url: '/announcements', icons: [{ src: 'https://i.imgur.com/UzvAulM.png', sizes: '192x192', type: 'image/png' }] }
+            { name: 'محاضرات', url: '/lectures', icons: [{ src: 'https://i.imgur.com/uZ5tK40.png', sizes: '192x192', type: 'image/png' }] },
+            { name: 'واجبات', url: '/homeworks', icons: [{ src: 'https://i.imgur.com/uZ5tK40.png', sizes: '192x192', type: 'image/png' }] },
+            { name: 'إعلانات', url: '/announcements', icons: [{ src: 'https://i.imgur.com/uZ5tK40.png', sizes: '192x192', type: 'image/png' }] }
           ],
           share_target: {
             action: '/share',
