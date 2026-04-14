@@ -105,9 +105,9 @@ export default defineConfig(({mode}) => {
             }
           ],
           shortcuts: [
-            { name: 'محاضرات', url: '/lectures', icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
-            { name: 'واجبات', url: '/homeworks', icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
-            { name: 'إعلانات', url: '/announcements', icons: [{ src: '/icon-192.png', sizes: '192x192' }] }
+            { name: 'محاضرات', url: '/lectures', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+            { name: 'واجبات', url: '/homeworks', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+            { name: 'إعلانات', url: '/announcements', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] }
           ],
           share_target: {
             action: '/share',
