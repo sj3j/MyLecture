@@ -1,8 +1,8 @@
 import React from 'react';
-import { Bell, BookOpen, ClipboardCheck, User, Heart } from 'lucide-react';
+import { Bell, BookOpen, ClipboardCheck, User, Mic } from 'lucide-react';
 import { Language, TRANSLATIONS } from '../types';
 
-export type Tab = 'announcements' | 'lectures' | 'weekly' | 'downloads' | 'profile';
+export type Tab = 'announcements' | 'lectures' | 'weekly' | 'records' | 'profile';
 
 interface BottomNavProps {
   currentTab: Tab;
@@ -16,10 +16,10 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
   const isRtl = lang === 'ar';
 
   const tabs = [
-    { id: 'announcements' as Tab, icon: Bell, label: t.navAnnouncements },
-    { id: 'lectures' as Tab, icon: BookOpen, label: t.navLectures },
     { id: 'weekly' as Tab, icon: ClipboardCheck, label: t.navWeekly },
-    { id: 'downloads' as Tab, icon: Heart, label: t.navDownloads },
+    { id: 'lectures' as Tab, icon: BookOpen, label: t.navLectures },
+    { id: 'announcements' as Tab, icon: Bell, label: t.navAnnouncements },
+    { id: 'records' as Tab, icon: Mic, label: t.navRecords },
     { id: 'profile' as Tab, icon: User, label: t.navProfile },
   ];
 

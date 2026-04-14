@@ -11,8 +11,10 @@ import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
 import ProfileScreen from './components/ProfileScreen';
-import DownloadsTab from './components/DownloadsTab';
+import RecordsScreen from './components/RecordsScreen';
 import SubjectBrowser from './components/SubjectBrowser';
+import LoginScreen from './components/LoginScreen';
+import OnboardingScreen from './components/OnboardingScreen';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
@@ -34,7 +36,7 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortField>('number');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-  const [currentTab, setCurrentTab] = useState<Tab>('lectures');
+  const [currentTab, setCurrentTab] = useState<Tab>('announcements');
   const [showUpload, setShowUpload] = useState(false);
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -252,6 +254,14 @@ export default function App() {
     );
   }
 
+  if (!user) {
+    return <LoginScreen lang={lang} />;
+  }
+
+  if (!user.group || !user.examCode) {
+    return <OnboardingScreen user={user} lang={lang} />;
+  }
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return isRtl ? 'صباح الخير' : 'Good morning';
@@ -354,7 +364,7 @@ export default function App() {
       {currentTab === 'lectures' && renderLecturesTab()}
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} />}
       {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
-      {currentTab === 'downloads' && <DownloadsTab user={user} lang={lang} />}
+      {currentTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
 
       <AdminUpload 

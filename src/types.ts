@@ -29,6 +29,18 @@ export interface Post {
   videoUrl?: string;
 }
 
+export interface RecordItem {
+  id: string;
+  title: string;
+  category: Category;
+  type: LectureType;
+  description?: string;
+  audioUrl: string;
+  createdAt: any;
+  uploadedBy: string;
+  number?: number;
+}
+
 export interface UserProfile {
   uid: string;
   name: string;
@@ -135,7 +147,7 @@ export const TRANSLATIONS = {
     navLectures: 'محاضرات',
     navWeekly: 'واجبات الأسبوع',
     navProfile: 'الملف الشخصي',
-    navDownloads: 'المفضلة',
+    navRecords: 'تسجيلات',
     original: 'أصلي',
     translated: 'مترجم',
     addToWeekly: 'إضافة لواجبات الأسبوع',
@@ -240,7 +252,7 @@ export const TRANSLATIONS = {
     navLectures: 'Lectures',
     navWeekly: 'Weekly List',
     navProfile: 'Profile',
-    navDownloads: 'Favorites',
+    navRecords: 'Records',
     original: 'Original',
     translated: 'Translated',
     addToWeekly: 'Add to Weekly List',

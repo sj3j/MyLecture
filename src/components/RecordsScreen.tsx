@@ -1,0 +1,183 @@
+import React, { useState, useEffect } from 'react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
+import { Loader2, Mic, SearchX, Play, Pause } from 'lucide-react';
+import { motion } from 'motion/react';
+import Fuse from 'fuse.js';
+
+interface RecordsScreenProps {
+  user: UserProfile | null;
+  lang: Language;
+  searchQuery: string;
+}
+
+export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreenProps) {
+  const t = TRANSLATIONS[lang];
+  const isRtl = lang === 'ar';
+
+  const [records, setRecords] = useState<RecordItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
+  const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
+
+  useEffect(() => {
+    const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as RecordItem));
+      setRecords(docs);
+      setIsLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'records');
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  let baseRecords = records.filter(record => {
+    const matchesCategory = selectedCategory === 'all' || record.category === selectedCategory;
+    const matchesType = selectedType === 'all' || record.type === selectedType;
+    return matchesCategory && matchesType;
+  });
+
+  if (searchQuery.trim()) {
+    const fuse = new Fuse(baseRecords, {
+      keys: ['title', 'description'],
+      threshold: 0.4,
+      ignoreLocation: true,
+    });
+    baseRecords = fuse.search(searchQuery).map(result => result.item);
+  }
+
+  const filteredRecords = baseRecords.sort((a, b) => {
+    const numA = a.number || 0;
+    const numB = b.number || 0;
+    return numA - numB;
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div className="flex items-center gap-3 mb-8">
+        <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">
+          <Mic className="w-6 h-6" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.navRecords}</h1>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <div className="flex-1">
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value as Category | 'all')}
+            className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 outline-none focus:border-sky-500 dark:text-stone-100 font-bold"
+          >
+            <option value="all">{t.allSubjects}</option>
+            {CATEGORIES.map(cat => (
+              <option key={cat.value} value={cat.value}>{t[cat.labelKey]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex bg-white dark:bg-zinc-800 p-1 rounded-xl border border-slate-200 dark:border-zinc-700">
+          <button
+            onClick={() => setSelectedType('all')}
+            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+              selectedType === 'all'
+                ? 'bg-slate-100 dark:bg-zinc-700 text-slate-900 dark:text-stone-100 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            {isRtl ? 'الكل' : 'All'}
+          </button>
+          <button
+            onClick={() => setSelectedType('theoretical')}
+            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+              selectedType === 'theoretical'
+                ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            {t.theoretical}
+          </button>
+          <button
+            onClick={() => setSelectedType('practical')}
+            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+              selectedType === 'practical'
+                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            {t.practical}
+          </button>
+        </div>
+      </div>
+
+      {filteredRecords.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          {filteredRecords.map(record => (
+            <motion.div
+              layout
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              key={record.id}
+              className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-slate-300">
+                      {t[CATEGORIES.find(c => c.value === record.category)?.labelKey || 'pharmacology']}
+                    </span>
+                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                      record.type === 'theoretical' 
+                        ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                    }`}>
+                      {record.type === 'theoretical' ? t.theoretical : t.practical}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100 line-clamp-2 leading-tight">
+                    {record.number ? `Lec ${record.number}: ` : ''}{record.title}
+                  </h3>
+                </div>
+              </div>
+
+              {record.description && (
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 flex-grow">
+                  {record.description}
+                </p>
+              )}
+
+              <div className="mt-auto pt-4 border-t border-slate-100 dark:border-zinc-700">
+                <audio controls className="w-full" src={record.audioUrl}>
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-20 px-4">
+          <div className="w-20 h-20 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-6">
+            <SearchX className="w-10 h-10 text-slate-400 dark:text-slate-500" />
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">
+            {isRtl ? 'لا توجد تسجيلات' : 'No records found'}
+          </h3>
+          <p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            {isRtl ? 'لم نتمكن من العثور على أي تسجيلات تطابق الفلاتر الحالية.' : 'We couldn\'t find any records matching your current filters.'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
