@@ -76,13 +76,13 @@ export default defineConfig(({mode}) => {
           categories: ['education'],
           icons: [
             {
-              src: 'https://i.imgur.com/UzvAulM.png',
+              src: 'https://i.imgur.com/uZ5tK40.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'https://i.imgur.com/SWAXlX3.png',
+              src: 'https://i.imgur.com/x6CQh8m.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
