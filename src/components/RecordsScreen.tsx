@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
-import { Loader2, Mic, SearchX, Play, Pause } from 'lucide-react';
+import { Loader2, Mic, SearchX, Play, Pause, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import Fuse from 'fuse.js';
+import AdminRecordUpload from './AdminRecordUpload';
 
 interface RecordsScreenProps {
   user: UserProfile | null;
@@ -20,6 +21,8 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
+  const [showUpload, setShowUpload] = useState(false);
+  const [recordToEdit, setRecordToEdit] = useState<RecordItem | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
@@ -64,13 +67,26 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
     );
   }
 
+  const isAdmin = user?.role === 'admin' || user?.role === 'moderator';
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">
-          <Mic className="w-6 h-6" />
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">
+            <Mic className="w-6 h-6" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.navRecords}</h1>
         </div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.navRecords}</h1>
+        {isAdmin && (
+          <button
+            onClick={() => setShowUpload(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:inline">{isRtl ? 'رفع تسجيل' : 'Upload Record'}</span>
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -149,6 +165,19 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
                     {record.number ? `Lec ${record.number}: ` : ''}{record.title}
                   </h3>
                 </div>
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setRecordToEdit(record);
+                      setShowUpload(true);
+                    }}
+                    className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                )}
               </div>
 
               {record.description && (
@@ -178,6 +207,16 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
           </p>
         </div>
       )}
+
+      <AdminRecordUpload
+        isOpen={showUpload}
+        onClose={() => {
+          setShowUpload(false);
+          setRecordToEdit(null);
+        }}
+        lang={lang}
+        recordToEdit={recordToEdit}
+      />
     </div>
   );
 }
