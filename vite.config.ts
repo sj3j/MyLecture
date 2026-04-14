@@ -12,6 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: 'script',
         workbox: {
           inlineWorkboxRuntime: true,
           importScripts: ['/firebase-messaging-sw.js'],
