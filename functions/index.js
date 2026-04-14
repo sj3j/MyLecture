@@ -1,7 +1,10 @@
+const { setGlobalOptions } = require('firebase-functions/v2');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const axios = require('axios');
+
+setGlobalOptions({ region: 'me-west1' });
 
 admin.initializeApp();
 
