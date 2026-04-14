@@ -2,14 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { Loader2, Megaphone, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 
 interface TelegramPost {
-  id: number;
+  id: string;
   date: number;
   type: string;
   text: string;
-  caption: string;
-  photo_url: string | null;
+  caption?: string;
+  photo_url?: string | null;
+  imageUrl?: string | null;
+  videoUrl?: string | null;
+  content?: string;
 }
 
 interface AnnouncementsScreenProps {
@@ -26,33 +31,45 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchAnnouncements = async (showRefreshIndicator = false) => {
-    if (showRefreshIndicator) setIsRefreshing(true);
-    try {
-      const res = await fetch(`/announcements.json?t=${new Date().getTime()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPosts(data);
-        setLastUpdated(new Date());
-      }
-    } catch (error) {
-      console.error('Error fetching announcements:', error);
-    } finally {
-      setIsLoading(false);
-      if (showRefreshIndicator) setIsRefreshing(false);
-    }
-  };
-
   useEffect(() => {
-    fetchAnnouncements();
+    setIsLoading(true);
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
     
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(() => {
-      fetchAnnouncements();
-    }, 5 * 60 * 1000);
-    
-    return () => clearInterval(interval);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const newPosts: TelegramPost[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        newPosts.push({
+          id: doc.id,
+          date: data.createdAt?.toMillis() ? data.createdAt.toMillis() / 1000 : Date.now() / 1000,
+          type: data.type || 'text',
+          text: data.text || data.content || '',
+          caption: data.caption || '',
+          photo_url: data.imageUrl || data.photo_url || null,
+          imageUrl: data.imageUrl || null,
+          videoUrl: data.videoUrl || null,
+          content: data.content || '',
+        });
+      });
+      setPosts(newPosts);
+      setLastUpdated(new Date());
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'announcements');
+      setIsLoading(false);
+      setIsRefreshing(false);
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    // The snapshot listener handles real-time updates, but we can simulate a refresh
+    // by just waiting a bit and setting refreshing to false if they click it.
+    setTimeout(() => setIsRefreshing(false), 1000);
+  };
 
   const timeString = lastUpdated.toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { 
     hour: '2-digit', 
@@ -72,7 +89,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
             {isRtl ? 'آخر تحديث:' : 'Last updated:'} {timeString}
           </span>
           <button 
-            onClick={() => fetchAnnouncements(true)}
+            onClick={handleRefresh}
             className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
             title={isRtl ? 'تحديث' : 'Refresh'}
           >
@@ -88,7 +105,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
       ) : posts.length > 0 ? (
         <div className="space-y-4">
           {posts.map(post => {
-            const content = post.text || post.caption || '';
+            const content = post.text || post.content || post.caption || '';
             const date = new Date(post.date * 1000);
             
             return (
@@ -117,7 +134,7 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                 
                 <div className="space-y-2 sm:space-y-3">
                   {content && (
-                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed" dir="auto">
                       {content}
                     </p>
                   )}
@@ -129,6 +146,15 @@ export default function AnnouncementsScreen({ user, lang }: AnnouncementsScreenP
                         alt="Announcement" 
                         className="w-full h-auto max-h-[300px] sm:max-h-[400px] object-contain bg-slate-50 dark:bg-zinc-900 mx-auto" 
                         referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  )}
+                  {post.videoUrl && (
+                    <div className="rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700 mt-2 sm:mt-3">
+                      <video 
+                        src={post.videoUrl} 
+                        controls
+                        className="w-full h-auto max-h-[300px] sm:max-h-[400px] object-contain bg-slate-50 dark:bg-zinc-900 mx-auto" 
                       />
                     </div>
                   )}

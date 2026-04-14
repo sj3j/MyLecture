@@ -241,26 +241,39 @@ exports.telegramWebhookV3 = onRequest(async (req, res) => {
       announcement.type = 'text';
       announcement.text = post.text;
       announcement.content = post.text;
-    } else if (post.photo) {
-      announcement.type = 'image';
+    } else if (post.photo || post.video) {
+      const isVideo = !!post.video;
+      announcement.type = isVideo ? 'video' : 'image';
       announcement.text = post.caption || '';
       announcement.content = post.caption || '';
       
-      const photo = post.photo[post.photo.length - 1];
-      const fileId = photo.file_id;
+      const fileId = isVideo ? post.video.file_id : post.photo[post.photo.length - 1].file_id;
       
       const fileResponse = await axios.get(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
       const filePath = fileResponse.data.result.file_path;
-      announcement.imageUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
-    } else if (post.video) {
-      announcement.type = 'video';
-      announcement.text = post.caption || '';
-      announcement.content = post.caption || '';
+      const telegramFileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
       
-      const fileId = post.video.file_id;
-      const fileResponse = await axios.get(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
-      const filePath = fileResponse.data.result.file_path;
-      announcement.videoUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+      // CRITICAL SECURITY FIX: Never expose the bot token to the frontend.
+      // Download the file and upload it to Firebase Storage.
+      const fileData = await axios.get(telegramFileUrl, { responseType: 'arraybuffer' });
+      const buffer = Buffer.from(fileData.data, 'binary');
+      
+      const bucket = admin.storage().bucket();
+      const fileName = `announcements/${Date.now()}_${filePath.split('/').pop()}`;
+      const file = bucket.file(fileName);
+      
+      await file.save(buffer, {
+        metadata: { contentType: fileData.headers['content-type'] }
+      });
+      
+      // Construct public URL
+      const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
+      
+      if (isVideo) {
+        announcement.videoUrl = publicUrl;
+      } else {
+        announcement.imageUrl = publicUrl;
+      }
     } else {
       return res.status(200).send('Unsupported message type');
     }
