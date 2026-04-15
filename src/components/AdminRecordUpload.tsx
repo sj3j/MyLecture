@@ -214,9 +214,9 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-zinc-800"
+            className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 max-h-[90vh] flex flex-col"
           >
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-50/50 dark:bg-sky-900/10">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-50/50 dark:bg-sky-900/10 shrink-0">
               <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                 {recordToEdit ? (isRtl ? 'تعديل التسجيل' : 'Edit Record') : (isRtl ? 'رفع تسجيل' : 'Upload Record')}
@@ -226,7 +226,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
               </button>
             </div>
 
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto">
               {showSuccess ? (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.9 }}

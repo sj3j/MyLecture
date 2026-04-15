@@ -22,6 +22,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
   const [category, setCategory] = useState<Category>('pharmacology');
   const [type, setType] = useState<LectureType>('theoretical');
   const [description, setDescription] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [version, setVersion] = useState<'original' | 'translated'>('original');
   const [isWeekly, setIsWeekly] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -39,6 +40,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
       setCategory(lectureToEdit.category);
       setType(lectureToEdit.type);
       setDescription(lectureToEdit.description || '');
+      setYoutubeUrl(lectureToEdit.youtubeUrl || '');
       setVersion(lectureToEdit.version || 'original');
       setIsWeekly(lectureToEdit.isWeekly || false);
       setFile(null); // Optional to upload a new file
@@ -99,6 +101,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
     setTitle('');
     setLectureNumber('');
     setDescription('');
+    setYoutubeUrl('');
     setVersion('original');
     setIsWeekly(false);
     setFile(null);
@@ -110,14 +113,14 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
-    if (!lectureToEdit && !file) return;
+    if (!lectureToEdit && !file && !youtubeUrl) return;
 
     setIsSubmitting(true);
     setError(null);
     setUploadProgress(0);
 
     try {
-      let downloadUrl = lectureToEdit?.pdfUrl;
+      let downloadUrl = lectureToEdit?.pdfUrl || '';
 
       if (file) {
         // 1. Upload file to Firebase Storage
@@ -166,6 +169,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
         category,
         type,
         description,
+        youtubeUrl: youtubeUrl || null,
         pdfUrl: downloadUrl,
         uploadedBy: auth.currentUser.uid,
         version,
@@ -239,9 +243,9 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-zinc-800"
+            className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 max-h-[90vh] flex flex-col"
           >
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-50/50 dark:bg-sky-900/10">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-50/50 dark:bg-sky-900/10 shrink-0">
               <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                 {lectureToEdit ? t.editLecture : t.publishLecture}
@@ -251,7 +255,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
               </button>
             </div>
 
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto">
               {showSuccess ? (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -399,6 +403,17 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit }: Ad
                         <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{t.addToWeekly}</span>
                       </label>
                     </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">{isRtl ? 'رابط يوتيوب (اختياري)' : 'YouTube URL (Optional)'}</label>
+                    <input
+                      type="url"
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      placeholder="https://youtube.com/watch?v=..."
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 focus:border-transparent transition-all outline-none"
+                    />
                   </div>
 
                   <div className="space-y-1.5">

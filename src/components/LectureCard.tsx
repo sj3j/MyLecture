@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle } from 'lucide-react';
+import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle, Youtube } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, deleteDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -29,23 +29,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
 
   const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl);
 
-  const isFavorite = user?.favorites?.includes(lecture.id) || false;
   const isStudied = user?.studied?.includes(lecture.id) || false;
-
-  const handleToggleFavorite = async () => {
-    if (!user) return;
-    try {
-      const userRef = doc(db, 'users', user.uid);
-      if (isFavorite) {
-        await setDoc(userRef, { favorites: arrayRemove(lecture.id) }, { merge: true });
-        if (onRemoveDownload) onRemoveDownload(lecture);
-      } else {
-        await setDoc(userRef, { favorites: arrayUnion(lecture.id) }, { merge: true });
-      }
-    } catch (error) {
-      console.error('Error toggling favorite:', error);
-    }
-  };
 
   const handleToggleStudied = async () => {
     if (!user) return;
@@ -108,9 +92,15 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                 {isRtl ? 'محاضرة' : 'Lecture'} {lecture.number}
               </span>
             )}
-            {lecture.version && (
-              <span className={`text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider ${lecture.version === 'translated' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'}`}>
-                {lecture.version === 'translated' ? t.translated : t.original}
+            {lecture.version === 'translated' && (
+              <span className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                {t.translated}
+              </span>
+            )}
+            {lecture.youtubeUrl && (
+              <span className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 flex items-center gap-1">
+                <Youtube className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                {t.youtubeTag}
               </span>
             )}
             {isStudied && (
@@ -152,13 +142,6 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
           
           {user && (
             <>
-              <button
-                onClick={handleToggleFavorite}
-                className={`inline-flex items-center justify-center p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-colors ${isFavorite ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-rose-500'}`}
-                title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
-              >
-                <Heart className={`w-3.5 h-3.5 sm:w-5 sm:h-5 ${isFavorite ? 'fill-current' : ''}`} />
-              </button>
               <button
                 onClick={handleToggleStudied}
                 className={`inline-flex items-center justify-center p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-colors ${isStudied ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-green-500'}`}
@@ -315,10 +298,21 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                 </div>
               </div>
               
-              <div className="flex-1 bg-slate-100 dark:bg-zinc-950 relative">
+              <div className="flex-1 bg-slate-100 dark:bg-zinc-950 relative overflow-y-auto flex flex-col">
+                {lecture.youtubeUrl && (
+                  <div className="w-full aspect-video bg-black shrink-0">
+                    <iframe
+                      src={lecture.youtubeUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                      className="w-full h-full border-none"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      title={lecture.title}
+                    />
+                  </div>
+                )}
                 <iframe
                   src={`${offlineUrl || lecture.pdfUrl}#toolbar=0`}
-                  className="w-full h-full border-none"
+                  className="w-full flex-1 min-h-[50vh] border-none"
                   title={lecture.title}
                 />
               </div>

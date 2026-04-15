@@ -8,6 +8,7 @@ export interface Lecture {
   type: LectureType;
   description?: string;
   pdfUrl: string;
+  youtubeUrl?: string;
   createdAt: any; // Firestore Timestamp
   uploadedBy: string;
   number?: number;
@@ -176,6 +177,7 @@ export const TRANSLATIONS = {
     unmarkStudied: 'إلغاء التحديد',
     addToFavorites: 'إضافة للمفضلة',
     removeFromFavorites: 'إزالة من المفضلة',
+    youtubeTag: 'شرح يوتيوب',
   },
   en: {
     appName: 'محاضراتي',
@@ -281,6 +283,7 @@ export const TRANSLATIONS = {
     unmarkStudied: 'Unmark Studied',
     addToFavorites: 'Add to Favorites',
     removeFromFavorites: 'Remove from Favorites',
+    youtubeTag: 'YouTube Video',
   }
 };
 
