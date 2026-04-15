@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
-import { Loader2, Mic, SearchX, Play, Pause, Plus } from 'lucide-react';
+import { Loader2, Mic, SearchX, Play, Pause, Plus, HardDrive } from 'lucide-react';
 import { motion } from 'motion/react';
 import Fuse from 'fuse.js';
 import AdminRecordUpload from './AdminRecordUpload';
+import AudioPlayer from './AudioPlayer';
 
 interface RecordsScreenProps {
   user: UserProfile | null;
@@ -23,6 +24,7 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
   const [showUpload, setShowUpload] = useState(false);
   const [recordToEdit, setRecordToEdit] = useState<RecordItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
@@ -68,6 +70,18 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
   }
 
   const isAdmin = user?.role === 'admin' || user?.role === 'moderator';
+
+  const handleDeleteRecord = async (id: string) => {
+    try {
+      const response = await fetch(`/api/admin/records/${id}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Failed to delete record');
+      setDeletingId(null);
+    } catch (err) {
+      console.error('Error deleting record:', err);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -145,7 +159,7 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               key={record.id}
-              className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col"
+              className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col relative"
             >
               <div className="flex justify-between items-start mb-4">
                 <div>
@@ -166,17 +180,44 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
                   </h3>
                 </div>
                 {isAdmin && (
-                  <button
-                    onClick={() => {
-                      setRecordToEdit(record);
-                      setShowUpload(true);
-                    }}
-                    className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setRecordToEdit(record);
+                        setShowUpload(true);
+                      }}
+                      className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    {deletingId === record.id ? (
+                      <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700">
+                        <button
+                          onClick={() => handleDeleteRecord(record.id)}
+                          className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-md transition-colors"
+                        >
+                          {isRtl ? 'تأكيد' : 'Confirm'}
+                        </button>
+                        <button
+                          onClick={() => setDeletingId(null)}
+                          className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-md transition-colors"
+                        >
+                          {isRtl ? 'إلغاء' : 'Cancel'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDeletingId(record.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -186,10 +227,15 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
                 </p>
               )}
 
+              {record.size && (
+                <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 mb-4 font-medium">
+                  <HardDrive className="w-3.5 h-3.5" />
+                  <span>{record.size} MB</span>
+                </div>
+              )}
+
               <div className="mt-auto pt-4 border-t border-slate-100 dark:border-zinc-700">
-                <audio controls className="w-full" src={record.audioUrl}>
-                  Your browser does not support the audio element.
-                </audio>
+                <AudioPlayer src={record.audioUrl} title={record.title} />
               </div>
             </motion.div>
           ))}

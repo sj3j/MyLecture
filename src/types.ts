@@ -37,6 +37,8 @@ export interface RecordItem {
   type: LectureType;
   description?: string;
   audioUrl: string;
+  duration?: number; // Duration in seconds
+  size?: number; // File size in MB
   createdAt: any;
   uploadedBy: string;
   number?: number;
@@ -59,6 +61,17 @@ export interface UserProfile {
     lectures: boolean;
     announcements: boolean;
   };
+  memberSince?: any;
+}
+
+export interface Student {
+  id: string;
+  name: string;
+  email: string;
+  password?: string; // Hashed password
+  examCode: string;
+  isActive: boolean;
+  createdAt: any;
 }
 
 export interface Homework {

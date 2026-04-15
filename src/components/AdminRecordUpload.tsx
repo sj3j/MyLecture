@@ -48,8 +48,8 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
       setError(isRtl ? 'يرجى اختيار ملف صوتي فقط' : 'Please select an audio file only');
       return;
     }
-    if (selectedFile.size > 50 * 1024 * 1024) { // 50MB limit for audio
-      setError(isRtl ? 'الحد الأقصى 50 ميجابايت' : 'Max 50MB');
+    if (selectedFile.size > 500 * 1024 * 1024) { // 500MB limit for audio
+      setError(isRtl ? 'الحد الأقصى 500 ميجابايت' : 'Max 500MB');
       return;
     }
     
@@ -101,6 +101,20 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
     setError(null);
   };
 
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      const audio = new Audio();
+      audio.src = URL.createObjectURL(file);
+      audio.onloadedmetadata = () => {
+        URL.revokeObjectURL(audio.src);
+        resolve(audio.duration);
+      };
+      audio.onerror = () => {
+        resolve(0); // Fallback if duration cannot be determined
+      };
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
@@ -112,43 +126,61 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
 
     try {
       let downloadUrl = recordToEdit?.audioUrl;
+      let duration = recordToEdit?.duration || 0;
+      let size = recordToEdit?.size || 0;
 
       if (file) {
-        // 1. Upload file to Firebase Storage
-        const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-        const storagePath = `records/${Date.now()}_${safeFileName}`;
-        
-        const storageRef = ref(storage, storagePath);
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        // Get duration and size
+        duration = await getAudioDuration(file);
+        size = parseFloat((file.size / (1024 * 1024)).toFixed(2)); // Size in MB
 
+        // 1. Get presigned URL from our backend
+        const response = await fetch(`/api/upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to get upload URL. Please check Cloudflare R2 configuration.');
+        }
+        
+        const { uploadUrl, publicUrl } = await response.json();
+
+        // 2. Upload file directly to Cloudflare R2 using XMLHttpRequest for progress tracking
         downloadUrl = await new Promise<string>((resolve, reject) => {
-          uploadTask.on('state_changed', 
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          const xhr = new XMLHttpRequest();
+          
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const progress = (event.loaded / event.total) * 100;
               setUploadProgress(progress);
-            }, 
-            (error) => {
-              reject(error);
-            }, 
-            async () => {
-              try {
-                const url = await getDownloadURL(uploadTask.snapshot.ref);
-                resolve(url);
-              } catch (err) {
-                reject(err);
-              }
             }
-          );
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(publicUrl);
+            } else {
+              reject(new Error(`Upload failed with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error('Network error occurred during upload.'));
+          };
+
+          xhr.open('PUT', uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', file.type);
+          xhr.send(file);
         });
       }
 
-      // 2. Save metadata to Firestore
+      // 3. Save metadata to Firestore
       const recordData: any = {
         title,
         category,
         type,
         description,
         audioUrl: downloadUrl,
+        duration,
+        size,
         uploadedBy: auth.currentUser.uid,
       };
       
@@ -163,36 +195,27 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
       } else {
         recordData.createdAt = serverTimestamp();
         await addDoc(collection(db, 'records'), recordData);
+        
+        // 4. Send Push Notification
+        try {
+          await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: '🎙️ تسجيل جديد!',
+              body: `${title} - ${t[CATEGORIES.find(c => c.value === category)?.labelKey || 'pharmacology']}`
+            })
+          });
+        } catch (notifyError) {
+          console.error("Failed to send notification:", notifyError);
+          // Don't fail the upload if notification fails
+        }
       }
 
       setShowSuccess(true);
     } catch (err: any) {
       console.error('Submit error details:', err);
-      
-      let errorMessage = t.errorUnknown;
-      
-      if (err.code) {
-        switch (err.code) {
-          case 'storage/unauthorized':
-          case 'permission-denied':
-            errorMessage = t.errorUnauthorized;
-            break;
-          case 'storage/retry-limit-exceeded':
-            errorMessage = t.errorNetwork;
-            break;
-          case 'storage/quota-exceeded':
-            errorMessage = t.errorQuota;
-            break;
-          case 'storage/canceled':
-            return;
-          default:
-            errorMessage = err.message || t.errorUnknown;
-        }
-      } else if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-
-      setError(errorMessage);
+      setError(err.message || t.errorUnknown);
     } finally {
       setIsSubmitting(false);
     }
@@ -376,7 +399,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
                           <FileUp className={`w-8 h-8 ${isDragging ? 'text-sky-500 dark:text-sky-400 animate-bounce' : 'text-slate-400 dark:text-slate-500'}`} />
                           <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{isRtl ? 'اضغط لرفع ملف صوتي' : 'Click to upload audio file'}</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500">{t.dragDrop}</span>
-                          <span className="text-[10px] text-slate-300 dark:text-slate-600 uppercase tracking-widest mt-1">{isRtl ? 'الحد الأقصى 50 ميجابايت' : 'Max 50MB'}</span>
+                          <span className="text-[10px] text-slate-300 dark:text-slate-600 uppercase tracking-widest mt-1">{isRtl ? 'الحد الأقصى 500 ميجابايت' : 'Max 500MB'}</span>
                         </>
                       )}
                     </div>

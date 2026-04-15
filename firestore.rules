@@ -89,18 +89,34 @@ service cloud.firestore {
                (!('announcements' in data.notificationPreferences) || data.notificationPreferences.announcements is bool)));
     }
 
+    function isWhitelisted() {
+      return isAuthenticated() && (
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/students/$(request.auth.token.email.lower()))) ||
+        exists(/databases/$(database)/documents/students/$(request.auth.uid))
+      );
+    }
+
+    function hasAccess() {
+      return isAdminOrModerator() || isWhitelisted();
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /settings/{document=**} {
-      allow read: if true;
+      allow read: if hasAccess();
       allow write: if isAdminOrModerator();
     }
 
     match /allowed_admins/{email} {
       allow read: if isAuthenticated();
       allow write: if isMasterAdmin();
+    }
+    
+    match /students/{email} {
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.token.email != null && request.auth.token.email.lower() == email);
+      allow write: if isAdmin();
     }
 
     match /users/{userId} {
@@ -115,22 +131,22 @@ service cloud.firestore {
     }
 
     match /lectures/{lectureId} {
-      allow read: if true;
+      allow read: if hasAccess();
       allow create, update, delete: if isAdminOrModerator();
     }
 
     match /records/{recordId} {
-      allow read: if true;
+      allow read: if hasAccess();
       allow create, update, delete: if isAdminOrModerator();
     }
 
     match /announcements/{postId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow read: if hasAccess();
+      allow create, update, delete: if isAdminOrModerator();
     }
     
     match /homeworks/{homeworkId} {
-      allow read: if true;
+      allow read: if hasAccess();
       allow create, update, delete: if isAdminOrModerator();
     }
     

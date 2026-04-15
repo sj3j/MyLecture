@@ -21,6 +21,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchAdmins = async () => {
     setIsLoading(true);
@@ -76,10 +77,9 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   };
 
   const handleDeleteAdmin = async (id: string) => {
-    if (!window.confirm(t.confirmDeleteAdmin)) return;
-    
     try {
       await deleteDoc(doc(db, 'allowed_admins', id));
+      setDeletingId(null);
       fetchAdmins();
     } catch (err) {
       console.error('Error deleting admin:', err);
@@ -176,12 +176,29 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleDeleteAdmin(admin.id)}
-                          className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {deletingId === admin.id ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDeleteAdmin(admin.id)}
+                              className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
+                            >
+                              {isRtl ? 'تأكيد' : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={() => setDeletingId(null)}
+                              className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-lg transition-colors"
+                            >
+                              {isRtl ? 'إلغاء' : 'Cancel'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeletingId(admin.id)}
+                            className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

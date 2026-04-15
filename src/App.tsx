@@ -7,6 +7,7 @@ import Navbar from './components/Navbar';
 import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
+import StudentManagement from './components/StudentManagement';
 import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
@@ -15,7 +16,7 @@ import RecordsScreen from './components/RecordsScreen';
 import SubjectBrowser from './components/SubjectBrowser';
 import LoginScreen from './components/LoginScreen';
 import OnboardingScreen from './components/OnboardingScreen';
-import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame } from 'lucide-react';
+import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -41,7 +42,9 @@ export default function App() {
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminManage, setShowAdminManage] = useState(false);
+  const [showStudentManage, setShowStudentManage] = useState(false);
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
@@ -78,35 +81,80 @@ export default function App() {
       if (firebaseUser) {
         const isMasterAdmin = adminEmails.includes(firebaseUser.email || '');
         
+        let studentData: any = null;
+
+        if (!isMasterAdmin && firebaseUser.email) {
+          try {
+            const response = await fetch('/api/check-whitelist', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: firebaseUser.email })
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              if (!data.exists) {
+                await signOut(auth);
+                setLoginError(isRtl ? 'هذا الحساب غير مسجل في التطبيق. يرجى التواصل مع الإدارة.' : 'This account is not registered. Please contact administration.');
+                setUser(null);
+                setIsAuthReady(true);
+                return;
+              }
+              
+              studentData = data.data;
+              if (!studentData.isActive) {
+                await signOut(auth);
+                setLoginError(isRtl ? 'تم تعطيل حسابك. يرجى التواصل مع الإدارة.' : 'Your account has been deactivated. Please contact administration.');
+                setUser(null);
+                setIsAuthReady(true);
+                return;
+              }
+            } else {
+              throw new Error("Failed to check whitelist");
+            }
+          } catch (error) {
+            console.error("Error checking student whitelist:", error);
+            await signOut(auth);
+            setLoginError(isRtl ? 'حدث خطأ أثناء التحقق من الحساب.' : 'Error verifying account.');
+            setUser(null);
+            setIsAuthReady(true);
+            return;
+          }
+        }
+
         // Listen to user document
         userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
           if (userDoc.exists()) {
+            const whitelistRole = studentData?.role === 'admin' || studentData?.role === 'moderator' ? studentData.role : null;
             setUser({
               uid: firebaseUser.uid,
-              name: userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+              name: studentData?.name || userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
               email: firebaseUser.email || '',
-              role: isMasterAdmin ? 'admin' : (userDoc.data().role || 'student'),
+              role: isMasterAdmin ? 'admin' : (whitelistRole || userDoc.data().role || 'student'),
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
               streakCount: userDoc.data().streakCount || 0,
               lastActiveDate: userDoc.data().lastActiveDate || undefined,
-              examCode: userDoc.data().examCode || undefined,
+              examCode: studentData?.examCode || userDoc.data().examCode || undefined,
               group: userDoc.data().group || undefined,
               favorites: userDoc.data().favorites || [],
               studied: userDoc.data().studied || [],
               completedWeeklyTasks: userDoc.data().completedWeeklyTasks || [],
-              notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true }
+              notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true },
+              memberSince: studentData?.createdAt || userDoc.data().createdAt
             });
           } else {
             setUser({
               uid: firebaseUser.uid,
-              name: firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+              name: studentData?.name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
               email: firebaseUser.email || '',
-              role: isMasterAdmin ? 'admin' : 'student',
+              role: isMasterAdmin ? 'admin' : (studentData?.role || 'student'),
               photoUrl: firebaseUser.photoURL || undefined,
+              examCode: studentData?.examCode || undefined,
               favorites: [],
               studied: [],
               completedWeeklyTasks: [],
-              notificationPreferences: { lectures: true, announcements: true }
+              notificationPreferences: { lectures: true, announcements: true },
+              memberSince: studentData?.createdAt
             });
           }
           setIsAuthReady(true);
@@ -115,14 +163,16 @@ export default function App() {
           // Fallback if permission denied
           setUser({
             uid: firebaseUser.uid,
-            name: firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+            name: studentData?.name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
             email: firebaseUser.email || '',
-            role: isMasterAdmin ? 'admin' : 'student',
+            role: isMasterAdmin ? 'admin' : (studentData?.role || 'student'),
             photoUrl: firebaseUser.photoURL || undefined,
+            examCode: studentData?.examCode || undefined,
             favorites: [],
             studied: [],
             completedWeeklyTasks: [],
-            notificationPreferences: { lectures: true, announcements: true }
+            notificationPreferences: { lectures: true, announcements: true },
+            memberSince: studentData?.createdAt
           });
           setIsAuthReady(true);
         });
@@ -255,10 +305,10 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen lang={lang} />;
+    return <LoginScreen lang={lang} externalError={loginError} onClearError={() => setLoginError(null)} />;
   }
 
-  if (!user.group || !user.examCode) {
+  if ((!user.group || !user.examCode) && user.role === 'student') {
     return <OnboardingScreen user={user} lang={lang} />;
   }
 
@@ -302,6 +352,15 @@ export default function App() {
 
           {user && ['admin', 'moderator'].includes(user.role) && (
             <div className="flex gap-2">
+              {['admin', 'moderator'].includes(user.role) && (
+                <button 
+                  onClick={() => setShowStudentManage(true)}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-emerald-600 dark:border-emerald-500 rounded-2xl text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span className="hidden sm:inline">{isRtl ? 'إدارة الطلاب' : 'Manage Students'}</span>
+                </button>
+              )}
               {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
                 <button 
                   onClick={() => setShowAdminManage(true)}
@@ -362,7 +421,7 @@ export default function App() {
       )}
 
       {currentTab === 'lectures' && renderLecturesTab()}
-      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} />}
+      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} />}
       {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
       {currentTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
@@ -377,6 +436,7 @@ export default function App() {
         lectureToEdit={lectureToEdit}
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
+      <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
       
       <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
     </div>

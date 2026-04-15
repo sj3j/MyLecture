@@ -286,6 +286,17 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </div>
         </div>
 
+        {user!.memberSince && (
+          <div className="mb-6 text-sm text-slate-500 dark:text-slate-400 font-medium">
+            {isRtl ? 'عضو منذ:' : 'Member since:'}{' '}
+            {new Date(user!.memberSince.seconds ? user!.memberSince.seconds * 1000 : user!.memberSince).toLocaleDateString(lang === 'ar' ? 'ar-IQ' : 'en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </div>
+        )}
+
         <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700 mb-6">
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المعلومات الأكاديمية' : 'Academic Information'}</h3>
           {isEditing ? (
