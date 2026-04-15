@@ -44,6 +44,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdminOrModerator = user?.role === 'admin' || user?.role === 'moderator';
 
