@@ -135,10 +135,11 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
         size = parseFloat((file.size / (1024 * 1024)).toFixed(2)); // Size in MB
 
         // 1. Get presigned URL from our backend
-        const response = await fetch(`/api/upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+        const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
         
         if (!response.ok) {
-          throw new Error('Failed to get upload URL. Please check Cloudflare R2 configuration.');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to get upload URL. Please check Cloudflare R2 configuration.');
         }
         
         const { uploadUrl, publicUrl } = await response.json();
@@ -195,21 +196,6 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
       } else {
         recordData.createdAt = serverTimestamp();
         await addDoc(collection(db, 'records'), recordData);
-        
-        // 4. Send Push Notification
-        try {
-          await fetch('/api/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: '🎙️ تسجيل جديد!',
-              body: `${title} - ${t[CATEGORIES.find(c => c.value === category)?.labelKey || 'pharmacology']}`
-            })
-          });
-        } catch (notifyError) {
-          console.error("Failed to send notification:", notifyError);
-          // Don't fail the upload if notification fails
-        }
       }
 
       setShowSuccess(true);

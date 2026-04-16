@@ -95,7 +95,7 @@ export function useOfflinePDF(pdfUrl: string | undefined) {
           '\n3. Run this command to create a cors.json file:',
           '\n   echo \'[{"origin": ["*"],"method": ["GET"],"maxAgeSeconds": 3600}]\' > cors.json',
           '\n4. Run this command to apply it to your bucket:',
-          '\n   gsutil cors set cors.json gs://gen-lang-client-0712465288.firebasestorage.app'
+          '\n   gsutil cors set cors.json gs://mylectures-app.firebasestorage.app'
         );
       } else {
         alert('Failed to download PDF for offline viewing.');

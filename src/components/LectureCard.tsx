@@ -168,14 +168,31 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
             <button
               onClick={downloadPDF}
               disabled={isDownloading}
-              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-lg sm:rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-50 relative overflow-hidden"
+              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-lg sm:rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-100 relative overflow-hidden"
               title={isRtl ? 'تنزيل للمشاهدة بدون إنترنت' : 'Download for offline viewing'}
             >
               {isDownloading ? (
-                <>
-                  <div className="absolute inset-0 bg-sky-200 dark:bg-sky-800/50" style={{ width: `${downloadProgress}%`, transition: 'width 0.3s' }} />
-                  <Loader2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 animate-spin relative z-10" />
-                </>
+                <div className="relative w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                    <path
+                      className="text-sky-200 dark:text-sky-800/50"
+                      strokeWidth="4"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                    <path
+                      className="text-sky-600 dark:text-sky-400 transition-all duration-300"
+                      strokeDasharray={`${downloadProgress}, 100`}
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                  </svg>
+                  <span className="absolute text-[6px] sm:text-[8px] font-bold leading-none">{downloadProgress}</span>
+                </div>
               ) : (
                 <CloudDownload className="w-3.5 h-3.5 sm:w-5 sm:h-5 relative z-10" />
               )}

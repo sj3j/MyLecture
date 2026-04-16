@@ -108,6 +108,20 @@
         }
       },
       "required": ["type", "createdBy", "authorName"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "A student record for custom login.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "password": { "type": "string", "description": "Hashed password" },
+        "examCode": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "password", "examCode", "isActive"]
     }
   },
   "firestore": {
@@ -122,6 +136,10 @@
     "/announcements/{announcementId}": {
       "schema": "Announcement",
       "description": "Collection of announcements and notifications."
+    },
+    "/students/{email}": {
+      "schema": "Student",
+      "description": "Collection of student records for custom login."
     }
   }
 }

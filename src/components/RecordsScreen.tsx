@@ -73,10 +73,8 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
 
   const handleDeleteRecord = async (id: string) => {
     try {
-      const response = await fetch(`/api/admin/records/${id}`, {
-        method: 'DELETE'
-      });
-      if (!response.ok) throw new Error('Failed to delete record');
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'records', id));
       setDeletingId(null);
     } catch (err) {
       console.error('Error deleting record:', err);

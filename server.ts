@@ -57,10 +57,14 @@ async function startServer() {
     });
 
     // Launch the bot
-    bot.launch().then(() => {
+    bot.launch({ dropPendingUpdates: true }).then(() => {
       console.log("Telegram bot successfully launched!");
-    }).catch((err) => {
-      console.error("Failed to launch Telegram bot:", err);
+    }).catch((err: any) => {
+      if (err?.response?.error_code === 409) {
+        console.warn("Telegram bot 409 Conflict: Another instance is polling. This is normal during hot-reloads.");
+      } else {
+        console.error("Failed to launch Telegram bot:", err);
+      }
     });
 
     // Enable graceful stop
@@ -76,7 +80,7 @@ async function startServer() {
   });
 
   // Generate Presigned URL for Cloudflare R2 Upload
-  app.get("/api/upload-url", async (req, res) => {
+  app.get("/api/get-upload-url", async (req, res) => {
     if (!s3Client) {
       return res.status(500).json({ error: "Cloudflare R2 is not configured on the server." });
     }

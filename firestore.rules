@@ -38,14 +38,16 @@ service cloud.firestore {
     }
 
     function isMasterAdmin() {
-      return isAuthenticated() && request.auth.token.email != null && request.auth.token.email in ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"] && request.auth.token.email_verified == true;
+      return isAuthenticated() && 
+             (request.auth.token.email == "almdrydyl335@gmail.com" || 
+              request.auth.token.email == "fenix.admin@gmail.com");
     }
 
     function isAdmin() {
       return isMasterAdmin() ||
-        (
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-        );
+        (isAuthenticated() && 
+         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     function isModerator() {
@@ -115,8 +117,8 @@ service cloud.firestore {
     }
     
     match /students/{email} {
-      allow read: if isAdmin() || (isAuthenticated() && request.auth.token.email != null && request.auth.token.email.lower() == email);
-      allow write: if isAdmin();
+      allow read: if isAdminOrModerator() || (isAuthenticated() && request.auth.token.email != null && request.auth.token.email.lower() == email);
+      allow write: if isAdminOrModerator();
     }
 
     match /users/{userId} {

@@ -142,23 +142,17 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
         });
       }
 
-      const response = await fetch('/api/admin/announcements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: newPostText.trim(),
-          type: newPostFileType || 'text',
-          imageUrl: newPostFileType === 'image' ? fileUrl : null,
-          videoUrl: newPostFileType === 'video' ? fileUrl : null,
-          embeddedLectures: selectedLectures,
-          createdBy: user?.uid,
-          authorName: user?.name
-        })
+      await addDoc(collection(db, 'announcements'), {
+        content: newPostText.trim(),
+        text: newPostText.trim(),
+        type: newPostFileType || 'text',
+        imageUrl: newPostFileType === 'image' ? fileUrl : null,
+        videoUrl: newPostFileType === 'video' ? fileUrl : null,
+        embeddedLectures: selectedLectures,
+        createdBy: user?.uid,
+        authorName: user?.name,
+        createdAt: serverTimestamp()
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to create announcement');
-      }
 
       setShowCreateModal(false);
       setNewPostText('');
@@ -175,10 +169,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
 
   const handleDeletePost = async (postId: string) => {
     try {
-      const response = await fetch(`/api/admin/announcements/${postId}`, {
-        method: 'DELETE'
-      });
-      if (!response.ok) throw new Error('Failed to delete announcement');
+      await deleteDoc(doc(db, 'announcements', postId));
       setDeletingId(null);
     } catch (err) {
       console.error('Error deleting post:', err);

@@ -41,24 +41,25 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       let userRole = isMasterAdmin ? 'admin' : 'student';
 
       if (!isMasterAdmin && result.user.email) {
-        const response = await fetch('/api/check-whitelist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: result.user.email })
-        });
+        const emailLower = result.user.email.toLowerCase();
         
-        if (response.ok) {
-          const data = await response.json();
-          if (!data.exists || !data.data.isActive) {
-            // Don't create user doc, just return. App.tsx will handle the sign out and error message.
-            return;
-          }
-          if (data.data.role) {
-            userRole = data.data.role;
-          }
+        // Check allowed_admins
+        const adminDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
+        if (adminDoc.exists()) {
+          const data = adminDoc.data();
+          userRole = data.role || 'admin';
         } else {
-          console.error("Failed to check whitelist via API");
-          return;
+          // Check students collection
+          const studentDoc = await getDoc(doc(db, 'students', emailLower));
+          if (studentDoc.exists()) {
+            const data = studentDoc.data();
+            if (!data.isActive) {
+              return; // App.tsx will handle sign out
+            }
+            userRole = data.role || 'student';
+          } else {
+            return; // App.tsx will handle sign out
+          }
         }
       }
 
@@ -109,40 +110,38 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     if (onClearError) onClearError();
 
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const emailLower = email.toLowerCase();
+      const studentDoc = await getDoc(doc(db, 'students', emailLower));
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
+      if (!studentDoc.exists()) {
+        throw new Error(isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials');
       }
 
-      // Sign in with the custom token returned from the server
-      const userCredential = await signInWithCustomToken(auth, data.token);
+      const studentData = studentDoc.data();
+      if (!studentData.isActive) {
+        throw new Error(isRtl ? 'تم تعطيل حسابك' : 'Your account has been deactivated');
+      }
 
-      // Check if user exists in Firestore
-      const userRef = doc(db, 'users', userCredential.user.uid);
-      const userSnap = await getDoc(userRef);
+      const { hashPassword } = await import('../lib/hash');
+      const hashedPassword = await hashPassword(password);
+
+      if (hashedPassword !== studentData.password) {
+        throw new Error(isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials');
+      }
+
+      // Success! Store in localStorage for persistence (since we aren't using Firebase Auth for this)
+      const customUser = {
+        uid: `custom_${emailLower}`,
+        name: studentData.name,
+        email: emailLower,
+        role: 'student',
+        examCode: studentData.examCode,
+        memberSince: studentData.createdAt,
+        isCustomLogin: true
+      };
       
-      if (!userSnap.exists()) {
-        // Create new user document
-        await setDoc(userRef, {
-          name: email.split('@')[0],
-          email: email,
-          role: 'student',
-          createdAt: serverTimestamp(),
-          favorites: [],
-          studied: [],
-          completedWeeklyTasks: [],
-          notificationPreferences: { lectures: true, announcements: true }
-        });
-      }
+      localStorage.setItem('customUser', JSON.stringify(customUser));
+      window.location.reload(); // Reload to let App.tsx pick up the custom user
 
     } catch (err: any) {
       console.error('Email sign in error:', err);

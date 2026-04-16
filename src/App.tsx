@@ -85,32 +85,44 @@ export default function App() {
 
         if (!isMasterAdmin && firebaseUser.email) {
           try {
-            const response = await fetch('/api/check-whitelist', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: firebaseUser.email })
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              if (!data.exists) {
-                await signOut(auth);
-                setLoginError(isRtl ? 'هذا الحساب غير مسجل في التطبيق. يرجى التواصل مع الإدارة.' : 'This account is not registered. Please contact administration.');
-                setUser(null);
-                setIsAuthReady(true);
-                return;
-              }
-              
-              studentData = data.data;
-              if (!studentData.isActive) {
-                await signOut(auth);
-                setLoginError(isRtl ? 'تم تعطيل حسابك. يرجى التواصل مع الإدارة.' : 'Your account has been deactivated. Please contact administration.');
-                setUser(null);
-                setIsAuthReady(true);
-                return;
-              }
+            const emailLower = firebaseUser.email.toLowerCase();
+            
+            // Check allowed_admins
+            const adminDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
+            if (adminDoc.exists()) {
+              const data = adminDoc.data();
+              studentData = {
+                name: data.role === 'moderator' ? 'Moderator' : 'Admin',
+                email: emailLower,
+                isActive: true,
+                role: data.role || 'admin'
+              };
             } else {
-              throw new Error("Failed to check whitelist");
+              // Check students collection
+              const studentDoc = await getDoc(doc(db, 'students', emailLower));
+              if (studentDoc.exists()) {
+                const data = studentDoc.data();
+                studentData = {
+                  ...data,
+                  id: studentDoc.id
+                };
+              }
+            }
+
+            if (!studentData) {
+              await signOut(auth);
+              setLoginError(isRtl ? 'هذا الحساب غير مسجل في التطبيق. يرجى التواصل مع الإدارة.' : 'This account is not registered. Please contact administration.');
+              setUser(null);
+              setIsAuthReady(true);
+              return;
+            }
+            
+            if (!studentData.isActive) {
+              await signOut(auth);
+              setLoginError(isRtl ? 'تم تعطيل حسابك. يرجى التواصل مع الإدارة.' : 'Your account has been deactivated. Please contact administration.');
+              setUser(null);
+              setIsAuthReady(true);
+              return;
             }
           } catch (error) {
             console.error("Error checking student whitelist:", error);
@@ -126,9 +138,23 @@ export default function App() {
         userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
           if (userDoc.exists()) {
             const whitelistRole = studentData?.role === 'admin' || studentData?.role === 'moderator' ? studentData.role : null;
+            
+            const defaultEmailName = firebaseUser.email ? firebaseUser.email.split('@')[0] : '';
+            const isDefaultName = userDoc.data().name === defaultEmailName || 
+                                  userDoc.data().name === 'Admin' || 
+                                  userDoc.data().name === 'Moderator' || 
+                                  userDoc.data().name === 'Student';
+            
+            // If the user has a custom name in their profile, use it.
+            // Otherwise, prefer the name from the students collection (studentData.name),
+            // then fallback to the default generated name.
+            const resolvedName = (!isDefaultName && userDoc.data().name) 
+              ? userDoc.data().name 
+              : (studentData?.name && studentData.name !== 'Admin' && studentData.name !== 'Moderator' ? studentData.name : (userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student')));
+
             setUser({
               uid: firebaseUser.uid,
-              name: studentData?.name || userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
+              name: resolvedName,
               email: firebaseUser.email || '',
               role: isMasterAdmin ? 'admin' : (whitelistRole || userDoc.data().role || 'student'),
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
@@ -180,7 +206,34 @@ export default function App() {
         if (userUnsubscribe) {
           userUnsubscribe();
         }
-        setUser(null);
+        
+        // Check for custom login in localStorage
+        const savedCustomUser = localStorage.getItem('customUser');
+        if (savedCustomUser) {
+          try {
+            const customUser = JSON.parse(savedCustomUser);
+            // Verify if student is still active and exists
+            const studentDoc = await getDoc(doc(db, 'students', customUser.email));
+            if (studentDoc.exists() && studentDoc.data().isActive) {
+              const data = studentDoc.data();
+              setUser({
+                ...customUser,
+                name: data.name, // Always use latest name from students collection
+                examCode: data.examCode,
+                memberSince: data.createdAt
+              } as UserProfile);
+            } else {
+              localStorage.removeItem('customUser');
+              setUser(null);
+            }
+          } catch (err) {
+            console.error('Error parsing custom user:', err);
+            localStorage.removeItem('customUser');
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
         setIsAuthReady(true);
       }
     });

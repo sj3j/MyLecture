@@ -84,7 +84,12 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    if (user?.isCustomLogin) {
+      localStorage.removeItem('customUser');
+      window.location.reload();
+    } else {
+      await signOut(auth);
+    }
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,14 +140,31 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
         });
       }
 
-      await setDoc(doc(db, 'users', user.uid), {
-        name: editName.trim(),
-        role: user.role,
-        email: user.email,
-        examCode: editExamCode.trim(),
-        group: editGroup.trim(),
-        ...(photoUrl ? { photoUrl } : {})
-      }, { merge: true });
+      if (user.isCustomLogin) {
+        // Update students collection for custom login users
+        await updateDoc(doc(db, 'students', user.email), {
+          name: editName.trim(),
+          examCode: editExamCode.trim(),
+          // Custom users don't have 'group' in their student doc usually, but we can add it or ignore
+        });
+        
+        // Update localStorage to reflect changes immediately
+        const updatedCustomUser = {
+          ...user,
+          name: editName.trim(),
+          examCode: editExamCode.trim()
+        };
+        localStorage.setItem('customUser', JSON.stringify(updatedCustomUser));
+      } else {
+        await setDoc(doc(db, 'users', user.uid), {
+          name: editName.trim(),
+          role: user.role,
+          email: user.email,
+          examCode: editExamCode.trim(),
+          group: editGroup.trim(),
+          ...(photoUrl ? { photoUrl } : {})
+        }, { merge: true });
+      }
 
       setIsEditing(false);
       setEditPhotoFile(null);
@@ -160,9 +182,20 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
     const newPrefs = { ...currentPrefs, [type]: !currentPrefs[type] };
     
     try {
-      await setDoc(doc(db, 'users', user.uid), {
-        notificationPreferences: newPrefs
-      }, { merge: true });
+      if (user.isCustomLogin) {
+        await updateDoc(doc(db, 'students', user.email), {
+          notificationPreferences: newPrefs
+        });
+        const updatedCustomUser = {
+          ...user,
+          notificationPreferences: newPrefs
+        };
+        localStorage.setItem('customUser', JSON.stringify(updatedCustomUser));
+      } else {
+        await setDoc(doc(db, 'users', user.uid), {
+          notificationPreferences: newPrefs
+        }, { merge: true });
+      }
     } catch (error) {
       console.error('Error updating notification preferences:', error);
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -38,10 +38,13 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/admin/students');
-      if (!response.ok) throw new Error('Failed to fetch students');
-      const data = await response.json();
-      setStudents(data.students);
+      const snapshot = await getDocs(collection(db, 'students'));
+      const studentsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toMillis ? doc.data().createdAt.toMillis() : Date.now()
+      })) as Student[];
+      setStudents(studentsData);
     } catch (err) {
       console.error('Error fetching students:', err);
     } finally {
@@ -62,17 +65,24 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     setSuccess(null);
 
     try {
-      const response = await fetch('/api/admin/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, examCode })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to add student');
+      const emailLower = email.toLowerCase();
+      const studentDoc = await getDoc(doc(db, 'students', emailLower));
+      
+      if (studentDoc.exists()) {
+        throw new Error(isRtl ? 'الطالب موجود بالفعل' : 'Student already exists');
       }
+
+      const { hashPassword } = await import('../lib/hash');
+      const hashedPassword = await hashPassword(password);
+
+      await setDoc(doc(db, 'students', emailLower), {
+        name,
+        email: emailLower,
+        password: hashedPassword,
+        examCode,
+        isActive: true,
+        createdAt: serverTimestamp()
+      });
 
       setSuccess(isRtl ? 'تمت إضافة الطالب بنجاح' : 'Student added successfully');
       setName('');
@@ -90,14 +100,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleToggleActive = async (student: Student) => {
     try {
-      const response = await fetch(`/api/admin/students/${encodeURIComponent(student.id)}/toggle`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !student.isActive })
+      await updateDoc(doc(db, 'students', student.id), {
+        isActive: !student.isActive
       });
-      
-      if (!response.ok) throw new Error('Failed to toggle status');
-      
       setStudents(students.map(s => s.id === student.id ? { ...s, isActive: !s.isActive } : s));
     } catch (err) {
       console.error('Error toggling student status:', err);
@@ -106,12 +111,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleDeleteStudent = async (id: string) => {
     try {
-      const response = await fetch(`/api/admin/students/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
-      });
-      
-      if (!response.ok) throw new Error('Failed to delete student');
-      
+      await deleteDoc(doc(db, 'students', id));
       setStudents(students.filter(s => s.id !== id));
       setDeletingId(null);
     } catch (err) {
@@ -121,12 +121,12 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleDeleteAllStudents = async () => {
     try {
-      const response = await fetch('/api/admin/students', {
-        method: 'DELETE'
+      const snapshot = await getDocs(collection(db, 'students'));
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
       });
-      
-      if (!response.ok) throw new Error('Failed to delete all students');
-      
+      await batch.commit();
       setStudents([]);
       setIsDeletingAll(false);
       setSuccess(isRtl ? 'تم حذف جميع الطلاب بنجاح' : 'All students deleted successfully');
@@ -145,29 +145,44 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     setSuccess(null);
 
     try {
-      const response = await fetch(`/api/admin/students/${encodeURIComponent(editingStudent.id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          newEmail: editEmail,
-          name: editName, 
-          password: editPassword, 
-          examCode: editExamCode 
-        })
-      });
+      const oldEmail = editingStudent.id;
+      const newEmailLower = editEmail.toLowerCase();
+      
+      const updateData: any = {
+        name: editName,
+        examCode: editExamCode,
+      };
 
-      const data = await response.json();
+      if (editPassword) {
+        const { hashPassword } = await import('../lib/hash');
+        updateData.password = await hashPassword(editPassword);
+      }
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update student');
+      if (newEmailLower !== oldEmail) {
+        const newDoc = await getDoc(doc(db, 'students', newEmailLower));
+        if (newDoc.exists()) {
+          throw new Error(isRtl ? 'البريد الإلكتروني الجديد موجود بالفعل' : 'New email already exists');
+        }
+
+        const oldDoc = await getDoc(doc(db, 'students', oldEmail));
+        const oldData = oldDoc.data();
+
+        await setDoc(doc(db, 'students', newEmailLower), {
+          ...oldData,
+          ...updateData,
+          email: newEmailLower
+        });
+        await deleteDoc(doc(db, 'students', oldEmail));
+      } else {
+        await updateDoc(doc(db, 'students', oldEmail), updateData);
       }
 
       setSuccess(isRtl ? 'تم تحديث الطالب بنجاح' : 'Student updated successfully');
       setEditingStudent(null);
       fetchStudents();
     } catch (err: any) {
-      console.error('Error updating student:', err);
-      setError(err.message || (isRtl ? 'فشل تحديث الطالب' : 'Failed to update student'));
+      console.error('Error editing student:', err);
+      setError(err.message || (isRtl ? 'فشل تحديث بيانات الطالب' : 'Failed to update student'));
     } finally {
       setIsSubmitting(false);
     }
@@ -185,47 +200,45 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       const text = await file.text();
       const rows = text.split('\n').filter(row => row.trim() !== '');
       
-      // Assuming CSV format: name,email,password,examCode
-      let addedCount = 0;
-      let errorCount = 0;
+      if (rows.length <= 1) {
+        throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
+      }
+
+      const { hashPassword } = await import('../lib/hash');
+      const batch = writeBatch(db);
+      let count = 0;
 
       // Skip header row if it exists
       const startIndex = rows[0].toLowerCase().includes('name') ? 1 : 0;
 
       for (let i = startIndex; i < rows.length; i++) {
         const [csvName, csvEmail, csvPassword, csvExamCode] = rows[i].split(',').map(s => s.trim());
-        
         if (csvName && csvEmail && csvPassword && csvExamCode) {
-          try {
-            const response = await fetch('/api/admin/students', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                name: csvName, 
-                email: csvEmail, 
-                password: csvPassword, 
-                examCode: csvExamCode 
-              })
-            });
-            if (response.ok) {
-              addedCount++;
-            } else {
-              errorCount++;
-            }
-          } catch (err) {
-            errorCount++;
-          }
+          const emailLower = csvEmail.toLowerCase();
+          const hashedPassword = await hashPassword(csvPassword);
+          
+          const studentRef = doc(db, 'students', emailLower);
+          batch.set(studentRef, {
+            name: csvName,
+            email: emailLower,
+            password: hashedPassword,
+            examCode: csvExamCode,
+            isActive: true,
+            createdAt: serverTimestamp()
+          });
+          count++;
         }
       }
 
-      setSuccess(isRtl ? `تمت إضافة ${addedCount} طالب. أخطاء: ${errorCount}` : `Added ${addedCount} students. Errors: ${errorCount}`);
+      await batch.commit();
+      setSuccess(isRtl ? `تم استيراد ${count} طالب بنجاح` : `Successfully imported ${count} students`);
       fetchStudents();
-    } catch (err) {
-      console.error('CSV upload error:', err);
-      setError(isRtl ? 'فشل قراءة الملف' : 'Failed to read file');
+    } catch (err: any) {
+      console.error('Error uploading CSV:', err);
+      setError(err.message || (isRtl ? 'فشل استيراد ملف CSV' : 'Failed to import CSV'));
     } finally {
       setIsLoading(false);
-      if (e.target) e.target.value = ''; // Reset file input
+      if (e.target) e.target.value = '';
     }
   };
 
