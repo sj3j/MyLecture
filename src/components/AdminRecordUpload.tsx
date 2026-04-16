@@ -138,8 +138,17 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
         const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
         
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to get upload URL. Please check Cloudflare R2 configuration.');
+          let errorMessage = 'Failed to get upload URL. Please check Cloudflare R2 configuration.';
+          try {
+            const errorData = await response.json();
+            if (errorData.error) errorMessage = errorData.error;
+          } catch (e) {
+            // If response is not JSON (e.g. Vercel 500 HTML page), log the raw text
+            const text = await response.text().catch(() => 'No response text');
+            console.error('Non-JSON error response from /api/get-upload-url:', text);
+            errorMessage = `Server error (${response.status}). Check Vercel Function Logs.`;
+          }
+          throw new Error(errorMessage);
         }
         
         const { uploadUrl, publicUrl } = await response.json();
