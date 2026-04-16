@@ -117,7 +117,7 @@ service cloud.firestore {
     }
     
     match /students/{email} {
-      allow read: if isAdminOrModerator() || (isAuthenticated() && request.auth.token.email != null && request.auth.token.email.lower() == email);
+      allow read: if isAdminOrModerator() || (isAuthenticated() && (request.auth.uid == email || (request.auth.token.email != null && request.auth.token.email.lower() == email)));
       allow write: if isAdminOrModerator();
     }
 

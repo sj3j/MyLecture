@@ -79,13 +79,14 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const isMasterAdmin = adminEmails.includes(firebaseUser.email || '');
+        const userEmail = firebaseUser.email || firebaseUser.uid;
+        const isMasterAdmin = adminEmails.includes(userEmail || '');
         
         let studentData: any = null;
 
-        if (!isMasterAdmin && firebaseUser.email) {
+        if (!isMasterAdmin && userEmail) {
           try {
-            const emailLower = firebaseUser.email.toLowerCase();
+            const emailLower = userEmail.toLowerCase();
             
             // Check allowed_admins
             const adminDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
@@ -207,33 +208,7 @@ export default function App() {
           userUnsubscribe();
         }
         
-        // Check for custom login in localStorage
-        const savedCustomUser = localStorage.getItem('customUser');
-        if (savedCustomUser) {
-          try {
-            const customUser = JSON.parse(savedCustomUser);
-            // Verify if student is still active and exists
-            const studentDoc = await getDoc(doc(db, 'students', customUser.email));
-            if (studentDoc.exists() && studentDoc.data().isActive) {
-              const data = studentDoc.data();
-              setUser({
-                ...customUser,
-                name: data.name, // Always use latest name from students collection
-                examCode: data.examCode,
-                memberSince: data.createdAt
-              } as UserProfile);
-            } else {
-              localStorage.removeItem('customUser');
-              setUser(null);
-            }
-          } catch (err) {
-            console.error('Error parsing custom user:', err);
-            localStorage.removeItem('customUser');
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
+        setUser(null);
         setIsAuthReady(true);
       }
     });
@@ -279,6 +254,8 @@ export default function App() {
 
   // Announcements Listener for Notifications
   useEffect(() => {
+    if (!user) return;
+    
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
@@ -294,7 +271,7 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
     return () => unsubscribe();
-  }, [currentTab]);
+  }, [currentTab, user]);
 
   useEffect(() => {
     if (currentTab === 'announcements') {
@@ -305,6 +282,12 @@ export default function App() {
 
   // Lectures Listener
   useEffect(() => {
+    if (!user) {
+      setLectures([]);
+      setIsLoading(false);
+      return;
+    }
+
     const q = query(collection(db, 'lectures'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Lecture));
@@ -316,7 +299,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   let baseLectures = lectures.filter(lecture => {
     const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;

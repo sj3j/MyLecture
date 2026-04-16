@@ -62,7 +62,6 @@ export interface UserProfile {
     announcements: boolean;
   };
   memberSince?: any;
-  isCustomLogin?: boolean;
 }
 
 export interface Student {

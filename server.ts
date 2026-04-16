@@ -7,6 +7,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -74,13 +75,55 @@ async function startServer() {
     console.warn("TELEGRAM_BOT_TOKEN is not set. Telegram bot will not be started.");
   }
 
+  // --- Middleware ---
+  const verifyAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      (req as any).user = decodedToken;
+      next();
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    }
+  };
+
+  const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const db = admin.firestore();
+      const userDoc = await db.collection('users').doc(user.uid).get();
+      
+      if (!userDoc.exists) {
+        return res.status(403).json({ error: 'Forbidden: User not found' });
+      }
+
+      const role = userDoc.data()?.role;
+      if (role !== 'admin' && role !== 'moderator') {
+        return res.status(403).json({ error: 'Forbidden: Requires admin privileges' });
+      }
+      
+      next();
+    } catch (error) {
+      console.error('Role verification failed:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  };
+
   // --- API Routes ---
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
   // Generate Presigned URL for Cloudflare R2 Upload
-  app.get("/api/get-upload-url", async (req, res) => {
+  app.get("/api/get-upload-url", verifyAuth, verifyAdmin, async (req, res) => {
     if (!s3Client) {
       return res.status(500).json({ error: "Cloudflare R2 is not configured on the server." });
     }
@@ -120,7 +163,7 @@ async function startServer() {
   });
 
   // Send FCM Notification
-  app.post("/api/notify", async (req, res) => {
+  app.post("/api/notify", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
@@ -161,28 +204,56 @@ async function startServer() {
         return res.status(400).json({ error: "Email and password are required." });
       }
 
+      console.log(`Login attempt for email: ${email}`);
+
       const db = admin.firestore();
       const studentDoc = await db.collection('students').doc(email.toLowerCase()).get();
 
       if (!studentDoc.exists) {
-        return res.status(401).json({ error: "بيانات غير صحيحة" });
+        console.log(`Student document not found for email: ${email}`);
+        return res.status(401).json({ error: `Student not found: ${email}` });
       }
 
       const studentData = studentDoc.data();
 
       if (!studentData?.isActive) {
+        console.log(`Student account is disabled for email: ${email}`);
         return res.status(403).json({ error: "تم تعطيل حسابك" });
       }
 
-      const isMatch = await bcrypt.compare(password, studentData?.password || '');
+      const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+      let isMatch = hashedPassword === studentData?.password;
       
       if (!isMatch) {
-        return res.status(401).json({ error: "بيانات غير صحيحة" });
+        try {
+          isMatch = await bcrypt.compare(password, studentData?.password || '');
+          if (isMatch) {
+            console.log(`Password matched using bcrypt for email: ${email}`);
+          }
+        } catch (e) {
+          // Ignore bcrypt errors if it's not a valid bcrypt hash
+        }
+      } else {
+        console.log(`Password matched using SHA-256 for email: ${email}`);
       }
 
-      // Create custom token
-      const customToken = await admin.auth().createCustomToken(email.toLowerCase());
+      // Fallback for plain text password (just in case)
+      if (!isMatch && password === studentData?.password) {
+        isMatch = true;
+        console.log(`Password matched using plain text for email: ${email}`);
+      }
       
+      if (!isMatch) {
+        console.log(`Password mismatch for email: ${email}`);
+        return res.status(401).json({ error: `Password mismatch. Expected hash: ${studentData?.password}, Got: ${hashedPassword}` });
+      }
+
+      // Create custom token with email claim
+      const customToken = await admin.auth().createCustomToken(email.toLowerCase(), {
+        email: email.toLowerCase()
+      });
+      
+      console.log(`Custom token generated successfully for email: ${email}`);
       res.json({ token: customToken });
     } catch (error) {
       console.error("Login error:", error);

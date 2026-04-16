@@ -110,38 +110,42 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     if (onClearError) onClearError();
 
     try {
-      const emailLower = email.toLowerCase();
-      const studentDoc = await getDoc(doc(db, 'students', emailLower));
-
-      if (!studentDoc.exists()) {
-        throw new Error(isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials');
-      }
-
-      const studentData = studentDoc.data();
-      if (!studentData.isActive) {
-        throw new Error(isRtl ? 'تم تعطيل حسابك' : 'Your account has been deactivated');
-      }
-
-      const { hashPassword } = await import('../lib/hash');
-      const hashedPassword = await hashPassword(password);
-
-      if (hashedPassword !== studentData.password) {
-        throw new Error(isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials');
-      }
-
-      // Success! Store in localStorage for persistence (since we aren't using Firebase Auth for this)
-      const customUser = {
-        uid: `custom_${emailLower}`,
-        name: studentData.name,
-        email: emailLower,
-        role: 'student',
-        examCode: studentData.examCode,
-        memberSince: studentData.createdAt,
-        isCustomLogin: true
-      };
+      const emailLower = email.trim().toLowerCase();
       
-      localStorage.setItem('customUser', JSON.stringify(customUser));
-      window.location.reload(); // Reload to let App.tsx pick up the custom user
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailLower, password })
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || (isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials'));
+      }
+
+      const { token } = await response.json();
+      const result = await signInWithCustomToken(auth, token);
+
+      // Check if user exists in users collection
+      const userRef = doc(db, 'users', result.user.uid);
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        const studentDoc = await getDoc(doc(db, 'students', emailLower));
+        const studentData = studentDoc.data() || {};
+        
+        await setDoc(userRef, {
+          name: studentData.name || 'Student',
+          email: emailLower,
+          role: studentData.role || 'student',
+          examCode: studentData.examCode || '',
+          createdAt: serverTimestamp(),
+          favorites: [],
+          studied: [],
+          completedWeeklyTasks: [],
+          notificationPreferences: { lectures: true, announcements: true }
+        });
+      }
 
     } catch (err: any) {
       console.error('Email sign in error:', err);

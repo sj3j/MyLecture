@@ -1,9 +1,58 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import admin from "firebase-admin";
+
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
+  } catch (error) {
+    console.error("Firebase Admin initialization error:", error);
+  }
+}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  // Verify Authentication
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+  }
+
+  const token = authHeader.split('Bearer ')[1];
+  let decodedToken;
+  try {
+    decodedToken = await admin.auth().verifyIdToken(token);
+  } catch (error) {
+    console.error('Token verification failed:', error);
+    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  }
+
+  // Verify Admin/Moderator Role
+  try {
+    const db = admin.firestore();
+    const userDoc = await db.collection('users').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return res.status(403).json({ error: 'Forbidden: User not found' });
+    }
+
+    const role = userDoc.data()?.role;
+    if (role !== 'admin' && role !== 'moderator') {
+      return res.status(403).json({ error: 'Forbidden: Requires admin privileges' });
+    }
+  } catch (error) {
+    console.error('Role verification failed:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 
   const { filename, contentType } = req.query;

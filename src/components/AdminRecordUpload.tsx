@@ -135,7 +135,12 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
         size = parseFloat((file.size / (1024 * 1024)).toFixed(2)); // Size in MB
 
         // 1. Get presigned URL from our backend
-        const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+        const token = await auth.currentUser.getIdToken();
+        const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         
         if (!response.ok) {
           let errorMessage = 'Failed to get upload URL. Please check Cloudflare R2 configuration.';
