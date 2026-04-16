@@ -120,7 +120,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || (isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials'));
+        throw new Error(data.error || (isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials'));
       }
 
       const { token } = await response.json();
@@ -149,7 +149,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
 
     } catch (err: any) {
       console.error('Email sign in error:', err);
-      setError(err.message || (isRtl ? 'بيانات غير صحيحة' : 'Invalid credentials'));
+      setError(err.message || (isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials'));
     } finally {
       setIsLoading(false);
     }

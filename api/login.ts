@@ -37,7 +37,7 @@ export default async function handler(req: any, res: any) {
     const studentDoc = await db.collection('students').doc(email.toLowerCase()).get();
 
     if (!studentDoc.exists) {
-      return res.status(401).json({ error: "بيانات غير صحيحة" });
+      return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
     }
 
     const studentData = studentDoc.data();
@@ -63,7 +63,7 @@ export default async function handler(req: any, res: any) {
     }
     
     if (!isMatch) {
-      return res.status(401).json({ error: "بيانات غير صحيحة" });
+      return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
     }
 
     // Create custom token with email claim

@@ -211,7 +211,7 @@ async function startServer() {
 
       if (!studentDoc.exists) {
         console.log(`Student document not found for email: ${email}`);
-        return res.status(401).json({ error: `Student not found: ${email}` });
+        return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
       }
 
       const studentData = studentDoc.data();
@@ -245,7 +245,7 @@ async function startServer() {
       
       if (!isMatch) {
         console.log(`Password mismatch for email: ${email}`);
-        return res.status(401).json({ error: `Password mismatch. Expected hash: ${studentData?.password}, Got: ${hashedPassword}` });
+        return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
       }
 
       // Create custom token with email claim

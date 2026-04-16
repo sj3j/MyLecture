@@ -104,7 +104,11 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
     return (
       <div className="flex flex-col gap-4 pb-24">
         {CATEGORIES.map(cat => {
-          const count = lectures.filter(l => l.category === cat.value).length;
+          const categoryLectures = lectures.filter(l => l.category === cat.value);
+          const count = categoryLectures.length;
+          const studiedCount = categoryLectures.filter(l => user?.studied?.includes(l.id)).length;
+          const progress = count > 0 ? Math.round((studiedCount / count) * 100) : 0;
+          
           return (
             <button
               key={cat.value}
@@ -112,21 +116,36 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
                 setSelectedCategory(cat.value);
                 setSelectedType('theoretical'); // Default to theoretical when opening a subject
               }}
-              className="flex items-center justify-between p-5 bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 hover:border-sky-300 dark:hover:border-sky-600 hover:shadow-md transition-all group"
+              className="flex flex-col p-5 bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 hover:border-sky-300 dark:hover:border-sky-600 hover:shadow-md transition-all group"
             >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-sky-50 dark:bg-sky-900/30 rounded-xl text-sky-600 dark:text-sky-400 group-hover:scale-110 transition-transform">
-                  <BookOpen className="w-6 h-6" />
+              <div className="flex items-center justify-between w-full mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-sky-50 dark:bg-sky-900/30 rounded-xl text-sky-600 dark:text-sky-400 group-hover:scale-110 transition-transform">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div className="text-start">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100">{t[cat.labelKey]}</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+                      {count} {t.navLectures}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-start">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100">{t[cat.labelKey]}</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-                    {count} {t.navLectures}
-                  </p>
+                <div className="text-slate-400 group-hover:text-sky-500 transition-colors">
+                  {isRtl ? <ChevronLeft className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
                 </div>
               </div>
-              <div className="text-slate-400 group-hover:text-sky-500 transition-colors">
-                {isRtl ? <ChevronLeft className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
+              
+              {/* Progress Bar */}
+              <div className="w-full flex items-center gap-3">
+                <div className="flex-1 h-2 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 min-w-[3ch]">
+                  {progress}%
+                </span>
               </div>
             </button>
           );
