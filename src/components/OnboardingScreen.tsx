@@ -83,8 +83,8 @@ export default function OnboardingScreen({ user, lang }: OnboardingScreenProps) 
             disabled={isLoading || !group.trim() || !examCode.trim()}
             className="w-full py-4 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-4"
           >
-            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-            {isRtl ? 'حفظ ومتابعة' : 'Save and Continue'}
+            {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
+            <span>{isRtl ? 'حفظ ومتابعة' : 'Save and Continue'}</span>
           </button>
         </form>
       </div>
