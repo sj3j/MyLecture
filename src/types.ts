@@ -23,11 +23,15 @@ export interface Post {
   createdBy: string;
   authorName: string;
   authorPhotoUrl?: string;
-  type?: 'text' | 'image' | 'video';
+  type?: 'text' | 'image' | 'video' | 'file';
   text?: string;
   date?: any;
   imageUrl?: string;
   videoUrl?: string;
+  fileUrl?: string;
+  fileName?: string;
+  linkUrl?: string;
+  linkTitle?: string;
 }
 
 export interface RecordItem {

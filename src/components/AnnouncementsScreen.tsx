@@ -19,6 +19,10 @@ interface TelegramPost {
   content?: string;
   embeddedLectures?: string[];
   authorName?: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  linkUrl?: string | null;
+  linkTitle?: string | null;
 }
 
 interface AnnouncementsScreenProps {
@@ -36,11 +40,14 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Create Post State
+  // Create/Edit Post State
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [newPostText, setNewPostText] = useState('');
   const [newPostFile, setNewPostFile] = useState<File | null>(null);
-  const [newPostFileType, setNewPostFileType] = useState<'image' | 'video' | null>(null);
+  const [newPostFileType, setNewPostFileType] = useState<'image' | 'video' | 'file' | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
   const [selectedLectures, setSelectedLectures] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +76,10 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
           content: data.content || '',
           embeddedLectures: data.embeddedLectures || [],
           authorName: data.authorName || '',
+          fileUrl: data.fileUrl || null,
+          fileName: data.fileName || null,
+          linkUrl: data.linkUrl || null,
+          linkTitle: data.linkTitle || null,
         });
       });
       setPosts(newPosts);
@@ -121,7 +132,9 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
         return;
       }
       setNewPostFile(file);
-      setNewPostFileType(file.type.startsWith('video/') ? 'video' : 'image');
+      if (file.type.startsWith('video/')) setNewPostFileType('video');
+      else if (file.type.startsWith('image/')) setNewPostFileType('image');
+      else setNewPostFileType('file');
       setError(null);
     }
   };
@@ -135,8 +148,8 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
   };
 
   const handleCreatePost = async () => {
-    if (!newPostText.trim() && !newPostFile && selectedLectures.length === 0) {
-      setError(isRtl ? 'يرجى إدخال محتوى أو إرفاق ملف أو اختيار محاضرة' : 'Please enter content, attach a file, or select a lecture');
+    if (!newPostText.trim() && !newPostFile && !linkUrl.trim() && selectedLectures.length === 0) {
+      setError(isRtl ? 'يرجى إدخال محتوى أو إرفاق ملف أو رابط أو اختيار محاضرة' : 'Please enter content, attach a file, link, or select a lecture');
       return;
     }
 
@@ -145,9 +158,11 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
 
     try {
       let fileUrl = null;
+      let finalFileName = null;
 
       if (newPostFile) {
         const safeFileName = newPostFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        finalFileName = newPostFile.name;
         const storagePath = `announcements/${Date.now()}_${safeFileName}`;
         const storageRef = ref(storage, storagePath);
         const uploadTask = uploadBytesResumable(storageRef, newPostFile);
@@ -168,29 +183,77 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
         });
       }
 
-      await addDoc(collection(db, 'announcements'), {
+      const postData: any = {
         content: newPostText.trim(),
         text: newPostText.trim(),
-        type: newPostFileType || 'text',
-        imageUrl: newPostFileType === 'image' ? fileUrl : null,
-        videoUrl: newPostFileType === 'video' ? fileUrl : null,
         embeddedLectures: selectedLectures,
-        createdBy: user?.uid,
-        authorName: user?.name,
-        createdAt: serverTimestamp()
-      });
+        linkUrl: linkUrl.trim() || null,
+        linkTitle: linkTitle.trim() || null,
+      };
 
-      setShowCreateModal(false);
-      setNewPostText('');
-      setNewPostFile(null);
-      setNewPostFileType(null);
-      setSelectedLectures([]);
+      if (newPostFile) {
+        postData.type = newPostFileType || 'file';
+        postData.imageUrl = newPostFileType === 'image' ? fileUrl : null;
+        postData.videoUrl = newPostFileType === 'video' ? fileUrl : null;
+        postData.fileUrl = newPostFileType === 'file' ? fileUrl : null;
+        postData.fileName = finalFileName;
+      } else if (!editingPostId) {
+        postData.type = 'text';
+      }
+
+      const { updateDoc } = await import('firebase/firestore');
+
+      if (editingPostId) {
+        // Find existing post to merge
+        const existingPost = posts.find(p => p.id === editingPostId);
+        if (existingPost) {
+          // If no new file uploaded, keep the old file type and URLs
+          if (!newPostFile) {
+             postData.type = existingPost.type;
+             postData.imageUrl = existingPost.imageUrl || null;
+             postData.videoUrl = existingPost.videoUrl || null;
+             postData.fileUrl = existingPost.fileUrl || null;
+             postData.fileName = existingPost.fileName || null;
+          }
+        }
+        postData.updatedAt = serverTimestamp();
+        await updateDoc(doc(db, 'announcements', editingPostId), postData);
+      } else {
+        postData.createdBy = user?.uid;
+        postData.authorName = user?.name;
+        postData.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'announcements'), postData);
+      }
+
+      closeModal();
     } catch (err) {
-      console.error('Error creating post:', err);
-      setError(isRtl ? 'حدث خطأ أثناء نشر التبليغ' : 'Error publishing announcement');
+      console.error('Error saving post:', err);
+      setError(isRtl ? 'حدث خطأ أثناء حفظ التبليغ' : 'Error saving announcement');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const closeModal = () => {
+    setShowCreateModal(false);
+    setEditingPostId(null);
+    setNewPostText('');
+    setNewPostFile(null);
+    setNewPostFileType(null);
+    setLinkUrl('');
+    setLinkTitle('');
+    setSelectedLectures([]);
+  };
+
+  const openEditModal = (post: TelegramPost) => {
+    setEditingPostId(post.id);
+    setNewPostText(post.text || post.content || '');
+    setLinkUrl(post.linkUrl || '');
+    setLinkTitle(post.linkTitle || '');
+    setSelectedLectures(post.embeddedLectures || []);
+    setNewPostFile(null); // Force re-upload if they want to change the file
+    setNewPostFileType(null);
+    setShowCreateModal(true);
   };
 
   const handleDeletePost = async (postId: string) => {
@@ -275,7 +338,14 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                       } border border-slate-100 dark:border-zinc-700/50`}>
                         
                         {isAdminOrModerator && (
-                          <div className={`absolute top-2 z-10 ${isRtl ? 'left-2 right-auto' : 'right-2 left-auto'}`}>
+                          <div className={`absolute top-2 z-10 flex gap-1 ${isRtl ? 'left-2 right-auto' : 'right-2 left-auto'}`}>
+                            <button
+                              onClick={() => openEditModal(post)}
+                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+
                             {deletingId === post.id ? (
                               <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700">
                                 <button
@@ -331,6 +401,34 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                             {content}
                           </p>
                         )}
+
+                        {post.fileUrl && !post.photo_url && !post.videoUrl && (
+                          <a href={post.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700/50 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 rounded-lg flex items-center justify-center shrink-0">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                              </div>
+                              <div className="overflow-hidden">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{post.fileName || 'Download File'}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{isRtl ? 'اضغط للتحميل' : 'Click to download'}</p>
+                              </div>
+                            </div>
+                          </a>
+                        )}
+
+                        {post.linkUrl && (
+                          <a href={post.linkUrl.startsWith('http') ? post.linkUrl : `https://${post.linkUrl}`} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+                            <div className="px-4 py-3 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 transition-colors rounded-xl border border-sky-200 dark:border-sky-800/50 flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-sky-200 dark:bg-sky-800 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0">
+                                <Link className="w-4 h-4" />
+                              </div>
+                              <div className="overflow-hidden">
+                                <p className="text-sm font-bold text-sky-900 dark:text-sky-100 truncate">{post.linkTitle || post.linkUrl}</p>
+                                <p className="text-xs text-sky-600 dark:text-sky-400 truncate dir-ltr text-left">{post.linkUrl}</p>
+                              </div>
+                            </div>
+                          </a>
+                        )}
                         
                         {post.embeddedLectures && post.embeddedLectures.length > 0 && (
                           <div className={`mt-2 mb-1 pl-3 rtl:pl-0 rtl:pr-3 border-l-2 rtl:border-l-0 rtl:border-r-2 border-sky-500`}>
@@ -385,9 +483,9 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
               className="bg-white dark:bg-zinc-900 rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
             >
               <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 dark:border-zinc-800">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100">{t.createPost}</h2>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100">{editingPostId ? (isRtl ? 'تعديل التبليغ' : 'Edit Announcement') : t.createPost}</h2>
                 <button
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={closeModal}
                   className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -417,13 +515,12 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
 
                   <div>
                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                      {isRtl ? 'إرفاق ملف (اختياري)' : 'Attach File (Optional)'}
+                      {isRtl ? 'إرفاق ملف (اختياري - سيستبدل المرفق الحالي إن وجد)' : 'Attach File (Optional - Will replace existing)'}
                     </label>
                     <input
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileChange}
-                      accept="image/*,video/*"
                       className="hidden"
                     />
                     <div className="flex gap-2">
@@ -432,13 +529,13 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-slate-200 dark:border-zinc-700 rounded-xl hover:border-sky-500 dark:hover:border-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-colors text-slate-600 dark:text-slate-400 font-medium"
                       >
                         <ImageIcon className="w-5 h-5" />
-                        {isRtl ? 'صورة / فيديو' : 'Image / Video'}
+                        {isRtl ? 'صورة / فيديو / ملف' : 'Image / Video / File'}
                       </button>
                     </div>
                     {newPostFile && (
                       <div className="mt-2 flex items-center justify-between p-3 bg-sky-50 dark:bg-sky-900/20 rounded-xl border border-sky-100 dark:border-sky-800/50">
                         <div className="flex items-center gap-2 text-sky-700 dark:text-sky-300 text-sm font-medium truncate">
-                          {newPostFileType === 'video' ? <Video className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+                          {newPostFileType === 'video' ? <Video className="w-4 h-4" /> : newPostFileType === 'image' ? <ImageIcon className="w-4 h-4" /> : <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>}
                           <span className="truncate">{newPostFile.name}</span>
                         </div>
                         <button
@@ -453,6 +550,33 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                         </button>
                       </div>
                     )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                        {isRtl ? 'رابط خارجي (اختياري)' : 'External Link (Optional)'}
+                      </label>
+                      <input
+                        type="url"
+                        value={linkUrl}
+                        onChange={(e) => setLinkUrl(e.target.value)}
+                        placeholder="https://..."
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none text-[15px] text-slate-900 dark:text-stone-100 text-left dir-ltr"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                        {isRtl ? 'عنوان الرابط (اختياري)' : 'Link Title (Optional)'}
+                      </label>
+                      <input
+                        type="text"
+                        value={linkTitle}
+                        onChange={(e) => setLinkTitle(e.target.value)}
+                        placeholder={isRtl ? 'مثال: اضغط هنا للدخول' : 'e.g., Click here to enter'}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none text-[15px] text-slate-900 dark:text-stone-100"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -495,7 +619,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                   ) : (
                     <>
                       <Megaphone className="w-5 h-5" />
-                      {t.publishPost}
+                      {editingPostId ? (isRtl ? 'حفظ التعديلات' : 'Save Changes') : t.publishPost}
                     </>
                   )}
                 </button>
