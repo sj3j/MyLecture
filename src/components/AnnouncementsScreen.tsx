@@ -18,6 +18,7 @@ interface TelegramPost {
   videoUrl?: string | null;
   content?: string;
   embeddedLectures?: string[];
+  authorName?: string;
 }
 
 interface AnnouncementsScreenProps {
@@ -67,6 +68,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
           videoUrl: data.videoUrl || null,
           content: data.content || '',
           embeddedLectures: data.embeddedLectures || [],
+          authorName: data.authorName || '',
         });
       });
       setPosts(newPosts);
@@ -86,6 +88,30 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
     setIsRefreshing(true);
     setTimeout(() => setIsRefreshing(false), 1000);
   };
+
+  const formatMessageDate = (date: Date) => {
+    const today = new Date();
+    const isToday = date.getDate() === today.getDate() && 
+                    date.getMonth() === today.getMonth() && 
+                    date.getFullYear() === today.getFullYear();
+    if (isToday) {
+      return isRtl ? 'اليوم' : 'Today';
+    }
+    return date.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+      month: 'long', 
+      day: 'numeric'
+    });
+  };
+
+  const groupedPosts = posts.reduce((acc, post) => {
+    const postDate = new Date(post.date * 1000);
+    const dateKey = formatMessageDate(postDate);
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+    acc[dateKey].push(post);
+    return acc;
+  }, {} as Record<string, TelegramPost[]>);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -217,117 +243,125 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
         <div className="flex justify-center py-12">
           <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
         </div>
-      ) : posts.length > 0 ? (
-        <div className="space-y-4">
-          {posts.map(post => {
-            const content = post.text || post.content || post.caption || '';
-            const date = new Date(post.date * 1000);
-            
+      ) : Object.keys(groupedPosts).length > 0 ? (
+        <div className="space-y-8">
+          {Object.entries(groupedPosts).map(([dateKey, postsArray]) => {
+            const datePosts = postsArray as TelegramPost[];
             return (
-              <motion.div
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                key={post.id}
-                className="bg-white dark:bg-zinc-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-zinc-700 shadow-sm relative group"
-              >
-                {isAdminOrModerator && (
-                  <div 
-                    className={`absolute top-4 z-10 ${isRtl ? 'left-4 right-auto' : 'right-4 left-auto'}`}
-                    style={isRtl ? { left: '1rem', right: 'auto' } : { right: '1rem', left: 'auto' }}
-                  >
-                    {deletingId === post.id ? (
-                      <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700">
-                        <button
-                          onClick={() => handleDeletePost(post.id)}
-                          className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-md transition-colors"
-                        >
-                          {isRtl ? 'تأكيد' : 'Confirm'}
-                        </button>
-                        <button
-                          onClick={() => setDeletingId(null)}
-                          className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-md transition-colors"
-                        >
-                          {isRtl ? 'إلغاء' : 'Cancel'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setDeletingId(post.id)}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                )}
-                
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 font-bold overflow-hidden">
-                    <Megaphone className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-stone-100">
-                      {isRtl ? 'إعلان جديد' : 'New Announcement'}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {date.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
-                        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  {content && (
-                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed" dir="auto">
-                      {content}
-                    </p>
-                  )}
+            <div key={dateKey} className="flex flex-col gap-3">
+              {/* Date Header */}
+              <div className="flex justify-center sticky top-4 z-20">
+                <span className="bg-slate-200/80 dark:bg-zinc-700/80 backdrop-blur-md text-slate-600 dark:text-zinc-300 px-3 py-1 rounded-full text-xs font-bold leading-none shadow-sm">
+                  {dateKey}
+                </span>
+              </div>
+              
+              <div className="flex flex-col gap-3">
+                {datePosts.map((post) => {
+                  const content = post.text || post.content || post.caption || '';
+                  const date = new Date(post.date * 1000);
+                  const timeString = date.toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' });
                   
-                  {post.photo_url && (
-                    <div className="rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700 mt-3">
-                      <img 
-                        src={post.photo_url} 
-                        alt="Announcement" 
-                        className="w-full h-auto max-h-[400px] object-contain bg-slate-50 dark:bg-zinc-900 mx-auto" 
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  )}
-                  {post.videoUrl && (
-                    <div className="rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700 mt-3">
-                      <video 
-                        src={post.videoUrl} 
-                        controls
-                        className="w-full h-auto max-h-[400px] object-contain bg-slate-50 dark:bg-zinc-900 mx-auto" 
-                      />
-                    </div>
-                  )}
-                  
-                  {post.embeddedLectures && post.embeddedLectures.length > 0 && (
-                    <div className="mt-4 space-y-3 pt-3 border-t border-slate-100 dark:border-zinc-700">
-                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        {isRtl ? 'المحاضرات المرفقة' : 'Attached Lectures'}
-                      </h4>
-                      <div className="grid gap-3">
-                        {post.embeddedLectures.map(lectureId => {
-                          const lecture = lectures.find(l => l.id === lectureId);
-                          if (!lecture) return null;
-                          return (
-                            <LectureCard 
-                              key={lecture.id} 
-                              lecture={lecture} 
-                              lang={lang} 
-                              user={user} 
+                  return (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={post.id}
+                      className={`relative group w-full max-w-[92%] sm:max-w-[85%] ${isRtl ? 'ml-auto' : 'mr-auto'}`}
+                    >
+                      <div className={`bg-white dark:bg-zinc-800 p-3 shadow-sm relative ${
+                        isRtl ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm'
+                      } border border-slate-100 dark:border-zinc-700/50`}>
+                        
+                        {isAdminOrModerator && (
+                          <div className={`absolute top-2 z-10 ${isRtl ? 'left-2 right-auto' : 'right-2 left-auto'}`}>
+                            {deletingId === post.id ? (
+                              <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700">
+                                <button
+                                  onClick={() => handleDeletePost(post.id)}
+                                  className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-md transition-colors"
+                                >
+                                  {isRtl ? 'تأكيد' : 'Confirm'}
+                                </button>
+                                <button
+                                  onClick={() => setDeletingId(null)}
+                                  className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-md transition-colors"
+                                >
+                                  {isRtl ? 'إلغاء' : 'Cancel'}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingId(post.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        
+                        <div className="text-sky-600 dark:text-sky-400 font-bold text-[13px] px-1 mb-1">
+                          {post.authorName || (isRtl ? 'إعلان جديد' : 'New Announcement')}
+                        </div>
+                        
+                        {post.photo_url && (
+                          <div className="rounded-xl overflow-hidden mb-2 relative">
+                            <img 
+                              src={post.photo_url} 
+                              alt="Announcement" 
+                              className="w-full h-auto max-h-[400px] object-cover" 
+                              referrerPolicy="no-referrer"
                             />
-                          );
-                        })}
+                          </div>
+                        )}
+                        {post.videoUrl && (
+                          <div className="rounded-xl overflow-hidden mb-2 bg-black">
+                            <video 
+                              src={post.videoUrl} 
+                              controls
+                              className="w-full h-auto max-h-[400px] object-contain" 
+                            />
+                          </div>
+                        )}
+                        
+                        {content && (
+                          <p className="text-[15px] text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed px-1 mb-1" dir="auto">
+                            {content}
+                          </p>
+                        )}
+                        
+                        {post.embeddedLectures && post.embeddedLectures.length > 0 && (
+                          <div className={`mt-2 mb-1 pl-3 rtl:pl-0 rtl:pr-3 border-l-2 rtl:border-l-0 rtl:border-r-2 border-sky-500`}>
+                            <div className="grid gap-2">
+                              {post.embeddedLectures.map(lectureId => {
+                                const lecture = lectures.find(l => l.id === lectureId);
+                                if (!lecture) return null;
+                                return (
+                                  <LectureCard 
+                                    key={lecture.id} 
+                                    lecture={lecture} 
+                                    lang={lang} 
+                                    user={user} 
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="flex items-center justify-end mt-1 pr-1 rtl:pr-0 rtl:pl-1">
+                          <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                            {timeString}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
             );
           })}
         </div>
