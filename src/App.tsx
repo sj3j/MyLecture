@@ -13,6 +13,7 @@ import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
 import ProfileScreen from './components/ProfileScreen';
 import RecordsScreen from './components/RecordsScreen';
+import ChatScreen from './components/ChatScreen';
 import SubjectBrowser from './components/SubjectBrowser';
 import LoginScreen from './components/LoginScreen';
 import OnboardingScreen from './components/OnboardingScreen';
@@ -460,6 +461,7 @@ export default function App() {
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} />}
       {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
       {currentTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} />}
+      {currentTab === 'chat' && <ChatScreen user={user} lang={lang} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
 
       <AdminUpload 

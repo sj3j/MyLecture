@@ -162,6 +162,53 @@ async function startServer() {
     }
   });
 
+  // Bundle chat messages
+  app.post("/api/admin/create-chat-bundle", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const bundle = db.bundle('chat-bundle');
+      const yesterday = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+      
+      const oldMessagesQuery = db.collection('chat_messages')
+                                 .where('timestamp', '<=', yesterday)
+                                 .orderBy('timestamp', 'desc');
+  
+      const querySnapshot = await oldMessagesQuery.get();
+      
+      if (querySnapshot.empty) {
+        return res.status(200).json({ message: 'No old messages to bundle' });
+      }
+  
+      bundle.add('chat-bundle-query', querySnapshot);
+      const bundleBuffer = await bundle.build();
+  
+      // Assume Firebase Admin Storage is enabled or initialized
+      const bucket = admin.storage().bucket(process.env.FIREBASE_STORAGE_BUCKET || (process.env.FIREBASE_PROJECT_ID + '.appspot.com'));
+      const file = bucket.file('bundles/chat-bundle.bundle');
+      
+      await file.save(bundleBuffer, {
+        metadata: {
+          contentType: 'application/octet-stream',
+          cacheControl: 'public, max-age=3600'
+        }
+      });
+  
+      await file.makePublic();
+      const publicUrl = file.publicUrl();
+
+      // Save the bundle link to Firestore config
+      await db.collection('chat_settings').doc('config').set({
+        latestBundleUrl: publicUrl,
+        bundleCreatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      res.status(200).json({ message: 'Bundle created successfully', url: publicUrl });
+    } catch (err) {
+      console.error('Bundle error:', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
   // Send FCM Notification
   app.post("/api/notify", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
