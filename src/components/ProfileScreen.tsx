@@ -50,29 +50,45 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
       const isMasterAdmin = adminEmails.includes(result.user.email || '');
       
       let role = 'student';
+      let permissions = undefined;
       
       if (isMasterAdmin) {
         role = 'admin';
+        permissions = {
+          manageLectures: true,
+          manageAnnouncements: true,
+          manageRecords: true,
+          manageChat: true,
+          manageHomeworks: true,
+          manageStudents: true,
+        };
       } else {
         // Check if email is in allowed_admins
         const allowedDoc = await getDoc(doc(db, 'allowed_admins', (result.user.email || '').toLowerCase()));
         if (allowedDoc.exists()) {
           role = allowedDoc.data().role || 'admin';
+          permissions = allowedDoc.data().permissions;
         } else {
           // Check if they are already an admin or moderator in users collection
           const userDoc = await getDoc(doc(db, 'users', result.user.uid));
           if (userDoc.exists() && ['admin', 'moderator'].includes(userDoc.data().role)) {
             role = userDoc.data().role;
+            permissions = userDoc.data().permissions;
           }
         }
       }
 
       // Save user to users collection
-      await setDoc(doc(db, 'users', result.user.uid), {
+      const userData: any = {
         name: result.user.displayName || 'User',
         email: result.user.email || '',
         role: role
-      }, { merge: true });
+      };
+      if (permissions) {
+        userData.permissions = permissions;
+      }
+
+      await setDoc(doc(db, 'users', result.user.uid), userData, { merge: true });
       
       // If we get here, they are signed in. The auth state listener in App.tsx will handle setting the user state.
     } catch (err) {
@@ -154,10 +170,10 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
     }
   };
 
-  const handleToggleNotification = async (type: 'lectures' | 'announcements') => {
+  const handleToggleNotification = async (type: 'lectures' | 'announcements' | 'chat' | 'records' | 'homeworks') => {
     if (!user) return;
-    const currentPrefs = user.notificationPreferences || { lectures: true, announcements: true };
-    const newPrefs = { ...currentPrefs, [type]: !currentPrefs[type] };
+    const currentPrefs = user.notificationPreferences || { lectures: true, announcements: true, chat: true, records: true, homeworks: true };
+    const newPrefs = { ...currentPrefs, [type]: currentPrefs[type] === undefined ? false : !currentPrefs[type] };
     
     try {
       await setDoc(doc(db, 'users', user.uid), {
@@ -353,12 +369,42 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات التبليغات' : 'Announcement Notifications'}</span>
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات התبليغات' : 'Announcement Notifications'}</span>
             <button
               onClick={() => handleToggleNotification('announcements')}
               className={`w-12 h-6 rounded-full transition-colors relative ${user!.notificationPreferences?.announcements !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
             >
               <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.notificationPreferences?.announcements !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات الشات' : 'Chat Notifications'}</span>
+            <button
+              onClick={() => handleToggleNotification('chat')}
+              className={`w-12 h-6 rounded-full transition-colors relative ${user!.notificationPreferences?.chat !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.notificationPreferences?.chat !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات التسجيلات' : 'Record Notifications'}</span>
+            <button
+              onClick={() => handleToggleNotification('records')}
+              className={`w-12 h-6 rounded-full transition-colors relative ${user!.notificationPreferences?.records !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.notificationPreferences?.records !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات الواجبات' : 'Homework Notifications'}</span>
+            <button
+              onClick={() => handleToggleNotification('homeworks')}
+              className={`w-12 h-6 rounded-full transition-colors relative ${user!.notificationPreferences?.homeworks !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.notificationPreferences?.homeworks !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
             </button>
           </div>
         </div>

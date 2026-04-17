@@ -17,6 +17,14 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'admin' | 'moderator'>('admin');
+  const [permissions, setPermissions] = useState({
+    manageLectures: true,
+    manageAnnouncements: true,
+    manageRecords: true,
+    manageChat: true,
+    manageHomeworks: true,
+    manageStudents: true,
+  });
   const [admins, setAdmins] = useState<{ id: string; email: string; role?: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,6 +70,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       await setDoc(doc(db, 'allowed_admins', email.toLowerCase()), {
         email: email.toLowerCase(),
         role: role,
+        permissions: permissions,
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.uid
       });
@@ -141,6 +150,29 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     <option value="admin">Admin (Full Access)</option>
                     <option value="moderator">Moderator (Content Only)</option>
                   </select>
+
+                  <div className="bg-slate-50 dark:bg-zinc-800 p-4 rounded-xl border border-slate-200 dark:border-zinc-700 flex flex-col gap-2">
+                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{isRtl ? 'الصلاحيات' : 'Permissions'}</h4>
+                    {[
+                      { id: 'manageLectures', labelEn: 'Manage Lectures', labelAr: 'إدارة المحاضرات' },
+                      { id: 'manageAnnouncements', labelEn: 'Manage Announcements', labelAr: 'إدارة التبليغات' },
+                      { id: 'manageRecords', labelEn: 'Manage Records', labelAr: 'إدارة التسجيلات' },
+                      { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
+                      { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
+                      { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
+                    ].map(perm => (
+                      <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={permissions[perm.id as keyof typeof permissions]}
+                          onChange={(e) => setPermissions({...permissions, [perm.id]: e.target.checked})}
+                          className="w-4 h-4 text-sky-600 rounded border-slate-300 focus:ring-sky-500"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{isRtl ? perm.labelAr : perm.labelEn}</span>
+                      </label>
+                    ))}
+                  </div>
+
                   <button
                     disabled={isSubmitting}
                     type="submit"

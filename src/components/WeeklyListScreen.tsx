@@ -207,7 +207,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.weeklyTasks}</h1>
         </div>
         
-        {user && ['admin', 'moderator'].includes(user.role) && (
+        {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
           <button
             onClick={() => setShowAdminForm(!showAdminForm)}
             className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors"
@@ -225,7 +225,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
             <ImageIcon className="w-5 h-5 text-sky-600 dark:text-sky-400" />
             {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
           </h2>
-          {user && ['admin', 'moderator'].includes(user.role) && (
+          {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingPhoto}
@@ -522,7 +522,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                 </div>
                 
                 <div className="flex items-center gap-1 sm:gap-2">
-                  {user && ['admin', 'moderator'].includes(user.role) && (
+                  {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
                     <button
                       onClick={() => setHomeworkToDelete(hw.id)}
                       className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl transition-colors bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400"

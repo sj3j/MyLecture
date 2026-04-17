@@ -60,6 +60,17 @@ export interface UserProfile {
   notificationPreferences?: {
     lectures: boolean;
     announcements: boolean;
+    chat?: boolean;
+    records?: boolean;
+    homeworks?: boolean;
+  };
+  permissions?: {
+    manageLectures: boolean;
+    manageAnnouncements: boolean;
+    manageRecords: boolean;
+    manageChat: boolean;
+    manageHomeworks: boolean;
+    manageStudents: boolean;
   };
   memberSince?: any;
 }

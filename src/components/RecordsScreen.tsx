@@ -69,7 +69,7 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
     );
   }
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'moderator';
+  const isAdmin = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageRecords !== false;
 
   const handleDeleteRecord = async (id: string) => {
     try {

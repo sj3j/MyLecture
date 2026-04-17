@@ -47,7 +47,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isAdminOrModerator = user?.role === 'admin' || user?.role === 'moderator';
+  const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageAnnouncements !== false;
 
   useEffect(() => {
     setIsLoading(true);

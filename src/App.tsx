@@ -167,8 +167,9 @@ export default function App() {
               favorites: userDoc.data().favorites || [],
               studied: userDoc.data().studied || [],
               completedWeeklyTasks: userDoc.data().completedWeeklyTasks || [],
-              notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true },
-              memberSince: studentData?.createdAt || userDoc.data().createdAt
+              notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
+              memberSince: studentData?.createdAt || userDoc.data().createdAt,
+              permissions: userDoc.data().permissions
             });
           } else {
             setUser({
@@ -181,8 +182,9 @@ export default function App() {
               favorites: [],
               studied: [],
               completedWeeklyTasks: [],
-              notificationPreferences: { lectures: true, announcements: true },
-              memberSince: studentData?.createdAt
+              notificationPreferences: { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
+              memberSince: studentData?.createdAt,
+              permissions: undefined
             });
           }
           setIsAuthReady(true);
@@ -199,8 +201,9 @@ export default function App() {
             favorites: [],
             studied: [],
             completedWeeklyTasks: [],
-            notificationPreferences: { lectures: true, announcements: true },
-            memberSince: studentData?.createdAt
+            notificationPreferences: { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
+            memberSince: studentData?.createdAt,
+            permissions: undefined
           });
           setIsAuthReady(true);
         });
@@ -389,7 +392,7 @@ export default function App() {
 
           {user && ['admin', 'moderator'].includes(user.role) && (
             <div className="flex gap-2">
-              {['admin', 'moderator'].includes(user.role) && (
+              {['admin', 'moderator'].includes(user.role) && user.permissions?.manageStudents !== false && (
                 <button 
                   onClick={() => setShowStudentManage(true)}
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-emerald-600 dark:border-emerald-500 rounded-2xl text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"

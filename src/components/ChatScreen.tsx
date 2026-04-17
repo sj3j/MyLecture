@@ -30,7 +30,7 @@ interface ChatScreenProps {
 export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
-  const isAdminOrModerator = user?.role === 'admin' || user?.role === 'moderator';
+  const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageChat !== false;
   const CHAT_DOC_ID = 'config';
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -48,6 +48,9 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [isBundling, setIsBundling] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,22 +161,23 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           const newMessages: ChatMessage[] = [];
           snapshot.forEach(doc => {
             const data = doc.data();
-            // Prevent duplicates
-            if (!messages.find(m => m.id === doc.id)) {
-              newMessages.push({
-                id: doc.id,
-                text: data.text || '',
-                senderName: data.senderName || '',
-                senderEmail: data.senderEmail || '',
-                senderAvatar: data.senderAvatar || '',
-                timestamp: data.timestamp,
-                createdAt: data.timestamp?.toMillis() || Date.now()
-              });
-            }
+            newMessages.push({
+              id: doc.id,
+              text: data.text || '',
+              senderName: data.senderName || '',
+              senderEmail: data.senderEmail || '',
+              senderAvatar: data.senderAvatar || '',
+              timestamp: data.timestamp,
+              createdAt: data.timestamp?.toMillis() || Date.now()
+            });
           });
           
           if (newMessages.length > 0) {
-            setMessages(prev => [...prev, ...newMessages]);
+            setMessages(prev => {
+              const uniqueNew = newMessages.filter(nm => !prev.some(pm => pm.id === nm.id));
+              if (uniqueNew.length === 0) return prev;
+              return [...prev, ...uniqueNew];
+            });
             // Only scroll to bottom if user is already near bottom
             const container = containerRef.current;
             if (container) {
@@ -224,7 +228,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         text: messageText,
         senderName: user.name,
         senderEmail: user.email,
-        senderAvatar: user.name.charAt(0).toUpperCase(),
+        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
         timestamp: serverTimestamp()
       });
 
@@ -234,7 +238,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         text: messageText,
         senderName: user.name,
         senderEmail: user.email,
-        senderAvatar: user.name.charAt(0).toUpperCase(),
+        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
         timestamp: new Date(),
         createdAt: Date.now()
       }]);
@@ -306,7 +310,10 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       });
 
       if (oldMessages.length > 0) {
-        setMessages(prev => [...oldMessages.reverse(), ...prev]);
+        setMessages(prev => {
+          const uniqueOld = oldMessages.reverse().filter(nm => !prev.some(pm => pm.id === nm.id));
+          return [...uniqueOld, ...prev];
+        });
         setHasMore(oldMessages.length === 20);
       } else {
         setHasMore(false);
@@ -354,17 +361,32 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
 
   const clearAllMessages = async () => {
     if (!isAdminOrModerator) return;
-    if (window.confirm(isRtl ? 'هل أنت متأكد من مسح جميع الرسائل بشكل نهائي؟' : 'Are you sure you want to permanently delete all messages?')) {
-      try {
+    setIsClearing(true);
+    try {
+      let documentCount = 0;
+      let q = query(collection(db, 'chat_messages'), limit(500));
+      let snapshot = await getDocs(q);
+
+      while (!snapshot.empty) {
         const batch = writeBatch(db);
-        messages.forEach(msg => {
-          batch.delete(doc(db, 'chat_messages', msg.id));
+        snapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+          documentCount++;
         });
         await batch.commit();
-        setMessages([]);
-      } catch (e) {
-        console.error('Failed to clear messages', e);
+        
+        // fetch the next 500
+        q = query(collection(db, 'chat_messages'), limit(500));
+        snapshot = await getDocs(q);
       }
+      setMessages([]);
+      setShowClearConfirm(false);
+      setAlertMessage(isRtl ? `تم حذف جميع الرسائل. (${documentCount} رسالة)` : `Successfully cleared all messages. (${documentCount} messages)`);
+    } catch (e) {
+      console.error('Failed to clear messages', e);
+      setAlertMessage(isRtl ? 'حدث خطأ أثناء حذف الرسائل' : 'Error clearing messages');
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -379,9 +401,9 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         }
       });
       if (res.ok) {
-        alert(isRtl ? 'تم تجميع الرسائل بنجاح وايقاف القراءات للرسائل القديمة.' : 'Messages successfully bundled. Old message reads optimized.');
+        setAlertMessage(isRtl ? 'تم تجميع الرسائل بنجاح وايقاف القراءات للرسائل القديمة.' : 'Messages successfully bundled. Old message reads optimized.');
       } else {
-        alert(isRtl ? 'حدث خطأ أثناء التجميع.' : 'Error bundling messages.');
+        setAlertMessage(isRtl ? 'حدث خطأ أثناء التجميع.' : 'Error bundling messages.');
       }
     } catch (e) {
       console.error('Bundling failed', e);
@@ -477,7 +499,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
 
               <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap gap-2">
                 <button
-                  onClick={clearAllMessages}
+                  onClick={() => setShowClearConfirm(true)}
                   className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/40"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -541,8 +563,12 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                   
                   {/* Avatar */}
                   {!isMe && showHeader && (
-                    <div className="w-8 h-8 rounded-full bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm">
-                      {msg.senderAvatar}
+                    <div className="w-8 h-8 rounded-full bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border border-sky-100 dark:border-zinc-800">
+                      {msg.senderAvatar?.startsWith('http') ? (
+                        <img src={msg.senderAvatar} alt={msg.senderName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
+                      )}
                     </div>
                   )}
                   {!isMe && !showHeader && <div className="w-8 flex-shrink-0" />}
@@ -625,6 +651,73 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           </form>
         )}
       </div>
+
+      {/* Clear All Confirm Modal */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowClearConfirm(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 border border-slate-200 dark:border-zinc-700"
+            >
+              <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">{isRtl ? 'مسح جميع الرسائل' : 'Clear All Messages'}</h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">{isRtl ? 'هل أنت متأكد من مسح جميع الرسائل بشكل نهائي؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure you want to permanently delete all messages? This action cannot be undone.'}</p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-700/50 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  {isRtl ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  onClick={clearAllMessages}
+                  disabled={isClearing}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isClearing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                  {isRtl ? 'تأكيد الحذف' : 'Confirm Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+        
+        {alertMessage && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAlertMessage(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 text-center border border-slate-200 dark:border-zinc-700"
+            >
+              <p className="text-slate-800 dark:text-slate-200 font-medium mb-6">{alertMessage}</p>
+              <button
+                onClick={() => setAlertMessage(null)}
+                className="w-full py-3 px-4 rounded-xl font-bold text-white bg-sky-600 hover:bg-sky-700 transition-colors"
+              >
+                {isRtl ? 'حسناً' : 'OK'}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

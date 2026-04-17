@@ -46,7 +46,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
   };
 
   const handleDelete = async () => {
-    if (!user || !['admin', 'moderator'].includes(user.role)) return;
+    if (!user || (!['admin', 'moderator'].includes(user.role) || user?.permissions?.manageLectures === false)) return;
     
     setIsDeleting(true);
     try {
@@ -207,7 +207,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
           >
             <Download className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
           </a>
-          {user && ['admin', 'moderator'].includes(user.role) && (
+          {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && (
             <>
               <button
                 onClick={() => onEdit?.(lecture)}

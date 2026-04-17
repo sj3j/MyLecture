@@ -88,7 +88,11 @@ service cloud.firestore {
              (!('group' in data) || data.group is string) &&
              (!('notificationPreferences' in data) || (data.notificationPreferences is map && 
                (!('lectures' in data.notificationPreferences) || data.notificationPreferences.lectures is bool) &&
-               (!('announcements' in data.notificationPreferences) || data.notificationPreferences.announcements is bool)));
+               (!('announcements' in data.notificationPreferences) || data.notificationPreferences.announcements is bool) &&
+               (!('chat' in data.notificationPreferences) || data.notificationPreferences.chat is bool) &&
+               (!('records' in data.notificationPreferences) || data.notificationPreferences.records is bool) &&
+               (!('homeworks' in data.notificationPreferences) || data.notificationPreferences.homeworks is bool))) &&
+             (!('permissions' in data) || data.permissions is map);
     }
 
     function isWhitelisted() {
