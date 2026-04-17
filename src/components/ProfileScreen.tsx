@@ -369,7 +369,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات התبليغات' : 'Announcement Notifications'}</span>
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إشعارات التبليغات' : 'Announcement Notifications'}</span>
             <button
               onClick={() => handleToggleNotification('announcements')}
               className={`w-12 h-6 rounded-full transition-colors relative ${user!.notificationPreferences?.announcements !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}

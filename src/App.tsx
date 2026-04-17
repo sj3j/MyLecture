@@ -381,7 +381,7 @@ export default function App() {
               </div>
               <div>
                 <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {isRtl ? 'النشاط اليومي' : 'Daily Streak'}
+                  {isRtl ? 'الستريك' : 'Daily Streak'}
                 </div>
                 <div className="text-lg font-black text-slate-900 dark:text-stone-100 leading-none">
                   {user.streakCount || 0} {isRtl ? 'أيام' : 'days'}
