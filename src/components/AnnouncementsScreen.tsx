@@ -398,33 +398,39 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                         
                         {content && (
                           <p className="text-[15px] text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed px-1 mb-1" dir="auto">
-                            {content}
+                            {content.split(/(https?:\/\/[^\s]+)/g).map((part, i) => 
+                              part.match(/(https?:\/\/[^\s]+)/g) ? (
+                                <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:text-sky-600 hover:underline">{part}</a>
+                              ) : (
+                                <span key={i}>{part}</span>
+                              )
+                            )}
                           </p>
                         )}
 
                         {post.fileUrl && !post.photo_url && !post.videoUrl && (
-                          <a href={post.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700/50 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors">
-                            <div className="flex items-center gap-3 overflow-hidden">
+                          <a href={post.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors w-full">
+                            <div className="flex items-center gap-3 w-full overflow-hidden relative">
                               <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 rounded-lg flex items-center justify-center shrink-0">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
                               </div>
-                              <div className="overflow-hidden">
+                              <div className="flex-1 min-w-0 pr-2">
                                 <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{post.fileName || 'Download File'}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{isRtl ? 'اضغط للتحميل' : 'Click to download'}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{isRtl ? 'اضغط للتحميل' : 'Click to download'}</p>
                               </div>
                             </div>
                           </a>
                         )}
 
                         {post.linkUrl && (
-                          <a href={post.linkUrl.startsWith('http') ? post.linkUrl : `https://${post.linkUrl}`} target="_blank" rel="noopener noreferrer" className="mt-2 block">
-                            <div className="px-4 py-3 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 transition-colors rounded-xl border border-sky-200 dark:border-sky-800/50 flex items-center gap-3">
+                          <a href={post.linkUrl.startsWith('http') ? post.linkUrl : `https://${post.linkUrl}`} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full">
+                            <div className="px-4 py-3 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 transition-colors rounded-xl border border-sky-200 dark:border-sky-800/50 flex items-center gap-3 w-full">
                               <div className="w-8 h-8 rounded-full bg-sky-200 dark:bg-sky-800 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0">
-                                <Link className="w-4 h-4" />
+                                <Link className="w-4 h-4 shrink-0" />
                               </div>
-                              <div className="overflow-hidden">
+                              <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold text-sky-900 dark:text-sky-100 truncate">{post.linkTitle || post.linkUrl}</p>
-                                <p className="text-xs text-sky-600 dark:text-sky-400 truncate dir-ltr text-left">{post.linkUrl}</p>
+                                <p className="text-xs text-sky-600 dark:text-sky-400 truncate text-left" dir="ltr">{post.linkUrl}</p>
                               </div>
                             </div>
                           </a>
