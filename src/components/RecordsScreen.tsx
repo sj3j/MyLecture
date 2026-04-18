@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
-import { Loader2, Mic, SearchX, Play, Pause, Plus, HardDrive } from 'lucide-react';
+import { Loader2, Mic, SearchX, Play, Pause, Plus, HardDrive, Clock, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Fuse from 'fuse.js';
 import AdminRecordUpload from './AdminRecordUpload';
@@ -225,6 +225,19 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
                 </p>
               )}
 
+              <div className="flex flex-wrap items-center gap-2 mb-4 text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/50 px-2 py-1 rounded-md">
+                   <Clock className="w-3.5 h-3.5" />
+                   <span>{record.createdAt?.toDate ? record.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently}</span>
+                </div>
+                {record.uploaderName && (
+                  <div className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/10 px-2 py-1 rounded-md text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-100 dark:border-emerald-900/30">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    <span>{isRtl ? `بواسطة الأدمين: ${record.uploaderName}` : `By Admin: ${record.uploaderName}`}</span>
+                  </div>
+                )}
+              </div>
+
               {record.size && (
                 <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 mb-4 font-medium">
                   <HardDrive className="w-3.5 h-3.5" />
@@ -233,7 +246,45 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
               )}
 
               <div className="mt-auto pt-4 border-t border-slate-100 dark:border-zinc-700">
-                <AudioPlayer src={record.audioUrl} title={record.title} />
+                <div className="flex flex-col gap-3">
+                  <AudioPlayer src={record.audioUrl} title={record.title} />
+                  {user && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+                          await addDoc(collection(db, 'chat_messages'), {
+                            text: '',
+                            senderName: user.name,
+                            senderEmail: user.email,
+                            senderId: user.uid,
+                            senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+                            timestamp: serverTimestamp(),
+                            createdAt: Date.now(),
+                            reactions: { like: [], heart: [], thanks: [] },
+                            isAnonymous: false,
+                            originalSenderName: user.name,
+                            embeddedItem: {
+                              type: 'record',
+                              id: record.id,
+                              title: record.title,
+                              subtitle: record.description,
+                              link: record.audioUrl
+                            }
+                          });
+                          alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                        } catch (err) {
+                          console.error(err);
+                          alert('Error sharing to chat');
+                        }
+                      }}
+                      className="inline-flex items-center justify-center p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors w-full gap-2 text-sm font-bold"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+                      {isRtl ? 'مشاركة في المحادثة' : 'Share to Chat'}
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           ))}
@@ -260,6 +311,7 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
         }}
         lang={lang}
         recordToEdit={recordToEdit}
+        user={user}
       />
     </div>
   );

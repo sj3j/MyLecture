@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart } from 'lucide-react';
+import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart, Image as ImageIcon, FileText, Link } from 'lucide-react';
 import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -24,6 +24,18 @@ interface ChatMessage {
     heart: string[];
     thanks: string[];
   };
+  isAnonymous?: boolean;
+  originalSenderName?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: 'image' | 'file';
+  embeddedItem?: {
+    type: 'lecture' | 'record' | 'announcement';
+    id: string;
+    title: string;
+    subtitle?: string;
+    link?: string;
+  } | null;
 }
 
 interface ChatSettings {
@@ -31,6 +43,7 @@ interface ChatSettings {
   messageCooldown: number;
   closedMessage: string;
   latestBundleUrl?: string;
+  allowAttachments?: boolean;
 }
 
 interface ChatScreenProps {
@@ -64,9 +77,18 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  
+  // Attachments & Embds
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentType, setAttachmentType] = useState<'image' | 'file' | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [embeddedItem, setEmbeddedItem] = useState<ChatMessage['embeddedItem'] | null>(null);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Track last visible document for pagination
   const [lastVisibleMessageId, setLastVisibleMessageId] = useState<string | null>(null);
@@ -96,8 +118,8 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         setSettings(settingsSnap.data() as ChatSettings);
       } else if (isAdminOrModerator) {
         // Initialize if not exists
-        const defaultSettings = { isChatOpen: true, messageCooldown: 30, closedMessage: 'الشات مغلق حالياً' };
-        await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings).catch(async () => {
+        const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 30, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
+        await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { ...defaultSettings }).catch(async () => {
           // If update fails, might need to set (if doc doesn't exist)
            try {
              const setDoc = (await import('firebase/firestore')).setDoc;
@@ -142,7 +164,13 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
               timestamp: data.timestamp,
               createdAt: data.timestamp?.toMillis() || Date.now(),
               replyTo: data.replyTo || null,
-              reactions: data.reactions || { like: [], heart: [], thanks: [] }
+              reactions: data.reactions || { like: [], heart: [], thanks: [] },
+              isAnonymous: data.isAnonymous || false,
+              originalSenderName: data.originalSenderName || '',
+              fileUrl: data.fileUrl || undefined,
+              fileName: data.fileName || undefined,
+              fileType: data.fileType || undefined,
+              embeddedItem: data.embeddedItem || undefined
             };
 
             if (change.type === 'added') {
@@ -204,41 +232,96 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !settings.isChatOpen || cooldownRemaining > 0 || !user) return;
+    if ((!newMessage.trim() && !attachmentFile && !embeddedItem) || !settings.isChatOpen || cooldownRemaining > 0 || !user || isUploadingAttachment) return;
     if (!isAdminOrModerator) {
       if (cooldownRemaining > 0) return;
+      if (attachmentFile && settings.allowAttachments === false) {
+         setAlertMessage(isRtl ? 'المرفقات معطلة للطلاب' : 'Attachments disabled for students');
+         setAttachmentFile(null);
+         return;
+      }
     }
 
     const messageText = newMessage.trim();
     const replyData = replyingTo ? { ...replyingTo } : null;
-    setNewMessage('');
-    setReplyingTo(null);
+    const embedData = embeddedItem ? { ...embeddedItem } : null;
+    let finalFileUrl = '';
+    let finalFileName = '';
+    let finalFileType = attachmentType;
+
     setIsSending(true);
+    setIsUploadingAttachment(!!attachmentFile);
 
     try {
-      const docRef = await addDoc(collection(db, 'chat_messages'), {
+      if (attachmentFile) {
+        const { ref: storageRef, uploadBytes, getDownloadURL } = await import('firebase/storage');
+        const ext = attachmentFile.name.split('.').pop();
+        const safeName = Math.random().toString(36).substring(2, 10);
+        const fileRef = storageRef(storage, `chat_attachments/${user.uid}_${Date.now()}_${safeName}.${ext}`);
+        
+        await uploadBytes(fileRef, attachmentFile);
+        finalFileUrl = await getDownloadURL(fileRef);
+        finalFileName = attachmentFile.name;
+      }
+
+      setNewMessage('');
+      setReplyingTo(null);
+      setAttachmentFile(null);
+      setAttachmentType(null);
+      setEmbeddedItem(null);
+      setShowAttachmentMenu(false);
+
+      const isAnon = (!isAdminOrModerator && isAnonymous);
+      const displaySenderName = isAnon ? (isRtl ? 'مجهول' : 'Anonymous') : user.name;
+      const displaySenderAvatar = isAnon ? '?' : (user.photoUrl || user.name.charAt(0).toUpperCase());
+
+      const payload: any = {
         text: messageText,
-        senderName: user.name,
+        senderName: displaySenderName,
         senderEmail: user.email,
         senderId: user.uid,
-        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+        senderAvatar: displaySenderAvatar,
         timestamp: serverTimestamp(),
         replyTo: replyData,
-        reactions: { like: [], heart: [], thanks: [] }
-      });
+        reactions: { like: [], heart: [], thanks: [] },
+        isAnonymous: isAnon,
+        originalSenderName: user.name,
+      };
+
+      if (finalFileUrl) {
+         payload.fileUrl = finalFileUrl;
+         payload.fileName = finalFileName;
+         payload.fileType = finalFileType;
+      }
+
+      if (embedData) {
+         payload.embeddedItem = embedData;
+      }
+
+      const docRef = await addDoc(collection(db, 'chat_messages'), payload);
+
+      if (isAnon) {
+         setIsAnonymous(false);
+      }
 
       // Optimistic UI update
       setMessages(prev => [...prev, {
         id: docRef.id,
         text: messageText,
-        senderName: user.name,
+        senderName: displaySenderName,
         senderEmail: user.email,
         senderId: user.uid,
-        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+        senderAvatar: displaySenderAvatar,
         timestamp: new Date(),
         createdAt: Date.now(),
         replyTo: replyData,
-        reactions: { like: [], heart: [], thanks: [] }
+        reactions: { like: [], heart: [], thanks: [] },
+        isAnonymous: isAnon,
+        originalSenderName: user.name,
+        fileUrl: finalFileUrl || undefined,
+        fileName: finalFileName || undefined,
+        fileType: finalFileUrl ? finalFileType! : undefined,
+        embeddedItem: embedData || undefined
       }]);
       setTimeout(() => scrollToBottom(), 100);
 
@@ -249,8 +332,10 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       }
     } catch (e) {
       console.error('Failed to send message', e);
+      setAlertMessage(t.errorUnknown);
     } finally {
       setIsSending(false);
+      setIsUploadingAttachment(false);
     }
   };
 
@@ -306,7 +391,13 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           timestamp: data.timestamp,
           createdAt: data.timestamp?.toMillis() || Date.now(),
           replyTo: data.replyTo || null,
-          reactions: data.reactions || { like: [], heart: [], thanks: [] }
+          reactions: data.reactions || { like: [], heart: [], thanks: [] },
+          isAnonymous: data.isAnonymous || false,
+          originalSenderName: data.originalSenderName || '',
+          fileUrl: data.fileUrl || undefined,
+          fileName: data.fileName || undefined,
+          fileType: data.fileType || undefined,
+          embeddedItem: data.embeddedItem || undefined
         });
       });
 
@@ -529,6 +620,20 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-zinc-800">
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{isRtl ? 'السماح للطلاب بإرسال مرفقات' : 'Allow Students to Send Attachments'}</span>
+                <button
+                  onClick={async () => {
+                    const newVal = !(settings.allowAttachments ?? true);
+                    setSettings({ ...settings, allowAttachments: newVal });
+                    await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { allowAttachments: newVal });
+                  }}
+                  className={`w-14 h-7 rounded-full transition-colors relative flex items-center px-1 ${settings.allowAttachments !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-700'}`}
+                >
+                  <div className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all transform ${settings.allowAttachments !== false ? (isRtl ? '-translate-x-7' : 'translate-x-7') : 'translate-x-0'}`} />
+                </button>
+              </div>
+
               <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap gap-2">
                 <button
                   onClick={() => setShowClearConfirm(true)}
@@ -595,11 +700,15 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                   
                   {/* Avatar */}
                   {!isMe && showHeader && (
-                    <div className="w-8 h-8 rounded-full bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border border-sky-100 dark:border-zinc-800">
-                      {msg.senderAvatar?.startsWith('http') ? (
-                        <img src={msg.senderAvatar} alt={msg.senderName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border ${msg.isAnonymous ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-zinc-800' : 'bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-zinc-800'}`}>
+                      {msg.isAnonymous ? (
+                        '?'
                       ) : (
-                        msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
+                        msg.senderAvatar?.startsWith('http') ? (
+                          <img src={msg.senderAvatar} alt={msg.senderName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
+                        )
                       )}
                     </div>
                   )}
@@ -608,17 +717,17 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                   {/* Bubble */}
                   <div className={`group relative flex flex-col`}>
                     {!isMe && showHeader && (
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 rtl:ml-0 rtl:mr-1 mb-1">
+                      <span className={`text-xs font-bold ml-1 rtl:ml-0 rtl:mr-1 mb-1 ${msg.isAnonymous ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`}>
                         {msg.senderName} 
-                        {msg.senderEmail === 'almdrydyl335@gmail.com' && <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">Admin</span>}
+                        {msg.senderEmail === 'almdrydyl335@gmail.com' && !msg.isAnonymous && <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">Admin</span>}
                       </span>
                     )}
 
                     <div 
                       className={`relative px-4 py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
                         isMe 
-                          ? 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' 
-                          : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700'
+                          ? (msg.isAnonymous ? 'bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' : 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm') 
+                          : (msg.isAnonymous ? 'bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50' : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700')
                       }`}
                       onContextMenu={(e) => {
                         e.preventDefault();
@@ -642,6 +751,36 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                           <div className="opacity-80 truncate" dir="auto">{msg.replyTo.text}</div>
                         </div>
                       )}
+                      
+                      {msg.fileUrl && (
+                        <div className="mb-2">
+                          {msg.fileType === 'image' ? (
+                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer">
+                              <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
+                            </a>
+                          ) : (
+                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400'}`}>
+                              <Paperclip className="w-5 h-5" />
+                              <span className="text-sm font-medium truncate max-w-[200px]">{msg.fileName || 'Attachment'}</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      
+                      {msg.embeddedItem && (
+                         <div className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}>
+                           <div className="flex items-center gap-1.5 opacity-80 text-[10px] uppercase font-bold tracking-wider">
+                              {msg.embeddedItem.type === 'lecture' && <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">Lecture</span>}
+                              {msg.embeddedItem.type === 'record' && <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">Record</span>}
+                              {msg.embeddedItem.type === 'announcement' && <span className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded">Announcement</span>}
+                           </div>
+                           <a href={msg.embeddedItem.link || '#'} target="_blank" rel="noopener noreferrer" className="font-bold hover:underline line-clamp-2 text-sm">
+                             {msg.embeddedItem.title}
+                           </a>
+                           {msg.embeddedItem.subtitle && <span className="text-xs opacity-70 truncate">{msg.embeddedItem.subtitle}</span>}
+                         </div>
+                      )}
+
                       <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{msg.text}</p>
                       
                       <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
@@ -696,12 +835,24 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
 
                     {/* Delete Action (Admin) */}
                     {isAdminOrModerator && (
-                      <button 
-                        onClick={() => deleteMessage(msg.id)}
-                        className={`absolute top-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110 ${isMe ? '-left-10 rtl:left-auto rtl:-right-10' : '-right-10 rtl:right-auto rtl:-left-10'}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className={`absolute top-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-1 ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
+                        <button 
+                          onClick={() => deleteMessage(msg.id)}
+                          className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        {msg.isAnonymous && (
+                          <button
+                            onClick={() => alert(`Original Sender: ${msg.originalSenderName} (${msg.senderEmail})`)}
+                            title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
+                            className="p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -735,14 +886,104 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
               </div>
             )}
             
+            {/* Attachment Preview */}
+            {(attachmentFile || embeddedItem) && (
+              <div className="absolute bottom-full left-0 right-0 mb-3 mx-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-center justify-between">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  {attachmentType === 'image' && attachmentFile ? (
+                    <img src={URL.createObjectURL(attachmentFile)} alt="Preview" className="w-10 h-10 rounded object-cover" />
+                  ) : embeddedItem ? (
+                      <div className="flex items-center gap-2 p-1.5 bg-sky-50 dark:bg-sky-900/30 rounded border border-sky-100 dark:border-sky-800">
+                        <Link className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                        <div className="flex flex-col">
+                           <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{embeddedItem.title}</span>
+                           <span className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">{embeddedItem.type}</span>
+                        </div>
+                      </div>
+                  ) : (
+                    <div className="p-2 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-100 dark:border-zinc-700">
+                      <Paperclip className="w-5 h-5 text-sky-600" />
+                    </div>
+                  )}
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                      {attachmentFile ? attachmentFile.name : embeddedItem?.title}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                       {attachmentFile ? `${(attachmentFile.size / 1024 / 1024).toFixed(2)} MB` : 'Embedded Media'}
+                    </span>
+                  </div>
+                </div>
+                <button type="button" onClick={() => { setAttachmentFile(null); setEmbeddedItem(null); setAttachmentType(null); }} className="p-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 hover:bg-red-100 text-slate-500 hover:text-red-600 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Attachment Menu Popup */}
+            <AnimatePresence>
+              {showAttachmentMenu && (
+                 <motion.div 
+                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                   animate={{ opacity: 1, y: 0, scale: 1 }}
+                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                   className={`absolute bottom-[60px] z-50 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-700 p-2 flex flex-col gap-1 w-48 ${isRtl ? 'right-2' : 'left-2'}`}
+                 >
+                   <button 
+                     type="button" 
+                     onClick={() => { fileInputRef.current?.setAttribute('accept', 'image/*'); fileInputRef.current?.click(); setShowAttachmentMenu(false); }}
+                     className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-slate-700 dark:text-slate-200 text-sm font-medium w-full text-left rtl:text-right"
+                   >
+                     <ImageIcon className="w-4 h-4 text-sky-500" />
+                     {isRtl ? 'صورة' : 'Image'}
+                   </button>
+                   <button 
+                     type="button" 
+                     onClick={() => { fileInputRef.current?.setAttribute('accept', '*/*'); fileInputRef.current?.click(); setShowAttachmentMenu(false); }}
+                     className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-slate-700 dark:text-slate-200 text-sm font-medium w-full text-left rtl:text-right"
+                   >
+                     <FileText className="w-4 h-4 text-indigo-500" />
+                     {isRtl ? 'ملف' : 'File'}
+                   </button>
+                 </motion.div>
+              )}
+            </AnimatePresence>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setAttachmentFile(file);
+                  setAttachmentType(file.type.startsWith('image/') ? 'image' : 'file');
+                }
+              }} 
+            />
+
             {/* Telegram-style fixed input bar. LTR -> input then send. RTL -> send then input */}
             <form onSubmit={handleSendMessage} className={`flex items-end gap-2 relative`} dir={isRtl ? 'rtl' : 'ltr'}>
-              <button
-                type="button"
-                className="w-11 h-11 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 rounded-full flex items-center justify-center transition-colors shrink-0 shadow-sm"
-              >
-                <Paperclip className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                {(!isAdminOrModerator) && (
+                   <button
+                    type="button"
+                    title={isRtl ? 'إرسال كمجهول' : 'Send Anonymous'}
+                    onClick={() => setIsAnonymous(!isAnonymous)}
+                    className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all shadow-sm ${isAnonymous ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800' : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500'}`}
+                  >
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><line x1="2" x2="22" y1="2" y2="22" stroke={isAnonymous ? "currentColor" : "transparent"}/></svg>
+                  </button>
+                )}
+                {(isAdminOrModerator || settings.allowAttachments !== false) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                    className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 rounded-full flex items-center justify-center transition-colors shadow-sm"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
               <textarea
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}

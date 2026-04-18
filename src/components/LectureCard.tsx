@@ -129,6 +129,12 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
             <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span className="truncate">{date}</span>
           </div>
+          {lecture.uploaderName && (
+            <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 font-medium">
+              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-500" />
+              <span className="truncate text-emerald-600 dark:text-emerald-400">{isRtl ? `بواسطة الأدمين: ${lecture.uploaderName}` : `By Admin: ${lecture.uploaderName}`}</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 sm:mt-6 flex flex-wrap gap-1 sm:gap-2">
@@ -207,6 +213,42 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
           >
             <Download className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
           </a>
+          {user && (
+            <button
+              onClick={async () => {
+                try {
+                  const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+                  await addDoc(collection(db, 'chat_messages'), {
+                    text: '',
+                    senderName: user.name,
+                    senderEmail: user.email,
+                    senderId: user.uid,
+                    senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+                    timestamp: serverTimestamp(),
+                    createdAt: Date.now(),
+                    reactions: { like: [], heart: [], thanks: [] },
+                    isAnonymous: false,
+                    originalSenderName: user.name,
+                    embeddedItem: {
+                      type: 'lecture',
+                      id: lecture.id,
+                      title: lecture.title,
+                      subtitle: `محاضرة ${lecture.number || ''} ${lecture.category}`,
+                      link: lecture.pdfUrl
+                    }
+                  });
+                  alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                } catch (err) {
+                  console.error(err);
+                  alert('Error sharing to chat');
+                }
+              }}
+              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg sm:rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+              title={isRtl ? 'مشاركة في المحادثة' : 'Share to Chat'}
+            >
+              <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+            </button>
+          )}
           {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && (
             <>
               <button

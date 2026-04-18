@@ -3,7 +3,7 @@ import { X, Upload, AlertCircle, Loader2, FileUp, CheckCircle2 } from 'lucide-re
 import { db, auth, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, RecordItem } from '../types';
+import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, RecordItem, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AdminRecordUploadProps {
@@ -11,9 +11,10 @@ interface AdminRecordUploadProps {
   onClose: () => void;
   lang: Language;
   recordToEdit?: RecordItem | null;
+  user?: UserProfile | null;
 }
 
-export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit }: AdminRecordUploadProps) {
+export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit, user }: AdminRecordUploadProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
@@ -197,6 +198,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit 
         duration,
         size,
         uploadedBy: auth.currentUser.uid,
+        uploaderName: user?.name || auth.currentUser.displayName || 'Admin',
       };
       
       if (recordNumber) {

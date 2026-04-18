@@ -11,6 +11,7 @@ export interface Lecture {
   youtubeUrl?: string;
   createdAt: any; // Firestore Timestamp
   uploadedBy: string;
+  uploaderName?: string;
   number?: number;
   isWeekly?: boolean;
   version?: 'original' | 'translated';
@@ -45,6 +46,7 @@ export interface RecordItem {
   size?: number; // File size in MB
   createdAt: any;
   uploadedBy: string;
+  uploaderName?: string;
   number?: number;
 }
 

@@ -475,6 +475,7 @@ export default function App() {
         }} 
         lang={lang} 
         lectureToEdit={lectureToEdit}
+        user={user}
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />

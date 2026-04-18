@@ -454,6 +454,42 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                             </div>
                           </div>
                         )}
+
+                        {user && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+                                await addDoc(collection(db, 'chat_messages'), {
+                                  text: '',
+                                  senderName: user.name,
+                                  senderEmail: user.email,
+                                  senderId: user.uid,
+                                  senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+                                  timestamp: serverTimestamp(),
+                                  createdAt: Date.now(),
+                                  reactions: { like: [], heart: [], thanks: [] },
+                                  isAnonymous: false,
+                                  originalSenderName: user.name,
+                                  embeddedItem: {
+                                    type: 'announcement',
+                                    id: post.id,
+                                    title: content?.substring(0, 50) || 'تبليغ جديد',
+                                    subtitle: post.authorName,
+                                  }
+                                });
+                                alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                              } catch (err) {
+                                console.error(err);
+                                alert('Error sharing to chat');
+                              }
+                            }}
+                            className="w-full mt-3 p-2 flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800/50 dark:hover:bg-zinc-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 rounded-xl transition-colors font-bold text-sm border border-slate-200 dark:border-zinc-700/50"
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            {isRtl ? 'مناقشة في الشات' : 'Discuss in Chat'}
+                          </button>
+                        )}
                         
                         <div className="flex items-center justify-end mt-1 pr-1 rtl:pr-0 rtl:pl-1">
                           <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
