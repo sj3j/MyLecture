@@ -51,7 +51,7 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
                   <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
                 )}
               </div>
-              <span className={`text-[10px] font-medium ${isActive ? 'font-bold' : ''}`}>
+              <span translate="no" className={`text-[10px] filter-none notranslate font-medium ${isActive ? 'font-bold' : ''}`}>
                 {tab.label}
               </span>
             </button>

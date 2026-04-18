@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare } from 'lucide-react';
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where } from 'firebase/firestore';
+import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart } from 'lucide-react';
+import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -11,8 +11,19 @@ interface ChatMessage {
   senderName: string;
   senderEmail: string;
   senderAvatar: string;
+  senderId?: string;
   timestamp: any;
   createdAt: number;
+  replyTo?: {
+    messageId: string;
+    senderName: string;
+    text: string;
+  } | null;
+  reactions?: {
+    like: string[];
+    heart: string[];
+    thanks: string[];
+  };
 }
 
 interface ChatSettings {
@@ -41,6 +52,8 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   });
   
   const [newMessage, setNewMessage] = useState('');
+  const [replyingTo, setReplyingTo] = useState<{messageId: string; senderName: string; text: string} | null>(null);
+  const [showReactionPickerFor, setShowReactionPickerFor] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -59,7 +72,10 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const [lastVisibleMessageId, setLastVisibleMessageId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
 
-  // Auto scroll
+  // Ghost sender bug fix & rendering cleanup
+  const getIsMe = (msg: ChatMessage) => {
+    return !!(user && ((msg.senderEmail && user.email === msg.senderEmail) || (msg.senderId && user.uid === msg.senderId)));
+  };
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
@@ -102,99 +118,73 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch initial messages
-  const fetchMessages = async () => {
-    try {
-      setIsLoading(true);
-      const q = query(
-        collection(db, 'chat_messages'),
-        orderBy('timestamp', 'desc'),
-        limit(20)
-      );
-      const snapshot = await getDocs(q);
-      
-      const loadedMessages: ChatMessage[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        loadedMessages.push({
-          id: doc.id,
-          text: data.text || '',
-          senderName: data.senderName || '',
-          senderEmail: data.senderEmail || '',
-          senderAvatar: data.senderAvatar || '',
-          timestamp: data.timestamp,
-          createdAt: data.timestamp?.toMillis() || Date.now()
-        });
-      });
-      
-      if (loadedMessages.length > 0) {
-        setMessages(loadedMessages.reverse()); // Reverse to show oldest first at top
-        setLastVisibleMessageId(snapshot.docs[snapshot.docs.length - 1].id);
-      } else {
-        setHasMore(false);
-      }
-    } catch (e) {
-      console.error('Failed to load messages', e);
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => scrollToBottom('auto'), 100);
-    }
-  };
-
-  // Poll new messages
+  // Listen for Live Messages (Replacing Polling)
   useEffect(() => {
-    fetchMessages();
+    setIsLoading(true);
+    const q = query(
+      collection(db, 'chat_messages'),
+      orderBy('timestamp', 'desc'),
+      limit(25)
+    );
 
-    let lastPollTime = Date.now();
-    const pollInterval = setInterval(async () => {
-      try {
-        // Fetch messages newer than lastPollTime
-        const ts = new Date(lastPollTime);
-        const q = query(
-          collection(db, 'chat_messages'),
-          where('timestamp', '>', ts),
-          orderBy('timestamp', 'asc')
-        );
-        const snapshot = await getDocs(q);
-        
-        if (!snapshot.empty) {
-          const newMessages: ChatMessage[] = [];
-          snapshot.forEach(doc => {
-            const data = doc.data();
-            newMessages.push({
-              id: doc.id,
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setMessages(prev => {
+        let newArray = [...prev];
+        snapshot.docChanges().forEach(change => {
+            const data = change.doc.data();
+            const msg: ChatMessage = {
+              id: change.doc.id,
               text: data.text || '',
-              senderName: data.senderName || '',
+              senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'Unknown'),
               senderEmail: data.senderEmail || '',
+              senderId: data.senderId || '',
               senderAvatar: data.senderAvatar || '',
               timestamp: data.timestamp,
-              createdAt: data.timestamp?.toMillis() || Date.now()
-            });
-          });
-          
-          if (newMessages.length > 0) {
-            setMessages(prev => {
-              const uniqueNew = newMessages.filter(nm => !prev.some(pm => pm.id === nm.id));
-              if (uniqueNew.length === 0) return prev;
-              return [...prev, ...uniqueNew];
-            });
-            // Only scroll to bottom if user is already near bottom
-            const container = containerRef.current;
-            if (container) {
-              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-              if (isNearBottom) {
-                setTimeout(() => scrollToBottom(), 100);
-              }
-            }
-          }
-        }
-        lastPollTime = Date.now();
-      } catch (e) {
-        console.error('Failed polling', e);
-      }
-    }, 10000); // 10 seconds polling for messages
+              createdAt: data.timestamp?.toMillis() || Date.now(),
+              replyTo: data.replyTo || null,
+              reactions: data.reactions || { like: [], heart: [], thanks: [] }
+            };
 
-    return () => clearInterval(pollInterval);
+            if (change.type === 'added') {
+               if (!newArray.some(m => m.id === msg.id)) {
+                  newArray.push(msg);
+               }
+            }
+            if (change.type === 'modified') {
+               const idx = newArray.findIndex(m => m.id === msg.id);
+               if (idx >= 0) {
+                 newArray[idx] = msg;
+               }
+            }
+            if (change.type === 'removed') {
+               newArray = newArray.filter(m => m.id !== msg.id);
+            }
+        });
+        
+        // Return chronologically sorted array
+        newArray.sort((a, b) => a.createdAt - b.createdAt);
+        return newArray;
+      });
+      
+      if (!snapshot.empty) {
+        setLastVisibleMessageId(snapshot.docs[snapshot.docs.length - 1].id);
+      }
+      setIsLoading(false);
+
+      // Auto scroll down if user is near bottom
+      const container = containerRef.current;
+      if (container) {
+        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+        if (isNearBottom) {
+          setTimeout(() => scrollToBottom(), 100);
+        }
+      }
+    }, (e) => {
+      console.error('Chat live listener error: ', e);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Check Local Storage Cooldown matching user
@@ -220,7 +210,9 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
     }
 
     const messageText = newMessage.trim();
+    const replyData = replyingTo ? { ...replyingTo } : null;
     setNewMessage('');
+    setReplyingTo(null);
     setIsSending(true);
 
     try {
@@ -228,8 +220,11 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         text: messageText,
         senderName: user.name,
         senderEmail: user.email,
+        senderId: user.uid,
         senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
-        timestamp: serverTimestamp()
+        timestamp: serverTimestamp(),
+        replyTo: replyData,
+        reactions: { like: [], heart: [], thanks: [] }
       });
 
       // Optimistic UI update
@@ -238,9 +233,12 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         text: messageText,
         senderName: user.name,
         senderEmail: user.email,
+        senderId: user.uid,
         senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
         timestamp: new Date(),
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        replyTo: replyData,
+        reactions: { like: [], heart: [], thanks: [] }
       }]);
       setTimeout(() => scrollToBottom(), 100);
 
@@ -301,11 +299,14 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         oldMessages.push({
           id: doc.id,
           text: data.text || '',
-          senderName: data.senderName || '',
+          senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'Unknown'),
           senderEmail: data.senderEmail || '',
+          senderId: data.senderId || '',
           senderAvatar: data.senderAvatar || '',
           timestamp: data.timestamp,
-          createdAt: data.timestamp?.toMillis() || Date.now()
+          createdAt: data.timestamp?.toMillis() || Date.now(),
+          replyTo: data.replyTo || null,
+          reactions: data.reactions || { like: [], heart: [], thanks: [] }
         });
       });
 
@@ -409,6 +410,37 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       console.error('Bundling failed', e);
     } finally {
       setIsBundling(false);
+    }
+  };
+
+  const handleReaction = async (msgId: string, emoji: 'like' | 'heart' | 'thanks', msgReactions: any) => {
+    if (!user) return;
+    const hasReacted = msgReactions && msgReactions[emoji] && msgReactions[emoji].includes(user.email);
+    
+    // Optimistic UI update
+    setMessages(prev => prev.map(m => {
+      if (m.id === msgId) {
+        const reactions = m.reactions || { like: [], heart: [], thanks: [] };
+        const updated = { ...reactions };
+        if (hasReacted) {
+          updated[emoji] = updated[emoji].filter((e: string) => e !== user.email);
+        } else {
+          updated[emoji] = [...(updated[emoji] || []), user.email];
+        }
+        return { ...m, reactions: updated };
+      }
+      return m;
+    }));
+    setShowReactionPickerFor(null);
+    
+    try {
+      const ref = doc(db, 'chat_messages', msgId);
+      await updateDoc(ref, {
+        [`reactions.${emoji}`]: hasReacted ? arrayRemove(user.email) : arrayUnion(user.email)
+      });
+    } catch (e) {
+      console.error('Failed to react', e);
+      fetchMessages(); // revert on fail
     }
   };
 
@@ -548,7 +580,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           </div>
         ) : (
           messages.map((msg, index) => {
-            const isMe = user?.email === msg.senderEmail;
+            const isMe = getIsMe(msg);
             const msgDate = new Date(msg.createdAt);
             const timeStr = msgDate.toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' });
             
@@ -558,7 +590,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
             const showHeader = !isMe && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMins > 5);
 
             return (
-              <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
+              <div id={`msg-${msg.id}`} key={msg.id} className={`flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}>
                 <div className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                   
                   {/* Avatar */}
@@ -582,23 +614,91 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                       </span>
                     )}
 
-                    <div className={`relative px-4 py-2.5 shadow-sm text-[15px] ${
-                      isMe 
-                        ? 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' 
-                        : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700'
-                    }`}>
-                      <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
+                    <div 
+                      className={`relative px-4 py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
+                        isMe 
+                          ? 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' 
+                          : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700'
+                      }`}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
+                      }}
+                    >
+                      {msg.replyTo && (
+                        <div 
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             const el = document.getElementById(`msg-${msg.replyTo!.messageId}`);
+                             if (el) {
+                               el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                               el.classList.add('bg-sky-100', 'dark:bg-sky-900/40');
+                               setTimeout(() => el.classList.remove('bg-sky-100', 'dark:bg-sky-900/40'), 2000);
+                             }
+                           }}
+                           className={`mb-1.5 p-2 rounded-lg text-xs border-l-2 rtl:border-l-0 rtl:border-r-2 cursor-pointer hover:opacity-80 transition-opacity ${isMe ? 'bg-sky-700/50 border-sky-300' : 'bg-slate-100 dark:bg-zinc-700/50 border-sky-500'}`}
+                        >
+                          <div className="font-bold mb-0.5 opacity-90">{msg.replyTo.senderName}</div>
+                          <div className="opacity-80 truncate" dir="auto">{msg.replyTo.text}</div>
+                        </div>
+                      )}
+                      <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{msg.text}</p>
                       
                       <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
                         <span className="text-[10px] font-medium">{timeStr}</span>
                       </div>
                     </div>
 
+                    {/* Reactions Display */}
+                    {msg.reactions && (msg.reactions.like?.length > 0 || msg.reactions.heart?.length > 0 || msg.reactions.thanks?.length > 0) && (
+                      <div className={`flex flex-wrap gap-1 mt-1 z-10 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        {msg.reactions.like?.length > 0 && (
+                          <button title={msg.reactions.like.join(', ')} onClick={() => handleReaction(msg.id, 'like', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.like.includes(user?.email || '') ? 'bg-sky-50 dark:bg-sky-900 border-sky-200 text-sky-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
+                            👍 {msg.reactions.like.length}
+                          </button>
+                        )}
+                        {msg.reactions.heart?.length > 0 && (
+                          <button title={msg.reactions.heart.join(', ')} onClick={() => handleReaction(msg.id, 'heart', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.heart.includes(user?.email || '') ? 'bg-rose-50 dark:bg-rose-900 border-rose-200 text-rose-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
+                            ❤️ {msg.reactions.heart.length}
+                          </button>
+                        )}
+                        {msg.reactions.thanks?.length > 0 && (
+                          <button title={msg.reactions.thanks.join(', ')} onClick={() => handleReaction(msg.id, 'thanks', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.thanks.includes(user?.email || '') ? 'bg-emerald-50 dark:bg-emerald-900 border-emerald-200 text-emerald-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
+                            🙏 {msg.reactions.thanks.length}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reaction / Action Picker */}
+                    <AnimatePresence>
+                      {showReactionPickerFor === msg.id && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                          className={`absolute -top-12 z-[100] bg-white dark:bg-zinc-800 shadow-xl rounded-full px-2 py-1.5 flex items-center gap-1 border border-slate-200 dark:border-zinc-700 ${isMe ? 'right-0' : 'left-0'}`}
+                        >
+                          <button onClick={() => handleReaction(msg.id, 'like', msg.reactions)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-lg">👍</button>
+                          <button onClick={() => handleReaction(msg.id, 'heart', msg.reactions)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-lg">❤️</button>
+                          <button onClick={() => handleReaction(msg.id, 'thanks', msg.reactions)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-lg">🙏</button>
+                          <div className="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1"></div>
+                          <button 
+                            onClick={() => { setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50) }); setShowReactionPickerFor(null); }} 
+                            className="px-2 py-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-xs font-bold text-sky-600 flex items-center gap-1"
+                          >
+                            ↩ {isRtl ? 'رد' : 'Reply'}
+                          </button>
+                          <button onClick={() => setShowReactionPickerFor(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 ml-1"><X className="w-4 h-4"/></button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     {/* Delete Action (Admin) */}
                     {isAdminOrModerator && (
                       <button 
                         onClick={() => deleteMessage(msg.id)}
-                        className={`absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110 ${isMe ? '-left-10 rtl:left-auto rtl:-right-10' : '-right-10 rtl:right-auto rtl:-left-10'}`}
+                        className={`absolute top-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110 ${isMe ? '-left-10 rtl:left-auto rtl:-right-10' : '-right-10 rtl:right-auto rtl:-left-10'}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -613,42 +713,65 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       </div>
 
       {/* Input Area */}
-      <div className="bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-2 sm:p-4 pb-[max(env(safe-area-inset-bottom),1rem)] mt-auto z-20">
+      <div className="bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-2 sm:p-4 pb-[max(env(safe-area-inset-bottom),1rem)] mt-auto z-20 relative">
         {!settings.isChatOpen && !isAdminOrModerator ? (
           <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
             <StopCircle className="w-5 h-5" />
             <span className="font-medium text-sm">{settings.closedMessage || 'الشات مغلق حالياً — يمكنك القراءة فقط'}</span>
           </div>
         ) : (
-          <form onSubmit={handleSendMessage} className="flex gap-2 items-end relative">
-            <textarea
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={isRtl ? 'رسالتك...' : 'Type a message...'}
-              className="flex-1 bg-slate-100 dark:bg-zinc-800 border border-transparent focus:border-sky-300 dark:focus:border-sky-700 rounded-2xl px-4 py-3 min-h-[44px] max-h-32 outline-none resize-none text-[15px] text-slate-900 dark:text-stone-100 transition-colors"
-              dir="auto"
-              rows={1}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage(e);
-                }
-              }}
-            />
-            {cooldownRemaining > 0 && !isAdminOrModerator ? (
-              <div className="w-11 h-11 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-slate-500 dark:text-zinc-400 font-bold shrink-0 shadow-inner">
-                {cooldownRemaining}
+          <div className="relative">
+            {replyingTo && (
+              <div className="absolute bottom-full left-0 right-0 mb-3 mx-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-start gap-2">
+                <div className="flex-1 overflow-hidden">
+                  <div className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-0.5">
+                    ↩ {isRtl ? 'رد على' : 'Replying to'} {replyingTo.senderName}
+                  </div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 truncate" dir="auto">{replyingTo.text}</div>
+                </div>
+                <button type="button" onClick={() => setReplyingTo(null)} className="p-1 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            ) : (
-              <button
-                type="submit"
-                disabled={isSending || !newMessage.trim()}
-                className="w-11 h-11 bg-sky-600 hover:bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-zinc-700 transition-colors shrink-0 shadow-sm"
-              >
-                {isSending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className={`w-5 h-5 ${isRtl ? 'rotate-180 transform -ml-1' : 'ml-1'}`} />}
-              </button>
             )}
-          </form>
+            
+            {/* Telegram-style fixed input bar. LTR -> input then send. RTL -> send then input */}
+            <form onSubmit={handleSendMessage} className={`flex items-end gap-2 relative`} dir={isRtl ? 'rtl' : 'ltr'}>
+              <button
+                type="button"
+                className="w-11 h-11 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 rounded-full flex items-center justify-center transition-colors shrink-0 shadow-sm"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder={isRtl ? 'رسالتك...' : 'Message...'}
+                className="flex-1 bg-slate-100 dark:bg-zinc-800 border border-transparent focus:border-sky-300 dark:focus:border-sky-700 rounded-2xl px-4 py-3 min-h-[44px] max-h-32 outline-none resize-none text-[15px] text-slate-900 dark:text-stone-100 transition-colors"
+                dir="auto"
+                rows={1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(e);
+                  }
+                }}
+              />
+              {cooldownRemaining > 0 && !isAdminOrModerator ? (
+                <div className="w-11 h-11 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-slate-500 dark:text-zinc-400 font-bold shrink-0 shadow-inner">
+                  {cooldownRemaining}
+                </div>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={isSending || !newMessage.trim()}
+                  className="w-11 h-11 bg-sky-600 hover:bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-zinc-700 transition-colors shrink-0 shadow-sm"
+                >
+                  {isSending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className={`w-5 h-5 ${isRtl ? 'rotate-180 transform -ml-1' : 'ml-1'}`} />}
+                </button>
+              )}
+            </form>
+          </div>
         )}
       </div>
 

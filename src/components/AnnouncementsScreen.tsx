@@ -341,7 +341,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                           <div className={`absolute top-2 z-10 flex gap-1 ${isRtl ? 'left-2 right-auto' : 'right-2 left-auto'}`}>
                             <button
                               onClick={() => openEditModal(post)}
-                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
@@ -364,7 +364,7 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                             ) : (
                               <button
                                 onClick={() => setDeletingId(post.id)}
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>

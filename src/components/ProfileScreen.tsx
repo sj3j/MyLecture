@@ -213,7 +213,7 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
                 ) : (
                   <Camera className="w-8 h-8 text-sky-400 dark:text-sky-500 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors" />
                 )}
-                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <Camera className="w-6 h-6 text-white" />
                 </div>
               </div>

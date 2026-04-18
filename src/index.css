@@ -7,3 +7,10 @@
     color-scheme: dark;
   }
 }
+
+@layer utilities {
+  .notranslate {
+    /* Prevents translation plugins from modifying these elements */
+  }
+}
+

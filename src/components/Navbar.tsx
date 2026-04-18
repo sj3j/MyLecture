@@ -33,7 +33,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
                 e.currentTarget.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-sky-600 dark:text-sky-400"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>';
               }} />
             </div>
-            <span className="text-xl font-black text-slate-900 dark:text-stone-100 hidden sm:block">{t.appName}</span>
+            <span translate="no" className="text-xl font-black text-slate-900 dark:text-stone-100 hidden sm:block notranslate">{t.appName}</span>
           </div>
 
           {currentTab === 'lectures' && (
@@ -68,7 +68,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
               title={lang === 'ar' ? 'English' : 'العربية'}
             >
               <Languages className="w-5 h-5" />
-              <span className="hidden md:inline">{lang === 'ar' ? 'EN' : 'AR'}</span>
+              <span translate="no" className="hidden md:inline notranslate">{lang === 'ar' ? 'EN' : 'AR'}</span>
             </button>
 
             {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && currentTab === 'lectures' && (
@@ -77,7 +77,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
                 className="flex items-center gap-2 px-4 py-2 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-full hover:bg-sky-700 dark:hover:bg-sky-600 transition-colors text-sm font-bold"
               >
                 <Upload className="w-4 h-4" />
-                <span className="hidden md:inline">{t.upload}</span>
+                <span translate="no" className="hidden md:inline notranslate">{t.upload}</span>
               </button>
             )}
           </div>
