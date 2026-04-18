@@ -348,7 +348,7 @@ export default function App() {
     return <LoginScreen lang={lang} externalError={loginError} onClearError={() => setLoginError(null)} />;
   }
 
-  if ((!user.group || !user.examCode) && user.role === 'student') {
+  if (!user.group && user.role === 'student') {
     return <OnboardingScreen user={user} lang={lang} />;
   }
 

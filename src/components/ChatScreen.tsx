@@ -534,7 +534,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       });
     } catch (e) {
       console.error('Failed to react', e);
-      fetchMessages(); // revert on fail
+      // State will be reverted automatically by onSnapshot if the write fails
     }
   };
 
@@ -732,6 +732,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                           ? (msg.isAnonymous ? 'bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' : 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm') 
                           : (msg.isAnonymous ? 'bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50' : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700')
                       }`}
+                      onClick={() => setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
@@ -743,9 +744,9 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                              e.stopPropagation();
                              const el = document.getElementById(`msg-${msg.replyTo!.messageId}`);
                              if (el) {
-                               el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                               el.classList.add('bg-sky-100', 'dark:bg-sky-900/40');
-                               setTimeout(() => el.classList.remove('bg-sky-100', 'dark:bg-sky-900/40'), 2000);
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                el.classList.add('bg-sky-100', 'dark:bg-sky-900/40');
+                                setTimeout(() => el.classList.remove('bg-sky-100', 'dark:bg-sky-900/40'), 2000);
                              }
                            }}
                            className={`mb-1.5 p-2 rounded-lg text-xs border-l-2 rtl:border-l-0 rtl:border-r-2 cursor-pointer hover:opacity-80 transition-opacity ${isMe ? 'bg-sky-700/50 border-sky-300' : 'bg-slate-100 dark:bg-zinc-700/50 border-sky-500'}`}
@@ -758,11 +759,11 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                       {msg.fileUrl && (
                         <div className="mb-2">
                           {msg.fileType === 'image' ? (
-                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer">
+                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                               <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
                             </a>
                           ) : (
-                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400'}`}>
+                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400'}`}>
                               <Paperclip className="w-5 h-5" />
                               <span className="text-sm font-medium truncate max-w-[200px]">{msg.fileName || 'Attachment'}</span>
                             </a>
@@ -771,7 +772,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                       )}
                       
                       {msg.embeddedItem && (
-                         <div className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}>
+                         <div onClick={(e) => e.stopPropagation()} className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}>
                            <div className="flex items-center gap-1.5 opacity-80 text-[10px] uppercase font-bold tracking-wider">
                               {msg.embeddedItem.type === 'lecture' && <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">Lecture</span>}
                               {msg.embeddedItem.type === 'record' && <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">Record</span>}
@@ -819,19 +820,23 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                           initial={{ opacity: 0, scale: 0.9, y: 10 }}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                          className={`absolute -top-12 z-[100] bg-white dark:bg-zinc-800 shadow-xl rounded-full px-2 py-1.5 flex items-center gap-1 border border-slate-200 dark:border-zinc-700 ${isMe ? 'right-0' : 'left-0'}`}
+                          className={`absolute -top-16 z-[100] bg-white dark:bg-zinc-800 shadow-2xl rounded-2xl px-3 py-2 flex items-center gap-2 border border-slate-200 dark:border-zinc-700 whitespace-nowrap ${isMe ? (isRtl ? 'left-0' : 'right-0') : (isRtl ? 'right-0' : 'left-0')}`}
                         >
-                          <button onClick={() => handleReaction(msg.id, 'like', msg.reactions)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-lg">👍</button>
-                          <button onClick={() => handleReaction(msg.id, 'heart', msg.reactions)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-lg">❤️</button>
-                          <button onClick={() => handleReaction(msg.id, 'thanks', msg.reactions)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-lg">🙏</button>
-                          <div className="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1"></div>
+                          <div className="flex items-center gap-1.5 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l">
+                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like', msg.reactions); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">👍</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
+                          </div>
                           <button 
-                            onClick={() => { setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50) }); setShowReactionPickerFor(null); }} 
-                            className="px-2 py-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-xs font-bold text-sky-600 flex items-center gap-1"
+                            onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50) }); setShowReactionPickerFor(null); }} 
+                            className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
                           >
-                            ↩ {isRtl ? 'رد' : 'Reply'}
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                            {isRtl ? 'رد' : 'Reply'}
                           </button>
-                          <button onClick={() => setShowReactionPickerFor(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 ml-1"><X className="w-4 h-4"/></button>
+                          <button onClick={(e) => { e.stopPropagation(); setShowReactionPickerFor(null); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 group">
+                            <X className="w-4 h-4 group-hover:text-red-500 transition-colors"/>
+                          </button>
                         </motion.div>
                       )}
                     </AnimatePresence>

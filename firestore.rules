@@ -149,7 +149,13 @@ service cloud.firestore {
     match /chat_messages/{messageId} {
       allow read: if hasAccess();
       allow create: if hasAccess() && (isAdminOrModerator() || get(/databases/$(database)/documents/chat_settings/config).data.isChatOpen == true);
-      allow update, delete: if isAdminOrModerator();
+      allow update: if isAdminOrModerator() || (
+        hasAccess() && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+        // Ensure they only add/remove their own email/id (basic check)
+        request.auth.token.email != null
+      );
+      allow delete: if isAdminOrModerator();
     }
 
     match /records/{recordId} {

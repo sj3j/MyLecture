@@ -14,20 +14,18 @@ export default function OnboardingScreen({ user, lang }: OnboardingScreenProps) 
   const isRtl = lang === 'ar';
   
   const [group, setGroup] = useState('');
-  const [examCode, setExamCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!group.trim() || !examCode.trim()) return;
+    if (!group.trim()) return;
 
     setIsLoading(true);
     try {
       await updateDoc(doc(db, 'users', user.uid), {
-        group: group.trim(),
-        examCode: examCode.trim()
+        group: group.trim()
       });
-      // App.tsx will automatically re-render because user.group and user.examCode will be updated
+      // App.tsx will automatically re-render because user.group will be updated
     } catch (error) {
       console.error('Error updating profile:', error);
       alert(isRtl ? 'حدث خطأ أثناء حفظ البيانات' : 'Error saving data');
@@ -46,7 +44,7 @@ export default function OnboardingScreen({ user, lang }: OnboardingScreenProps) 
           {isRtl ? 'أكمل ملفك الشخصي' : 'Complete Your Profile'}
         </h1>
         <p className="text-center text-slate-500 dark:text-slate-400 mb-8 text-sm">
-          {isRtl ? 'يرجى إدخال الجروب والكود الامتحاني للمتابعة' : 'Please enter your group and exam code to continue'}
+          {isRtl ? 'يرجى إدخال الجروب للمتابعة' : 'Please enter your group to continue'}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -64,23 +62,9 @@ export default function OnboardingScreen({ user, lang }: OnboardingScreenProps) 
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-              {isRtl ? 'الكود الامتحاني' : 'Exam Code'}
-            </label>
-            <input
-              type="text"
-              value={examCode}
-              onChange={(e) => setExamCode(e.target.value)}
-              placeholder={isRtl ? 'أدخل الكود الامتحاني' : 'Enter exam code'}
-              required
-              className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-sky-500 dark:text-stone-100 transition-colors"
-            />
-          </div>
-
           <button
             type="submit"
-            disabled={isLoading || !group.trim() || !examCode.trim()}
+            disabled={isLoading || !group.trim()}
             className="w-full py-4 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-4"
           >
             {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
