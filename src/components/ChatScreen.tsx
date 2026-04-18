@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart, Image as ImageIcon, FileText, Link } from 'lucide-react';
 import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, storage } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ChatMessage {
@@ -305,24 +305,27 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       }
 
       // Optimistic UI update
-      setMessages(prev => [...prev, {
-        id: docRef.id,
-        text: messageText,
-        senderName: displaySenderName,
-        senderEmail: user.email,
-        senderId: user.uid,
-        senderAvatar: displaySenderAvatar,
-        timestamp: new Date(),
-        createdAt: Date.now(),
-        replyTo: replyData,
-        reactions: { like: [], heart: [], thanks: [] },
-        isAnonymous: isAnon,
-        originalSenderName: user.name,
-        fileUrl: finalFileUrl || undefined,
-        fileName: finalFileName || undefined,
-        fileType: finalFileUrl ? finalFileType! : undefined,
-        embeddedItem: embedData || undefined
-      }]);
+      setMessages(prev => {
+        if (prev.some(m => m.id === docRef.id)) return prev;
+        return [...prev, {
+          id: docRef.id,
+          text: messageText,
+          senderName: displaySenderName,
+          senderEmail: user.email,
+          senderId: user.uid,
+          senderAvatar: displaySenderAvatar,
+          timestamp: new Date() as any,
+          createdAt: Date.now(),
+          replyTo: replyData,
+          reactions: { like: [], heart: [], thanks: [] },
+          isAnonymous: isAnon,
+          originalSenderName: user.name,
+          fileUrl: finalFileUrl || undefined,
+          fileName: finalFileName || undefined,
+          fileType: finalFileUrl ? finalFileType! : undefined,
+          embeddedItem: embedData || undefined
+        }];
+      });
       setTimeout(() => scrollToBottom(), 100);
 
       // Start cooldown if not admin

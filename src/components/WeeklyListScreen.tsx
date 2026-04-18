@@ -553,12 +553,12 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                   {t.examIncludes}
                 </p>
                 <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                  {hw.lectures.map(lec => {
+                  {hw.lectures.map((lec, i) => {
                     // Find the lecture to get its PDF URL
                     const actualLecture = allLectures.find(l => l.id === lec.lectureId);
                     return (
                       <a
-                        key={lec.lectureId}
+                        key={`${lec.lectureId}-${i}`}
                         href={actualLecture?.pdfUrl || '#'}
                         target="_blank"
                         rel="noopener noreferrer"

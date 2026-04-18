@@ -12,9 +12,10 @@ interface SubjectBrowserProps {
   searchQuery?: string;
   isLoading?: boolean;
   onRemoveDownload?: (lecture: Lecture) => void;
+  onNavigateToChat?: () => void;
 }
 
-export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQuery = '', isLoading = false, onRemoveDownload }: SubjectBrowserProps) {
+export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQuery = '', isLoading = false, onRemoveDownload, onNavigateToChat }: SubjectBrowserProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
@@ -93,7 +94,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
           'grid-cols-3'
         }`}>
           {lectures.map(lecture => (
-            <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} />
+            <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
           ))}
         </div>
       </div>
@@ -247,7 +248,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
           }`}>
             <AnimatePresence mode="popLayout">
               {filteredLectures.map(lecture => (
-                <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} />
+                <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
               ))}
             </AnimatePresence>
           </motion.div>

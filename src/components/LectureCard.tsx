@@ -13,10 +13,11 @@ interface LectureCardProps {
   user: UserProfile | null;
   onEdit?: (lecture: Lecture) => void;
   onRemoveDownload?: (lecture: Lecture) => void;
+  onNavigateToChat?: () => void;
   key?: string;
 }
 
-export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload }: LectureCardProps) {
+export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat }: LectureCardProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [showPreview, setShowPreview] = useState(false);
@@ -237,7 +238,11 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                       link: lecture.pdfUrl
                     }
                   });
-                  alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                  if (onNavigateToChat) {
+                     onNavigateToChat();
+                  } else {
+                     alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                  }
                 } catch (err) {
                   console.error(err);
                   alert('Error sharing to chat');

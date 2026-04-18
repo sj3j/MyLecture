@@ -12,9 +12,10 @@ interface RecordsScreenProps {
   user: UserProfile | null;
   lang: Language;
   searchQuery: string;
+  onNavigateToChat?: () => void;
 }
 
-export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreenProps) {
+export default function RecordsScreen({ user, lang, searchQuery, onNavigateToChat }: RecordsScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -272,7 +273,11 @@ export default function RecordsScreen({ user, lang, searchQuery }: RecordsScreen
                               link: record.audioUrl
                             }
                           });
-                          alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                          if (onNavigateToChat) {
+                             onNavigateToChat();
+                          } else {
+                             alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                          }
                         } catch (err) {
                           console.error(err);
                           alert('Error sharing to chat');

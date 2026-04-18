@@ -421,6 +421,7 @@ export default function App() {
         user={user}
         searchQuery={searchQuery}
         isLoading={isLoading}
+        onNavigateToChat={() => setCurrentTab('chat')}
         onEdit={(l) => {
           setLectureToEdit(l);
           setShowUpload(true);
@@ -461,9 +462,9 @@ export default function App() {
       )}
 
       {currentTab === 'lectures' && renderLecturesTab()}
-      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} />}
+      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} />}
       {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
-      {currentTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} />}
+      {currentTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} onNavigateToChat={() => setCurrentTab('chat')} />}
       {currentTab === 'chat' && <ChatScreen user={user} lang={lang} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
 

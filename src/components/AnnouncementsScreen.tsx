@@ -29,9 +29,10 @@ interface AnnouncementsScreenProps {
   user: UserProfile | null;
   lang: Language;
   lectures: Lecture[];
+  onNavigateToChat?: () => void;
 }
 
-export default function AnnouncementsScreen({ user, lang, lectures }: AnnouncementsScreenProps) {
+export default function AnnouncementsScreen({ user, lang, lectures, onNavigateToChat }: AnnouncementsScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -439,15 +440,16 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                         {post.embeddedLectures && post.embeddedLectures.length > 0 && (
                           <div className={`mt-2 mb-1 pl-3 rtl:pl-0 rtl:pr-3 border-l-2 rtl:border-l-0 rtl:border-r-2 border-sky-500`}>
                             <div className="grid gap-2">
-                              {post.embeddedLectures.map(lectureId => {
+                              {post.embeddedLectures.map((lectureId, i) => {
                                 const lecture = lectures.find(l => l.id === lectureId);
                                 if (!lecture) return null;
                                 return (
                                   <LectureCard 
-                                    key={lecture.id} 
+                                    key={`${lecture.id}-${i}`} 
                                     lecture={lecture} 
                                     lang={lang} 
                                     user={user} 
+                                    onNavigateToChat={onNavigateToChat}
                                   />
                                 );
                               })}
@@ -478,7 +480,12 @@ export default function AnnouncementsScreen({ user, lang, lectures }: Announceme
                                     subtitle: post.authorName,
                                   }
                                 });
-                                alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                                // Remove alert so we can navigate smoothly or keep it brief
+                                if (onNavigateToChat) {
+                                  onNavigateToChat();
+                                } else {
+                                  alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
+                                }
                               } catch (err) {
                                 console.error(err);
                                 alert('Error sharing to chat');
