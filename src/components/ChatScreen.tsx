@@ -4,6 +4,7 @@ import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, B
 import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
 import { db, storage } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
+import { forceDownload } from '../lib/utils';
 
 interface ChatMessage {
   id: string;
@@ -75,6 +76,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [isBundling, setIsBundling] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -445,12 +447,17 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   };
 
   const deleteMessage = async (id: string) => {
-    if (!isAdminOrModerator) return;
+    const msg = messages.find(m => m.id === id);
+    const isOwner = msg && user && (msg.senderId === user.uid || (msg.senderEmail && msg.senderEmail === user.email));
+    
+    if (!isAdminOrModerator && !isOwner) return;
+    
     try {
       await deleteDoc(doc(db, 'chat_messages', id));
       setMessages(prev => prev.filter(m => m.id !== id));
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to delete message', e);
+      setAlertMessage(isRtl ? 'فشل الحذف. ' + e.message : 'Failed to delete: ' + e.message);
     }
   };
 
@@ -763,10 +770,10 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                               <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
                             </a>
                           ) : (
-                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400'}`}>
+                            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); forceDownload(msg.fileUrl!, msg.fileName || 'Attachment'); }} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white hover:bg-sky-700/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800/80'} transition-colors text-left`}>
                               <Paperclip className="w-5 h-5" />
                               <span className="text-sm font-medium truncate max-w-[200px]">{msg.fileName || 'Attachment'}</span>
-                            </a>
+                            </button>
                           )}
                         </div>
                       )}
@@ -821,11 +828,12 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.9, y: 10 }}
                           className={`absolute -top-16 z-[100] bg-white dark:bg-zinc-800 shadow-2xl rounded-2xl px-3 py-2 flex items-center gap-2 border border-slate-200 dark:border-zinc-700 whitespace-nowrap ${isMe ? (isRtl ? 'left-0' : 'right-0') : (isRtl ? 'right-0' : 'left-0')}`}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-1.5 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l">
-                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like', msg.reactions); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">👍</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">👍</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
                           </div>
                           <button 
                             onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50) }); setShowReactionPickerFor(null); }} 
@@ -834,6 +842,35 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
                             {isRtl ? 'رد' : 'Reply'}
                           </button>
+
+                          {(isAdminOrModerator || isMe) && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMessageToDelete(msg.id);
+                                setShowReactionPickerFor(null);
+                              }}
+                              className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 rounded-full transition-colors"
+                              title={isRtl ? 'حذف' : 'Delete'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {isAdminOrModerator && msg.isAnonymous && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                alert(`Original Sender: ${msg.originalSenderName} (${msg.senderEmail})`);
+                                setShowReactionPickerFor(null);
+                              }}
+                              title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
+                              className="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-500 rounded-full transition-colors"
+                            >
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                          )}
+
                           <button onClick={(e) => { e.stopPropagation(); setShowReactionPickerFor(null); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 group">
                             <X className="w-4 h-4 group-hover:text-red-500 transition-colors"/>
                           </button>
@@ -841,14 +878,12 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                       )}
                     </AnimatePresence>
 
-                    {/* Delete Action (Admin or Owner) */}
+                    {/* Desktop Hover Actions (Optional, kept but integrated with tap logic above) */}
                     {(isAdminOrModerator || isMe) && (
-                      <div className={`absolute top-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-1 ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
+                      <div className={`absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 hidden sm:flex ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
                         <button 
                           onClick={() => {
-                            if (window.confirm(isRtl ? 'هل تريد حذف هذه الرسالة؟' : 'Delete this message?')) {
-                              deleteMessage(msg.id);
-                            }
+                            setMessageToDelete(msg.id);
                           }}
                           className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
                         >
@@ -1029,6 +1064,48 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       </div>
 
       {/* Clear All Confirm Modal */}
+      <AnimatePresence>
+        {messageToDelete && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMessageToDelete(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 border border-slate-200 dark:border-zinc-700"
+            >
+              <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">{isRtl ? 'حذف الرسالة' : 'Delete Message'}</h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">{isRtl ? 'هل أنت متأكد من حذف هذه الرسالة؟' : 'Are you sure you want to delete this message?'}</p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setMessageToDelete(null)}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-700/50 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  {isRtl ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  onClick={() => {
+                    deleteMessage(messageToDelete);
+                    setMessageToDelete(null);
+                  }}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  {isRtl ? 'حذف' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showClearConfirm && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Play, Pause, Download, Volume2, VolumeX } from 'lucide-react';
+import { forceDownload } from '../lib/utils';
 
 interface AudioPlayerProps {
   src: string;
@@ -114,16 +115,16 @@ export default function AudioPlayer({ src, title }: AudioPlayerProps) {
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </button>
         
-        <a
-          href={src}
-          download={title}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            forceDownload(src, title + '.mp3');
+          }}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 bg-slate-100 dark:bg-zinc-800 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
         >
           <Download className="w-4 h-4" />
           Download
-        </a>
+        </button>
       </div>
     </div>
   );

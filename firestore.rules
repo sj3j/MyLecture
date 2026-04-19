@@ -155,7 +155,12 @@ service cloud.firestore {
         // Ensure they only add/remove their own email/id (basic check)
         request.auth.token.email != null
       );
-      allow delete: if isAdminOrModerator() || isOwner(resource.data.senderId);
+      // Allow delete if Admin OR (is owner by senderId OR senderEmail for legacy messages)
+      allow delete: if isAdminOrModerator() || 
+                    (isAuthenticated() && (
+                      resource.data.get('senderId', '') == request.auth.uid ||
+                      (request.auth.token.email != null && resource.data.get('senderEmail', '') == request.auth.token.email)
+                    ));
     }
 
     match /records/{recordId} {

@@ -15,11 +15,13 @@ try {
   const source = fs.readFileSync('firestore.rules', 'utf8');
 
   admin.securityRules().createRuleset({
-    files: [{
-      name: 'firestore.rules',
-      content: source
-    }]
-  }).then(async ruleset => {
+    source: {
+      files: [{
+        name: 'firestore.rules',
+        content: source
+      }]
+    }
+  } as any).then(async (ruleset: any) => {
     console.log('Created ruleset:', ruleset.name);
     await admin.securityRules().releaseFirestoreRuleset(ruleset.name);
     console.log('Successfully released ruleset!');

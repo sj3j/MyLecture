@@ -6,6 +6,7 @@ import { doc, deleteDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firest
 import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useOfflinePDF } from '../hooks/useOfflinePDF';
+import { forceDownload } from '../lib/utils';
 
 interface LectureCardProps {
   lecture: Lecture;
@@ -206,14 +207,16 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
             </button>
           )}
 
-          <a
-            href={lecture.pdfUrl}
-            download
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              forceDownload(lecture.pdfUrl, lecture.title + '.pdf');
+            }}
             className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 rounded-lg sm:rounded-xl hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
             title={t.download}
           >
             <Download className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
-          </a>
+          </button>
           {user && (
             <button
               onClick={async () => {
@@ -345,14 +348,16 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                   </h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  <a
-                    href={lecture.pdfUrl}
-                    download
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      forceDownload(lecture.pdfUrl, lecture.title + '.pdf');
+                    }}
                     className="p-2 text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"
                     title={t.download}
                   >
                     <Download className="w-5 h-5" />
-                  </a>
+                  </button>
                   <button
                     onClick={() => setShowPreview(false)}
                     className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-all"

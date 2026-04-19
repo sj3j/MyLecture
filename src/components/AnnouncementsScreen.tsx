@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { forceDownload } from '../lib/utils';
 import LectureCard from './LectureCard';
 
 interface TelegramPost {
@@ -410,7 +411,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                         )}
 
                         {post.fileUrl && !post.photo_url && !post.videoUrl && (
-                          <a href={post.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors w-full">
+                          <button onClick={(e) => { e.preventDefault(); forceDownload(post.fileUrl!, post.fileName || 'Download'); }} className="mt-2 block p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors w-full text-left">
                             <div className="flex items-center gap-3 w-full overflow-hidden relative">
                               <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 rounded-lg flex items-center justify-center shrink-0">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
@@ -420,7 +421,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                                 <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{isRtl ? 'اضغط للتحميل' : 'Click to download'}</p>
                               </div>
                             </div>
-                          </a>
+                          </button>
                         )}
 
                         {post.linkUrl && (
