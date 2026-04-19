@@ -27,6 +27,7 @@ interface ChatMessage {
   };
   isAnonymous?: boolean;
   originalSenderName?: string;
+  originalSenderExamCode?: string;
   fileUrl?: string;
   fileName?: string;
   fileType?: 'image' | 'file';
@@ -288,6 +289,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
         reactions: { like: [], heart: [], thanks: [] },
         isAnonymous: isAnon,
         originalSenderName: user.name,
+        originalSenderExamCode: user.examCode || '',
       };
 
       if (finalFileUrl) {
@@ -322,6 +324,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           reactions: { like: [], heart: [], thanks: [] },
           isAnonymous: isAnon,
           originalSenderName: user.name,
+          originalSenderExamCode: user.examCode || '',
           fileUrl: finalFileUrl || undefined,
           fileName: finalFileName || undefined,
           fileType: finalFileUrl ? finalFileType! : undefined,
@@ -399,6 +402,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           reactions: data.reactions || { like: [], heart: [], thanks: [] },
           isAnonymous: data.isAnonymous || false,
           originalSenderName: data.originalSenderName || '',
+          originalSenderExamCode: data.originalSenderExamCode || '',
           fileUrl: data.fileUrl || undefined,
           fileName: data.fileName || undefined,
           fileType: data.fileType || undefined,
@@ -861,7 +865,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                alert(`Original Sender: ${msg.originalSenderName} (${msg.senderEmail})`);
+                                alert(`Original Sender: ${msg.originalSenderExamCode || msg.originalSenderName} (${msg.senderEmail})`);
                                 setShowReactionPickerFor(null);
                               }}
                               title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
@@ -892,7 +896,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
 
                         {isAdminOrModerator && msg.isAnonymous && (
                           <button
-                            onClick={() => alert(`Original Sender: ${msg.originalSenderName} (${msg.senderEmail})`)}
+                            onClick={() => alert(`Original Sender: ${msg.originalSenderExamCode || msg.originalSenderName} (${msg.senderEmail})`)}
                             title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
                             className="p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110"
                           >

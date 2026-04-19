@@ -24,6 +24,7 @@ interface TelegramPost {
   fileName?: string | null;
   linkUrl?: string | null;
   linkTitle?: string | null;
+  reactions?: Record<string, string[]>;
 }
 
 interface AnnouncementsScreenProps {
@@ -58,8 +59,19 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
 
   const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageAnnouncements !== false;
 
+  const [allowedReactions, setAllowedReactions] = useState<string[]>(['👍', '❤️', '🙏', '🔥']);
+  const [showReactionsConfig, setShowReactionsConfig] = useState(false);
+
   useEffect(() => {
     setIsLoading(true);
+    
+    // Fetch allowed reactions
+    const unsubscribeReactions = onSnapshot(doc(db, 'settings', 'announcements'), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().allowedReactions) {
+        setAllowedReactions(docSnap.data().allowedReactions);
+      }
+    });
+
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -82,6 +94,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
           fileName: data.fileName || null,
           linkUrl: data.linkUrl || null,
           linkTitle: data.linkTitle || null,
+          reactions: data.reactions || {},
         });
       });
       setPosts(newPosts);
@@ -94,7 +107,10 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       setIsRefreshing(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeReactions();
+    };
   }, []);
 
   const handleRefresh = () => {
@@ -267,6 +283,41 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
     }
   };
 
+  const handleReaction = async (postId: string, emoji: string) => {
+    if (!user) return;
+    
+    try {
+      const { updateDoc, arrayUnion, arrayRemove } = await import('firebase/firestore');
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+      
+      const reactions = post.reactions || {};
+      const emojiReactions = reactions[emoji] || [];
+      const hasReacted = emojiReactions.includes(user.uid);
+      
+      await updateDoc(doc(db, 'announcements', postId), {
+        [`reactions.${emoji}`]: hasReacted ? arrayRemove(user.uid) : arrayUnion(user.uid)
+      });
+    } catch (err) {
+      console.error('Error toggling reaction:', err);
+    }
+  };
+
+  const saveReactionsConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdminOrModerator) return;
+    
+    try {
+      const { setDoc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'settings', 'announcements'), {
+        allowedReactions
+      }, { merge: true });
+      setShowReactionsConfig(false);
+    } catch (err) {
+      console.error('Error saving reactions config:', err);
+    }
+  };
+
   const timeString = lastUpdated.toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { 
     hour: '2-digit', 
     minute: '2-digit' 
@@ -293,13 +344,22 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
           </div>
           
           {isAdminOrModerator && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-xl font-bold transition-colors shadow-sm"
-            >
-              <Plus className="w-5 h-5" />
-              <span className="hidden sm:inline">{t.createPost}</span>
-            </button>
+            <>
+              <button
+                onClick={() => setShowReactionsConfig(true)}
+                className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl transition-colors shadow-sm"
+                title={isRtl ? 'إعدادات التفاعلات' : 'Reactions Settings'}
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-xl font-bold transition-colors shadow-sm"
+              >
+                <Plus className="w-5 h-5" />
+                <span className="hidden sm:inline">{t.createPost}</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -498,6 +558,40 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                             {isRtl ? 'مناقشة في الشات' : 'Discuss in Chat'}
                           </button>
                         )}
+
+                        {/* Reactions Bar */}
+                        {user && (
+                          <div className="flex flex-wrap items-center mt-3 mb-1 gap-2">
+                            {allowedReactions.map(emoji => {
+                              const reactionArray = post.reactions?.[emoji] || [];
+                              const count = reactionArray.length;
+                              const hasReacted = reactionArray.includes(user.uid);
+                              
+                              if (count === 0 && !hasReacted) {
+                                return (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReaction(post.id, emoji)}
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border bg-slate-50 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700/50 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-700`}
+                                  >
+                                    <span className="text-sm">{emoji}</span>
+                                  </button>
+                                );
+                              }
+                              
+                              return (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleReaction(post.id, emoji)}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${hasReacted ? 'bg-sky-50 dark:bg-sky-900/40 border-sky-300 dark:border-sky-700/50 text-sky-700 dark:text-sky-300 shadow-sm' : 'bg-slate-50 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-700'}`}
+                                >
+                                  <span className="text-sm">{emoji}</span>
+                                  <span className="font-semibold">{count}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                         
                         <div className="flex items-center justify-end mt-1 pr-1 rtl:pr-0 rtl:pl-1">
                           <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
@@ -674,6 +768,56 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                   )}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Reactions Config Modal */}
+      <AnimatePresence>
+        {showReactionsConfig && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col"
+            >
+              <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 dark:border-zinc-800">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-stone-100">{isRtl ? 'إعدادات التفاعلات' : 'Reactions Settings'}</h2>
+                <button
+                  onClick={() => setShowReactionsConfig(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={saveReactionsConfig} className="p-4 sm:p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    {isRtl ? 'التفاعلات المسموحة (ايموجي، مفصولة بمسافة)' : 'Allowed Reactions (Emojis, space-separated)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={allowedReactions.join(' ')}
+                    onChange={(e) => setAllowedReactions(e.target.value.trim().split(/\s+/).filter(Boolean))}
+                    className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 outline-none focus:border-sky-500 text-slate-900 dark:text-stone-100 text-lg"
+                    placeholder="👍 ❤️ 🙏 🔥"
+                  />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    {isRtl ? 'الصق رموز الإيموجي هنا، وافصل بينها بمسافة بيضاء.' : 'Paste emoji characters here, separated by space.'}
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-6 py-3 rounded-xl font-bold transition-colors"
+                >
+                  <Check className="w-5 h-5" />
+                  {isRtl ? 'حفظ إعدادات التفاعلات' : 'Save Reactions Settings'}
+                </button>
+              </form>
             </motion.div>
           </div>
         )}

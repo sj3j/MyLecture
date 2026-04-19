@@ -102,6 +102,14 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
   }
 
   if (selectedCategory === 'all') {
+    const categoryColors: Record<string, { bg: string, text: string, progress: string }> = {
+      'pharmacology': { bg: 'bg-indigo-50 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400', progress: 'bg-indigo-500' },
+      'pharmacognosy': { bg: 'bg-emerald-50 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400', progress: 'bg-emerald-500' },
+      'organic_chemistry': { bg: 'bg-rose-50 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400', progress: 'bg-rose-500' },
+      'biochemistry': { bg: 'bg-amber-50 dark:bg-amber-900/30', text: 'text-amber-600 dark:text-amber-400', progress: 'bg-amber-500' },
+      'cosmetics': { bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', text: 'text-fuchsia-600 dark:text-fuchsia-400', progress: 'bg-fuchsia-500' }
+    };
+    
     return (
       <div className="flex flex-col gap-4 pb-24">
         {CATEGORIES.map(cat => {
@@ -109,6 +117,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
           const count = categoryLectures.length;
           const studiedCount = categoryLectures.filter(l => user?.studied?.includes(l.id)).length;
           const progress = count > 0 ? Math.round((studiedCount / count) * 100) : 0;
+          const colors = categoryColors[cat.value] || { bg: 'bg-sky-50 dark:bg-sky-900/30', text: 'text-sky-600 dark:text-sky-400', progress: 'bg-[#2196F3]' };
           
           return (
             <button
@@ -117,36 +126,34 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
                 setSelectedCategory(cat.value);
                 setSelectedType('theoretical'); // Default to theoretical when opening a subject
               }}
-              className="flex flex-col p-5 bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 hover:border-sky-300 dark:hover:border-sky-600 hover:shadow-md transition-all group"
+              className="flex flex-col p-5 bg-white dark:bg-zinc-800 rounded-[16px] border border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600 hover:shadow-sm transition-all group"
             >
-              <div className="flex items-center justify-between w-full mb-4">
+              <div className="flex items-center justify-between w-full mb-6">
                 <div className="flex items-center gap-4">
-                  <div className="p-3 bg-sky-50 dark:bg-sky-900/30 rounded-xl text-sky-600 dark:text-sky-400 group-hover:scale-110 transition-transform">
+                  <div className={`p-3 rounded-xl ${colors.bg} ${colors.text} group-hover:scale-110 transition-transform`}>
                     <BookOpen className="w-6 h-6" />
                   </div>
                   <div className="text-start">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100">{t[cat.labelKey]}</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-1">{t[cat.labelKey]}</h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
                       {count} {t.navLectures}
                     </p>
                   </div>
                 </div>
-                <div className="text-slate-400 group-hover:text-sky-500 transition-colors">
-                  {isRtl ? <ChevronLeft className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
+                <div className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors bg-slate-50 dark:bg-zinc-900 p-2 rounded-full">
+                  {isRtl ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                 </div>
               </div>
               
               {/* Progress Bar */}
-              <div className="w-full flex items-center gap-3">
-                <div className="flex-1 h-2 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-emerald-500 rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 min-w-[3ch]">
-                  {progress}%
-                </span>
+              <div className="w-full flex items-center justify-between gap-3 text-sm mb-1">
+                <span className="font-bold text-slate-700 dark:text-slate-300">{progress}%</span>
+              </div>
+              <div className="w-full h-2 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full ${colors.progress} rounded-full transition-all duration-500 ease-out`}
+                  style={{ width: `${progress}%` }}
+                />
               </div>
             </button>
           );

@@ -36,7 +36,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
             <span translate="no" className="text-xl font-black text-slate-900 dark:text-stone-100 hidden sm:block notranslate">{t.appName}</span>
           </div>
 
-          {currentTab === 'lectures' && (
+          {currentTab === 'home' && (
             <div className="flex-1 max-w-md mx-4">
               <div className="relative">
                 <div className={`absolute inset-y-0 ${isRtl ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
@@ -71,7 +71,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
               <span translate="no" className="hidden md:inline notranslate">{lang === 'ar' ? 'EN' : 'AR'}</span>
             </button>
 
-            {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && currentTab === 'lectures' && (
+            {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && currentTab === 'home' && (
               <button
                 onClick={onShowUpload}
                 className="flex items-center gap-2 px-4 py-2 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-full hover:bg-sky-700 dark:hover:bg-sky-600 transition-colors text-sm font-bold"

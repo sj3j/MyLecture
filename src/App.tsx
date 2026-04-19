@@ -15,6 +15,7 @@ import ProfileScreen from './components/ProfileScreen';
 import RecordsScreen from './components/RecordsScreen';
 import ChatScreen from './components/ChatScreen';
 import SubjectBrowser from './components/SubjectBrowser';
+import HomeScreen from './components/HomeScreen';
 import LoginScreen from './components/LoginScreen';
 import OnboardingScreen from './components/OnboardingScreen';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap } from 'lucide-react';
@@ -38,7 +39,7 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<LectureType | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortField>('number');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-  const [currentTab, setCurrentTab] = useState<Tab>('announcements');
+  const [currentTab, setCurrentTab] = useState<Tab>('home');
   const [showUpload, setShowUpload] = useState(false);
   const [lectureToEdit, setLectureToEdit] = useState<Lecture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -169,7 +170,9 @@ export default function App() {
               completedWeeklyTasks: userDoc.data().completedWeeklyTasks || [],
               notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
               memberSince: studentData?.createdAt || userDoc.data().createdAt,
-              permissions: userDoc.data().permissions
+              permissions: userDoc.data().permissions,
+              hideNameOnLeaderboard: userDoc.data().hideNameOnLeaderboard,
+              hidePhotoOnLeaderboard: userDoc.data().hidePhotoOnLeaderboard
             });
           } else {
             setUser({
@@ -184,7 +187,9 @@ export default function App() {
               completedWeeklyTasks: [],
               notificationPreferences: { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
               memberSince: studentData?.createdAt,
-              permissions: undefined
+              permissions: undefined,
+              hideNameOnLeaderboard: false,
+              hidePhotoOnLeaderboard: false
             });
           }
           setIsAuthReady(true);
@@ -203,7 +208,9 @@ export default function App() {
             completedWeeklyTasks: [],
             notificationPreferences: { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
             memberSince: studentData?.createdAt,
-            permissions: undefined
+            permissions: undefined,
+            hideNameOnLeaderboard: false,
+            hidePhotoOnLeaderboard: false
           });
           setIsAuthReady(true);
         });
@@ -359,76 +366,7 @@ export default function App() {
     return isRtl ? 'مساء الخير' : 'Good evening';
   };
 
-  const renderLecturesTab = () => (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-      {/* Personalized Greeting Header */}
-      <div className={`mb-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isRtl ? 'sm:text-right' : 'sm:text-left'}`}>
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-stone-100 tracking-tight mb-1">
-            {getGreeting()}, {user?.name?.split(' ')[0] || (isRtl ? 'طالب' : 'Student')}
-          </h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium text-lg">
-            {t.department} - {t.university}
-          </p>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {/* Streak Badge */}
-          {user && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl shadow-sm">
-              <div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
-                <Flame className="w-5 h-5 text-orange-500 dark:text-orange-400" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {isRtl ? 'الستريك' : 'Daily Streak'}
-                </div>
-                <div className="text-lg font-black text-slate-900 dark:text-stone-100 leading-none">
-                  {user.streakCount || 0} {isRtl ? 'أيام' : 'days'}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {user && ['admin', 'moderator'].includes(user.role) && (
-            <div className="flex gap-2">
-              {['admin', 'moderator'].includes(user.role) && user.permissions?.manageStudents !== false && (
-                <button 
-                  onClick={() => setShowStudentManage(true)}
-                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-emerald-600 dark:border-emerald-500 rounded-2xl text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"
-                >
-                  <GraduationCap className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isRtl ? 'إدارة الطلاب' : 'Manage Students'}</span>
-                </button>
-              )}
-              {(user.email === 'almdrydyl335@gmail.com' || user.email === 'fenix.admin@gmail.com') && (
-                <button 
-                  onClick={() => setShowAdminManage(true)}
-                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-zinc-800 border-2 border-sky-600 dark:border-sky-500 rounded-2xl text-sm font-bold text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-all"
-                >
-                  <Users className="w-4 h-4" />
-                  <span className="hidden sm:inline">{t.manageAdmins}</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <SubjectBrowser
-        lectures={lectures}
-        lang={lang}
-        user={user}
-        searchQuery={searchQuery}
-        isLoading={isLoading}
-        onNavigateToChat={() => setCurrentTab('chat')}
-        onEdit={(l) => {
-          setLectureToEdit(l);
-          setShowUpload(true);
-        }}
-      />
-      </main>
-    );
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 pb-20 font-sans transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -461,12 +399,23 @@ export default function App() {
         </div>
       )}
 
-      {currentTab === 'lectures' && renderLecturesTab()}
+      {['home', 'lectures', 'weekly', 'records'].includes(currentTab) && (
+        <HomeScreen 
+          user={user} 
+          lang={lang} 
+          lectures={lectures} 
+          searchQuery={searchQuery} 
+          isLoading={isLoading} 
+          onNavigateToChat={() => setCurrentTab('chat')} 
+          onEdit={(l) => { setLectureToEdit(l); setShowUpload(true); }} 
+          setShowStudentManage={setShowStudentManage} 
+          setShowAdminManage={setShowAdminManage} 
+          initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
+        />
+      )}
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} />}
-      {currentTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
-      {currentTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} onNavigateToChat={() => setCurrentTab('chat')} />}
       {currentTab === 'chat' && <ChatScreen user={user} lang={lang} />}
-      {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} />}
+      {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} />}
 
       <AdminUpload 
         isOpen={showUpload} 

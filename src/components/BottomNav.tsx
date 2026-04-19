@@ -1,59 +1,74 @@
 import React from 'react';
-import { Bell, BookOpen, ClipboardCheck, User, Mic, MessageSquare } from 'lucide-react';
+import { Bell, BookOpen, User, Mic, MessageSquare } from 'lucide-react';
 import { Language, TRANSLATIONS } from '../types';
+import { motion } from 'motion/react';
 
-export type Tab = 'announcements' | 'lectures' | 'weekly' | 'records' | 'chat' | 'profile';
+export type Tab = 'home' | 'announcements' | 'records' | 'chat' | 'profile';
 
 interface BottomNavProps {
-  currentTab: Tab;
-  setCurrentTab: (tab: Tab) => void;
+  currentTab: Tab | 'weekly' | 'lectures'; // keep old tabs for backwards compat if needed temporarily
+  setCurrentTab: (tab: any) => void;
   lang: Language;
   hasUnreadAnnouncements?: boolean;
 }
 
 export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAnnouncements }: BottomNavProps) {
-  const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
   const tabs = [
-    { id: 'weekly' as Tab, icon: ClipboardCheck, label: t.navWeekly },
-    { id: 'lectures' as Tab, icon: BookOpen, label: t.navLectures },
-    { id: 'announcements' as Tab, icon: Bell, label: t.navAnnouncements },
-    { id: 'records' as Tab, icon: Mic, label: t.navRecords },
-    { id: 'chat' as Tab, icon: MessageSquare, label: t.navChat },
-    { id: 'profile' as Tab, icon: User, label: t.navProfile },
+    { id: 'home', icon: BookOpen, label: isRtl ? 'محاضرات' : 'Study' },
+    { id: 'chat', icon: MessageSquare, label: isRtl ? 'الدردشة' : 'Chat' },
+    { id: 'records', icon: Mic, label: isRtl ? 'تسجيلات' : 'Records', isFab: true },
+    { id: 'announcements', icon: Bell, label: isRtl ? 'التبليغات' : 'Alerts' },
+    { id: 'profile', icon: User, label: isRtl ? 'الملف الشخصي' : 'Profile' },
   ];
 
-  // In RTL, the array is rendered right-to-left automatically by flex-row if dir="rtl" is on the parent.
-  // But we want the visual order to match the request:
-  // "from Right to Left in Arabic: Announcements, Lectures, Weekly List, Profile"
-  // If we use flex-row and dir="rtl", the first item in the array will be on the right.
-  // So the array order should be Announcements, Lectures, Weekly List, Profile.
-
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 pb-safe z-50 transition-colors duration-300">
-      <div className="flex justify-around items-center h-16 max-w-md mx-auto px-2" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="fixed bottom-0 left-0 right-0 pointer-events-none pb-4 sm:pb-6 px-4 z-50 flex justify-center">
+      <div 
+        className="flex justify-around items-center h-[72px] w-full max-w-md bg-white dark:bg-zinc-900 rounded-[36px] px-2 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.5)] pointer-events-auto border border-slate-100 dark:border-zinc-800" 
+        dir={isRtl ? 'rtl' : 'ltr'}
+      >
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const isActive = currentTab === tab.id;
+          const isActive = currentTab === tab.id || (tab.id === 'home' && (currentTab === 'lectures' || currentTab === 'weekly'));
+          
+          if (tab.isFab) {
+             return (
+               <div key={tab.id} className="relative -top-6">
+                 <button
+                   onClick={() => setCurrentTab(tab.id)}
+                   className="w-[60px] h-[60px] bg-[#2196F3] rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30 border-4 border-white dark:border-zinc-900 text-white hover:scale-105 active:scale-95 transition-all"
+                 >
+                   <Icon className="w-7 h-7" />
+                 </button>
+               </div>
+             );
+          }
           
           return (
             <button
               key={tab.id}
               onClick={() => setCurrentTab(tab.id)}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors relative ${
-                isActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+              className={`flex flex-col items-center justify-center w-14 h-full relative transition-all group ${
+                isActive ? 'text-[#2196F3]' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
               }`}
             >
-              <div className="relative">
-                <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+              <div className="relative mb-1">
+                <Icon className={`w-6 h-6 transition-all ${isActive ? 'fill-current stroke-[1.5px]' : 'stroke-2'}`} />
                 {tab.id === 'announcements' && hasUnreadAnnouncements && (
-                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
+                  <span className="absolute -top-1 -right-0.5 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-[#1A1A2E] rounded-full"></span>
                 )}
               </div>
-              <span translate="no" className={`text-[10px] filter-none notranslate font-medium ${isActive ? 'font-bold' : ''}`}>
+              <span className={`text-[10px] font-medium transition-all ${isActive ? 'font-bold opacity-100' : 'opacity-70'}`}>
                 {tab.label}
               </span>
+              {isActive && (
+                <motion.div 
+                   layoutId="bottom-nav-indicator"
+                   className="absolute bottom-2 w-1.5 h-1.5 bg-[#2196F3] rounded-full"
+                />
+              )}
             </button>
           );
         })}

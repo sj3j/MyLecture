@@ -77,8 +77,11 @@ export interface UserProfile {
     manageChat: boolean;
     manageHomeworks: boolean;
     manageStudents: boolean;
+    manageAdmins?: boolean;
   };
   memberSince?: any;
+  hideNameOnLeaderboard?: boolean;
+  hidePhotoOnLeaderboard?: boolean;
 }
 
 export interface Student {

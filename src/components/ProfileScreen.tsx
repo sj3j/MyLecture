@@ -10,9 +10,11 @@ interface ProfileScreenProps {
   user: UserProfile | null;
   lang: Language;
   setLang: (lang: Language) => void;
+  setShowAdminManage?: (val: boolean) => void;
+  setShowStudentManage?: (val: boolean) => void;
 }
 
-export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProps) {
+export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage }: ProfileScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -403,6 +405,42 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
               <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.notificationPreferences?.homeworks !== false ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
             </button>
           </div>
+          <div className="flex items-center justify-between mt-6">
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إخفاء اسمي من لوحة الصدارة' : 'Hide my name from Leaderboard'}</span>
+            <button
+              onClick={async () => {
+                const newValue = !user!.hideNameOnLeaderboard;
+                try {
+                  await setDoc(doc(db, 'users', user!.uid), {
+                    hideNameOnLeaderboard: newValue
+                  }, { merge: true });
+                } catch (error) {
+                  console.error('Error updating leaderboard preference:', error);
+                }
+              }}
+              className={`w-12 h-6 rounded-full transition-colors relative ${user!.hideNameOnLeaderboard ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.hideNameOnLeaderboard ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between mt-4">
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{isRtl ? 'إخفاء صورتي من لوحة الصدارة' : 'Hide my photo from Leaderboard'}</span>
+            <button
+              onClick={async () => {
+                const newValue = !user!.hidePhotoOnLeaderboard;
+                try {
+                  await setDoc(doc(db, 'users', user!.uid), {
+                    hidePhotoOnLeaderboard: newValue
+                  }, { merge: true });
+                } catch (error) {
+                  console.error('Error updating leaderboard preference:', error);
+                }
+              }}
+              className={`w-12 h-6 rounded-full transition-colors relative ${user!.hidePhotoOnLeaderboard ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${user!.hidePhotoOnLeaderboard ? (isRtl ? 'left-1' : 'right-1') : (isRtl ? 'right-1' : 'left-1')}`} />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4 pt-6 mt-6 border-t border-slate-100 dark:border-zinc-700">
@@ -423,6 +461,26 @@ export default function ProfileScreen({ user, lang, setLang }: ProfileScreenProp
               </button>
             </div>
           </div>
+
+          {(user?.role === 'admin' && user?.permissions?.manageAdmins !== false) && setShowAdminManage && (
+            <button
+              onClick={() => setShowAdminManage(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors mt-4"
+            >
+              <Shield className="w-5 h-5" />
+              {t.manageAdmins}
+            </button>
+          )}
+
+          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && setShowStudentManage && (
+            <button
+              onClick={() => setShowStudentManage(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors mt-4"
+            >
+              <User className="w-5 h-5" />
+              {isRtl ? 'إدارة الطلاب' : 'Manage Students'}
+            </button>
+          )}
 
           <button
             onClick={handleLogout}
