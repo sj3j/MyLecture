@@ -841,17 +841,21 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                       )}
                     </AnimatePresence>
 
-                    {/* Delete Action (Admin) */}
-                    {isAdminOrModerator && (
+                    {/* Delete Action (Admin or Owner) */}
+                    {(isAdminOrModerator || isMe) && (
                       <div className={`absolute top-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-1 ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
                         <button 
-                          onClick={() => deleteMessage(msg.id)}
+                          onClick={() => {
+                            if (window.confirm(isRtl ? 'هل تريد حذف هذه الرسالة؟' : 'Delete this message?')) {
+                              deleteMessage(msg.id);
+                            }
+                          }}
                           className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
 
-                        {msg.isAnonymous && (
+                        {isAdminOrModerator && msg.isAnonymous && (
                           <button
                             onClick={() => alert(`Original Sender: ${msg.originalSenderName} (${msg.senderEmail})`)}
                             title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
@@ -1013,7 +1017,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
               ) : (
                 <button
                   type="submit"
-                  disabled={isSending || !newMessage.trim()}
+                  disabled={isSending || (!newMessage.trim() && !attachmentFile && !embeddedItem)}
                   className="w-11 h-11 bg-sky-600 hover:bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-zinc-700 transition-colors shrink-0 shadow-sm"
                 >
                   {isSending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className={`w-5 h-5 ${isRtl ? 'rotate-180 transform -ml-1' : 'ml-1'}`} />}
