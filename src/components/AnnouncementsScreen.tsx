@@ -7,6 +7,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { forceDownload } from '../lib/utils';
 import LectureCard from './LectureCard';
+import SpotlightTooltip from './SpotlightTooltip';
 
 interface TelegramPost {
   id: string;
@@ -381,8 +382,9 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                 </span>
               </div>
               
-              <div className="flex flex-col gap-3">
-                {datePosts.map((post) => {
+              <div className="flex flex-col relative w-full mb-8">
+                <div className={`absolute top-0 bottom-0 w-0.5 bg-slate-200 dark:bg-zinc-700 ${isRtl ? 'right-4' : 'left-4'}`} />
+                {datePosts.map((post, index) => {
                   const content = post.text || post.content || post.caption || '';
                   const date = new Date(post.date * 1000);
                   const timeString = date.toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' });
@@ -393,17 +395,18 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       key={post.id}
-                      className={`relative group w-full max-w-[92%] sm:max-w-[85%] ${isRtl ? 'ml-auto' : 'mr-auto'}`}
+                      className={`relative group w-full mb-4 flex gap-4 ${isRtl ? 'pr-12' : 'pl-12'}`}
+                      id={index === 0 ? "announcement-timeline-0" : undefined}
                     >
-                      <div className={`bg-white dark:bg-zinc-800 p-3 shadow-sm relative ${
-                        isRtl ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm'
-                      } border border-slate-100 dark:border-zinc-700/50`}>
+                      <div className={`absolute top-4 w-3 h-3 bg-[#2196F3] rounded-full border-4 border-[#F5F7FA] dark:border-zinc-950 ${isRtl ? 'right-[11px]' : 'left-[11px]'}`} />
+                      
+                      <div className="bg-white dark:bg-zinc-800 p-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-[16px] border border-slate-100 dark:border-zinc-700 w-full relative">
                         
                         {isAdminOrModerator && (
                           <div className={`absolute top-2 z-10 flex gap-1 ${isRtl ? 'left-2 right-auto' : 'right-2 left-auto'}`}>
                             <button
                               onClick={() => openEditModal(post)}
-                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                              className="p-1.5 text-slate-400 hover:text-[#2196F3] hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-full transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
@@ -434,12 +437,12 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                           </div>
                         )}
                         
-                        <div className="text-sky-600 dark:text-sky-400 font-bold text-[13px] px-1 mb-1">
+                        <div className="inline-block bg-[#2196F3]/10 text-[#2196F3] dark:text-sky-400 font-bold text-[12px] px-2 py-1 rounded-full mb-3">
                           {post.authorName || (isRtl ? 'إعلان جديد' : 'New Announcement')}
                         </div>
                         
                         {post.photo_url && (
-                          <div className="rounded-xl overflow-hidden mb-2 relative">
+                          <div className="rounded-[12px] overflow-hidden mb-3 relative">
                             <img 
                               src={post.photo_url} 
                               alt="Announcement" 
@@ -608,13 +611,23 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
           })}
         </div>
       ) : (
-        <div className="text-center py-12 bg-white dark:bg-zinc-800 rounded-2xl border border-slate-200 dark:border-zinc-700 border-dashed">
-          <Megaphone className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400 font-medium">
+        <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+          <div className="w-24 h-24 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6 shadow-sm relative">
+            <Megaphone className="w-10 h-10 text-slate-400 dark:text-zinc-500" />
+            <div className="absolute top-0 right-0 w-6 h-6 bg-sky-100 dark:bg-sky-900/50 rounded-full flex items-center justify-center">
+              <div className="w-2 h-2 bg-[#2196F3] rounded-full" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-stone-100 mb-2">
             {t.noPosts}
+          </h2>
+          <p className="text-slate-500 dark:text-slate-400 max-w-[260px] leading-relaxed">
+            {isRtl ? 'لم يتم إضافة أي تبليغات حتى الآن. ستظهر الإشعارات هنا عند توفرها.' : 'No announcements have been added yet. Notifications will appear here when available.'}
           </p>
         </div>
       )}
+
+      <SpotlightTooltip targetSelector="#announcement-timeline-0" text="إشعارات القناة تظهر هنا تلقائياً" tooltipKey="announcements" />
 
       {/* Create Post Modal */}
       <AnimatePresence>

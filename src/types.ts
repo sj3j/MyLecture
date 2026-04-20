@@ -97,10 +97,11 @@ export interface Student {
 export interface Homework {
   id: string;
   subject: Category;
-  type: LectureType;
+  type: LectureType | 'both';
   lectures: { label: string; lectureId: string }[];
   note?: string;
   createdAt: any;
+  dueDate?: any;
 }
 
 export type Language = 'ar' | 'en';
@@ -199,7 +200,10 @@ export const TRANSLATIONS = {
     clearAll: 'مسح الكل',
     noDownloads: 'لا توجد محاضرات مفضلة',
     remove: 'إزالة',
-    postHomework: 'نشر واجب',
+    postHomework: 'إضافة واجب',
+    editHomework: 'تعديل واجب',
+    both: 'عملي ونظري',
+    dueDate: 'تاريخ التسليم / الامتحان',
     examLectures: 'محاضرات الامتحان',
     addLecture: 'إضافة محاضرة',
     additionalNote: 'ملاحظة إضافية (اختياري)',
@@ -307,6 +311,9 @@ export const TRANSLATIONS = {
     noDownloads: 'No favorites yet',
     remove: 'Remove',
     postHomework: 'Post Homework',
+    editHomework: 'Edit Homework',
+    both: 'Theo & Prac',
+    dueDate: 'Due / Exam Date',
     examLectures: 'Exam Lectures',
     addLecture: 'Add Lecture',
     additionalNote: 'Additional Note (Optional)',

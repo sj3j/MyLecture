@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
 import { Loader2, Mic, SearchX, Play, Pause, Plus, HardDrive, Clock, CheckCircle2 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 import AdminRecordUpload from './AdminRecordUpload';
 import AudioPlayer from './AudioPlayer';
@@ -248,7 +249,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
 
               <div className="mt-auto pt-4 border-t border-slate-100 dark:border-zinc-700">
                 <div className="flex flex-col gap-3">
-                  <AudioPlayer src={record.audioUrl} title={record.title} />
+                  <AudioPlayer id={record.id} src={record.audioUrl} title={record.title} />
                   {user && (
                     <button
                       onClick={async () => {

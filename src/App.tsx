@@ -18,6 +18,8 @@ import SubjectBrowser from './components/SubjectBrowser';
 import HomeScreen from './components/HomeScreen';
 import LoginScreen from './components/LoginScreen';
 import OnboardingScreen from './components/OnboardingScreen';
+import OnboardingSlides from './components/OnboardingSlides';
+import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
@@ -30,6 +32,10 @@ export default function App() {
   const [lang, setLang] = useState<Language>('ar');
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem('hasSeenOnboarding');
+  });
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -359,6 +365,17 @@ export default function App() {
     return <OnboardingScreen user={user} lang={lang} />;
   }
 
+  if (showOnboarding) {
+    return (
+      <OnboardingSlides 
+        onComplete={() => {
+          localStorage.setItem('hasSeenOnboarding', 'true');
+          setShowOnboarding(false);
+        }} 
+      />
+    );
+  }
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return isRtl ? 'صباح الخير' : 'Good morning';
@@ -430,6 +447,7 @@ export default function App() {
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
       
+      <GlobalAudioPlayer isRtl={isRtl} />
       <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
     </div>
   );

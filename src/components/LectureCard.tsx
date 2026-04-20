@@ -320,70 +320,135 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
         )}
       </AnimatePresence>
 
-      {/* PDF Preview Modal */}
+      {/* PDF / Video Preview Modal */}
       <AnimatePresence>
         {showPreview && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 sm:p-8">
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 md:p-8">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowPreview(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-6xl h-full bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-slate-200 dark:border-zinc-800"
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-5xl h-full bg-[#F5F7FA] dark:bg-zinc-950 rounded-[24px] overflow-hidden flex flex-col shadow-2xl border border-slate-200 dark:border-zinc-800"
               dir={isRtl ? 'rtl' : 'ltr'}
             >
-              <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-900">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-sky-50 dark:bg-sky-900/30 rounded-lg">
-                    <FileText className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-                  </div>
-                  <h2 className="text-lg font-bold text-slate-900 dark:text-stone-100 truncate max-w-[200px] sm:max-w-md">
-                    {lecture.title}
-                  </h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      forceDownload(lecture.pdfUrl, lecture.title + '.pdf');
-                    }}
-                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"
-                    title={t.download}
-                  >
-                    <Download className="w-5 h-5" />
-                  </button>
+              {/* Hero Header */}
+              <div className={`p-6 md:p-8 shrink-0 relative overflow-hidden bg-gradient-to-br ${lecture.type === 'theoretical' ? 'from-blue-600 to-[#2196F3]' : 'from-emerald-500 to-teal-400'}`}>
+                <div className="absolute top-0 right-0 p-4 z-20">
                   <button
                     onClick={() => setShowPreview(false)}
-                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-all"
+                    className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-all"
                   >
                     <X className="w-6 h-6" />
                   </button>
                 </div>
+                
+                <div className="relative z-10 flex flex-col justify-end min-h-[120px]">
+                  <div className="flex items-center gap-3 mb-3 text-white/90">
+                    <span className="text-xs font-bold px-3 py-1 bg-white/20 rounded-full backdrop-blur-sm">
+                      {categoryLabel}
+                    </span>
+                    {lecture.number && (
+                      <span className="text-xs font-bold px-3 py-1 bg-white/20 rounded-full backdrop-blur-sm">
+                        {isRtl ? 'محاضرة' : 'Lecture'} {lecture.number}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">
+                    {lecture.title}
+                  </h2>
+                </div>
               </div>
               
-              <div className="flex-1 bg-slate-100 dark:bg-zinc-950 relative overflow-y-auto flex flex-col">
-                {lecture.youtubeUrl && (
-                  <div className="w-full aspect-video bg-black shrink-0">
-                    <iframe
-                      src={lecture.youtubeUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
-                      className="w-full h-full border-none"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      title={lecture.title}
-                    />
+              <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4">
+                
+                {/* PDF/Video Container */}
+                <div id={`lecture-container-${lecture.id}`} className="w-full bg-white dark:bg-zinc-900 rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden flex flex-col min-h-[60vh] border border-slate-100 dark:border-zinc-800">
+                  {lecture.youtubeUrl && (
+                    <div className="w-full aspect-video bg-black shrink-0 relative">
+                       <iframe
+                        src={lecture.youtubeUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                        className="w-full h-full border-none absolute inset-0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title={lecture.title}
+                      />
+                    </div>
+                  )}
+                  <iframe
+                    src={`${offlineUrl || lecture.pdfUrl}#toolbar=0`}
+                    className="w-full flex-1 border-none bg-slate-50 dark:bg-zinc-800"
+                    title={lecture.title}
+                  />
+                </div>
+
+                {/* Description & Actions */}
+                <div className="bg-white dark:bg-zinc-900 rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-6 space-y-4 border border-slate-100 dark:border-zinc-800">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                      {isRtl ? 'تفاصيل المحاضرة' : 'Lecture Details'}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                       <button
+                         onClick={async (e) => {
+                           e.preventDefault();
+                           try {
+                             if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+                               const container = document.getElementById(`lecture-container-${lecture.id}`) as any;
+                               if (container) {
+                                 if (container.requestFullscreen) await container.requestFullscreen();
+                                 else if (container.webkitRequestFullscreen) await container.webkitRequestFullscreen();
+                                 else if (container.msRequestFullscreen) await container.msRequestFullscreen();
+                               } else {
+                                 const docEl = document.documentElement as any;
+                                 if (docEl.requestFullscreen) await docEl.requestFullscreen();
+                                 else if (docEl.webkitRequestFullscreen) await docEl.webkitRequestFullscreen();
+                               }
+                               
+                               if (window.screen && window.screen.orientation && (window.screen.orientation as any).lock) {
+                                 await (window.screen.orientation as any).lock('landscape').catch(() => console.warn('Rotation lock failed'));
+                               }
+                             } else {
+                               if (window.screen && window.screen.orientation && (window.screen.orientation as any).unlock) {
+                                  (window.screen.orientation as any).unlock();
+                               }
+                               if (document.exitFullscreen) await document.exitFullscreen();
+                               else if ((document as any).webkitExitFullscreen) await ((document as any).webkitExitFullscreen)();
+                             }
+                           } catch (err) {
+                             console.warn("Fullscreen/Rotation not supported: ", err);
+                           }
+                         }}
+                         className="border border-slate-300 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 px-4 py-2 rounded-full font-bold flex items-center gap-2 transition-colors"
+                       >
+                         <Maximize2 className="w-4 h-4" />
+                         <span className="hidden sm:inline">{isRtl ? 'ملء وتدوير' : 'Fullscreen / Rotate'}</span>
+                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          forceDownload(lecture.pdfUrl, lecture.title + '.pdf');
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2 transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        {t.download}
+                      </button>
+                    </div>
                   </div>
-                )}
-                <iframe
-                  src={`${offlineUrl || lecture.pdfUrl}#toolbar=0`}
-                  className="w-full flex-1 min-h-[50vh] border-none"
-                  title={lecture.title}
-                />
+                  {lecture.description && (
+                    <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed whitespace-pre-wrap">
+                      {lecture.description}
+                    </p>
+                  )}
+                </div>
+
               </div>
             </motion.div>
           </div>

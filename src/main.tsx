@@ -4,6 +4,7 @@ import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
+import { AudioProvider } from './contexts/AudioContext';
 
 // Register PWA Service Worker
 if ('serviceWorker' in navigator) {
@@ -13,7 +14,9 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <AudioProvider>
+        <App />
+      </AudioProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

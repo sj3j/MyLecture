@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lecture, Category, CATEGORIES, Language, TRANSLATIONS, LectureType, UserProfile } from '../types';
 import LectureCard from './LectureCard';
+import SpotlightTooltip from './SpotlightTooltip';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, Loader2, SearchX, List, LayoutGrid, Grid } from 'lucide-react';
 
@@ -112,21 +113,21 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
     
     return (
       <div className="flex flex-col gap-4 pb-24">
-        {CATEGORIES.map(cat => {
+        {CATEGORIES.map((cat, index) => {
           const categoryLectures = lectures.filter(l => l.category === cat.value);
           const count = categoryLectures.length;
           const studiedCount = categoryLectures.filter(l => user?.studied?.includes(l.id)).length;
           const progress = count > 0 ? Math.round((studiedCount / count) * 100) : 0;
-          const colors = categoryColors[cat.value] || { bg: 'bg-sky-50 dark:bg-sky-900/30', text: 'text-sky-600 dark:text-sky-400', progress: 'bg-[#2196F3]' };
+          const colors = categoryColors[cat.value] || { bg: 'bg-[#2196F3]/10', text: 'text-[#2196F3]', progress: 'bg-[#2196F3]', border: 'border-[#2196F3]' };
           
           return (
             <button
               key={cat.value}
               onClick={() => {
                 setSelectedCategory(cat.value);
-                setSelectedType('theoretical'); // Default to theoretical when opening a subject
+                setSelectedType('theoretical');
               }}
-              className="flex flex-col p-5 bg-white dark:bg-zinc-800 rounded-[16px] border border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600 hover:shadow-sm transition-all group"
+              className={`flex flex-col p-5 bg-white dark:bg-zinc-800 rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-md transition-all group overflow-hidden relative ${isRtl ? 'border-r-4' : 'border-l-4'} ${categoryColors[cat.value] ? 'border-' + categoryColors[cat.value].progress.replace('bg-', '') : 'border-[#2196F3]'}`}
             >
               <div className="flex items-center justify-between w-full mb-6">
                 <div className="flex items-center gap-4">
@@ -134,10 +135,10 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
                     <BookOpen className="w-6 h-6" />
                   </div>
                   <div className="text-start">
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-1">{t[cat.labelKey]}</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-stone-100 mb-1">{t[cat.labelKey]}</h3>
+                    <div className="inline-flex items-center justify-center bg-sky-100 dark:bg-sky-900/40 text-[#2196F3] dark:text-sky-400 text-xs font-bold px-3 py-1 rounded-full">
                       {count} {t.navLectures}
-                    </p>
+                    </div>
                   </div>
                 </div>
                 <div className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors bg-slate-50 dark:bg-zinc-900 p-2 rounded-full">
@@ -145,11 +146,10 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
                 </div>
               </div>
               
-              {/* Progress Bar */}
-              <div className="w-full flex items-center justify-between gap-3 text-sm mb-1">
+              <div className="w-full flex items-center justify-between gap-3 text-sm mb-1 text-slate-500 dark:text-slate-400">
                 <span className="font-bold text-slate-700 dark:text-slate-300">{progress}%</span>
               </div>
-              <div className="w-full h-2 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+              <div className="w-full h-2 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden" id={index === 0 ? "subject-progress-0" : undefined}>
                 <div 
                   className={`h-full ${colors.progress} rounded-full transition-all duration-500 ease-out`}
                   style={{ width: `${progress}%` }}
@@ -158,6 +158,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, searchQue
             </button>
           );
         })}
+        <SpotlightTooltip targetSelector="#subject-progress-0" text="يتتبع تقدمك في كل مادة" tooltipKey="lectures" />
       </div>
     );
   }

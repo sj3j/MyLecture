@@ -3,8 +3,9 @@ import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDoc
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES, Homework } from '../types';
-import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Camera, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Camera, Image as ImageIcon, Trash2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import SpotlightTooltip from './SpotlightTooltip';
 
 interface WeeklyListScreenProps {
   lang: Language;
@@ -26,8 +27,9 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   // Admin form state
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [subject, setSubject] = useState(CATEGORIES[0].value);
-  const [type, setType] = useState<'theoretical' | 'practical'>('theoretical');
+  const [type, setType] = useState<'theoretical' | 'practical' | 'both'>('theoretical');
   const [note, setNote] = useState('');
+  const [dueDate, setDueDate] = useState<string>('');
   const [selectedLectures, setSelectedLectures] = useState<{ label: string; lectureId: string }[]>([]);
   
   // Lecture search state
@@ -35,6 +37,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const [lectureSearch, setLectureSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [homeworkToDelete, setHomeworkToDelete] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Image viewer state
@@ -126,6 +129,32 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
     setSelectedLectures(selectedLectures.filter(l => l.lectureId !== id));
   };
 
+  const handleEditClick = (hw: Homework) => {
+    setEditingId(hw.id);
+    setSubject(hw.subject);
+    setType(hw.type as 'theoretical' | 'practical' | 'both');
+    setNote(hw.note || '');
+    setSelectedLectures(hw.lectures);
+    if (hw.dueDate) {
+       const dateObj = hw.dueDate?.toDate ? hw.dueDate.toDate() : new Date(hw.dueDate);
+       setDueDate(dateObj.toISOString().split('T')[0]);
+    } else {
+       setDueDate('');
+    }
+    setShowAdminForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setSubject(CATEGORIES[0].value);
+    setType('theoretical');
+    setNote('');
+    setDueDate('');
+    setSelectedLectures([]);
+    setShowAdminForm(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedLectures.length === 0) {
@@ -135,24 +164,37 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'homeworks'), {
+      let finalDueDate = null;
+      if (dueDate) {
+         finalDueDate = new Date(dueDate);
+         finalDueDate.setHours(23, 59, 59, 999);
+      }
+
+      const homeworkData: any = {
         subject,
         type,
         note,
         lectures: selectedLectures,
-        createdAt: serverTimestamp()
-      });
+      };
+
+      if (finalDueDate) {
+         homeworkData.dueDate = finalDueDate;
+      }
+
+      if (editingId) {
+        await setDoc(doc(db, 'homeworks', editingId), homeworkData, { merge: true });
+        alert(isRtl ? 'تم التعديل بنجاح!' : 'Edited successfully!');
+      } else {
+        homeworkData.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'homeworks'), homeworkData);
+      }
 
       // Reset form
-      setSubject(CATEGORIES[0].value);
-      setType('theoretical');
-      setNote('');
-      setSelectedLectures([]);
-      setShowAdminForm(false);
+      handleCancelEdit();
       
-      // Note: Cloud function will handle the push notification
+      // Note: Cloud function will handle the push notification for new ones
     } catch (error) {
-      console.error('Error posting homework:', error);
+      console.error('Error saving homework:', error);
       alert(t.errorUnknown);
     } finally {
       setIsSubmitting(false);
@@ -196,6 +238,12 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       (l.number && l.number.toString().includes(searchLower))
     ) && l.category === subject && l.type === type;
   });
+
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  // Group homeworks
+  const completedHomeworks = homeworks.filter(hw => user?.completedWeeklyTasks?.includes(hw.id));
+  const incompleteHomeworks = homeworks.filter(hw => !user?.completedWeeklyTasks?.includes(hw.id));
 
   return (
     <div className="max-w-3xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -357,7 +405,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
             <form onSubmit={handleSubmit} className="bg-white dark:bg-zinc-800 p-6 rounded-3xl border border-slate-200 dark:border-zinc-700 shadow-sm space-y-6">
               <h2 className="text-lg font-bold text-slate-900 dark:text-stone-100">{t.postHomework}</h2>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{t.category}</label>
                   <select
@@ -372,12 +420,22 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                 </div>
                 
                 <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{t.dueDate || 'تاريخ التسليم'}</label>
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 outline-none focus:border-sky-500 dark:text-stone-100"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-1">
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{t.type}</label>
                   <div className="flex gap-2 bg-slate-50 dark:bg-zinc-900 p-1 rounded-xl border border-slate-200 dark:border-zinc-700">
                     <button
                       type="button"
                       onClick={() => setType('theoretical')}
-                      className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
+                      className={`flex-1 py-2 px-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
                         type === 'theoretical'
                           ? 'bg-white dark:bg-zinc-700 text-sky-600 dark:text-sky-400 shadow-sm'
                           : 'text-slate-500 dark:text-slate-400'
@@ -388,13 +446,24 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                     <button
                       type="button"
                       onClick={() => setType('practical')}
-                      className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
+                      className={`flex-1 py-2 px-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
                         type === 'practical'
                           ? 'bg-white dark:bg-zinc-700 text-sky-600 dark:text-sky-400 shadow-sm'
                           : 'text-slate-500 dark:text-slate-400'
                       }`}
                     >
                       {t.practical}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setType('both')}
+                      className={`flex-1 py-2 px-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                        type === 'both'
+                          ? 'bg-white dark:bg-zinc-700 text-sky-600 dark:text-sky-400 shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      {t.both || (isRtl ? 'عملي ونظري' : 'Both')}
                     </button>
                   </div>
                 </div>
@@ -460,14 +529,25 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting || selectedLectures.length === 0}
-                className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardCheck className="w-5 h-5" />}
-                {t.publishPost}
-              </button>
+              <div className="flex items-center gap-3 mt-6">
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="flex-1 py-3 bg-slate-100 text-slate-700 dark:bg-zinc-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors"
+                  >
+                    {t.close || (isRtl ? 'إلغاء' : 'Cancel')}
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={isSubmitting || selectedLectures.length === 0}
+                  className="flex-[2] py-3 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardCheck className="w-5 h-5" />}
+                  {editingId ? t.editHomework : t.publishPost}
+                </button>
+              </div>
             </form>
           </motion.div>
         )}
@@ -478,109 +558,177 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
         </div>
       ) : homeworks.length > 0 ? (
-        <div className="space-y-4">
-          {homeworks.map(hw => {
-            const isCompleted = user?.completedWeeklyTasks?.includes(hw.id) || false;
-            return (
-            <motion.div
-              layout
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              key={hw.id}
-              className={`bg-white dark:bg-zinc-800 p-3 sm:p-6 rounded-3xl border shadow-sm transition-all ${
-                isCompleted 
-                  ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/10' 
-                  : 'border-slate-200 dark:border-zinc-700'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-2 sm:mb-4">
-                <div>
-                  <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
-                    <h3 className="text-base sm:text-xl font-black text-slate-900 dark:text-stone-100">
-                      {t[CATEGORIES.find(c => c.value === hw.subject)?.labelKey || 'pharmacology']}
-                    </h3>
-                    <span className={`px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold uppercase ${
-                      hw.type === 'theoretical' 
-                        ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                    }`}>
-                      {hw.type === 'theoretical' ? t.theoretical : t.practical}
-                    </span>
-                    {isCompleted && (
-                      <span className="px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold uppercase bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                        <ClipboardCheck className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                        {t.completed || (isRtl ? 'مكتمل' : 'Completed')}
-                      </span>
+        <div className="space-y-6">
+          <div className="space-y-4">
+            {incompleteHomeworks.map((hw, index) => {
+              const createdAt = hw.createdAt?.toMillis ? hw.createdAt.toMillis() : Date.now();
+              const deadlineObj = hw.dueDate?.toMillis ? hw.dueDate.toMillis() : (hw.dueDate ? new Date(hw.dueDate).getTime() : createdAt + 7 * 24 * 60 * 60 * 1000);
+              const deadline = deadlineObj;
+              
+              // Calculate calendar days left ignoring specific times (e.g. today to tomorrow is exactly 1 day)
+              const now = new Date();
+              const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+              const deadlineDate = new Date(deadline);
+              const examDayStart = new Date(deadlineDate.getFullYear(), deadlineDate.getMonth(), deadlineDate.getDate()).getTime();
+              
+              const daysLeft = Math.round((examDayStart - todayStart) / (1000 * 60 * 60 * 24));
+              
+              let chipColor = 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+              if (daysLeft < 0) chipColor = 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+              else if (daysLeft <= 1) chipColor = 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+              else if (daysLeft <= 3) chipColor = 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+
+              return (
+              <motion.div
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                key={hw.id}
+                className="bg-white dark:bg-zinc-800 p-4 sm:p-6 rounded-[16px] border border-slate-100 dark:border-zinc-700 shadow-[0_2px_12px_rgba(0,0,0,0.06)] relative overflow-hidden"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                       <h3 className="text-lg font-black text-slate-900 dark:text-stone-100">
+                         {t[CATEGORIES.find(c => c.value === hw.subject)?.labelKey || 'pharmacology']}
+                       </h3>
+                       <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                         hw.type === 'theoretical' 
+                           ? 'bg-[#2196F3]/10 text-[#2196F3] dark:bg-[#2196F3]/20 dark:text-sky-400'
+                           : hw.type === 'practical' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                           : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                       }`}>
+                         {hw.type === 'theoretical' ? t.theoretical : hw.type === 'practical' ? t.practical : (t.both || (isRtl ? 'عملي ونظري' : 'Both'))}
+                       </span>
+                    </div>
+                    {/* Deadline Chip */}
+                    <div id={index === 0 ? "homework-deadline-chip-0" : undefined} className={`inline-flex items-center w-fit gap-1 px-3 py-1 rounded-full text-xs font-bold ${chipColor}`}>
+                      <Calendar className="w-3.5 h-3.5" />
+                      {daysLeft < 0 ? (isRtl ? `متأخر ${Math.abs(daysLeft)} أيام` : `Overdue by ${Math.abs(daysLeft)} days`) : 
+                       daysLeft === 0 ? (isRtl ? 'اليوم' : 'Today') : 
+                       daysLeft === 1 ? (isRtl ? 'غداً' : 'Tomorrow') :
+                       (isRtl ? `يتبقى ${daysLeft} أيام` : `${daysLeft} days left`)}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
+                      <>
+                        <button
+                          onClick={() => handleEditClick(hw)}
+                          className="p-2 rounded-full transition-colors bg-slate-50 dark:bg-zinc-700 text-slate-400 hover:bg-sky-50 hover:text-sky-500"
+                          title={t.editHomework}
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setHomeworkToDelete(hw.id)}
+                          className="p-2 rounded-full transition-colors bg-slate-50 dark:bg-zinc-700 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                          title={t.delete || (isRtl ? 'حذف' : 'Delete')}
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+                    {user && (
+                      <button
+                        onClick={() => handleToggleComplete(hw.id)}
+                        className="p-2 rounded-full transition-colors bg-slate-50 dark:bg-zinc-700 text-slate-400 hover:bg-[#2196F3]/10 hover:text-[#2196F3]"
+                      >
+                        <ClipboardCheck className="w-6 h-6" />
+                      </button>
                     )}
                   </div>
-                  {hw.createdAt?.toDate && (
-                    <div className="flex items-center gap-1 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      <Calendar className="w-3 h-3" />
-                      {hw.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' })}
-                    </div>
-                  )}
                 </div>
-                
-                <div className="flex items-center gap-1 sm:gap-2">
-                  {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
-                    <button
-                      onClick={() => setHomeworkToDelete(hw.id)}
-                      className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl transition-colors bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400"
-                      title={t.delete || (isRtl ? 'حذف' : 'Delete')}
-                    >
-                      <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                  )}
-                  {user && (
-                    <button
-                      onClick={() => handleToggleComplete(hw.id)}
-                      className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl transition-colors ${
-                        isCompleted
-                          ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/70'
-                          : 'bg-slate-100 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-600 hover:text-emerald-500'
-                      }`}
-                      title={isCompleted ? (isRtl ? 'إلغاء الاكتمال' : 'Mark as incomplete') : (t.markCompleted || (isRtl ? 'تحديد كمكتمل' : 'Mark as completed'))}
-                    >
-                      <ClipboardCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                  )}
-                </div>
-              </div>
 
-              <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-2xl p-3 sm:p-4 mb-3 sm:mb-4 border border-slate-100 dark:border-zinc-800">
-                <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 sm:mb-3 flex items-center gap-2">
-                  <BookOpen className="w-3 h-3 sm:w-4 sm:h-4 text-sky-500" />
-                  {t.examIncludes}
-                </p>
-                <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                  {hw.lectures.map((lec, i) => {
-                    // Find the lecture to get its PDF URL
-                    const actualLecture = allLectures.find(l => l.id === lec.lectureId);
-                    return (
-                      <a
-                        key={`${lec.lectureId}-${i}`}
-                        href={actualLecture?.pdfUrl || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 sm:py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-bold text-sky-600 dark:text-sky-400 hover:border-sky-300 dark:hover:border-sky-600 hover:shadow-sm transition-all"
-                      >
-                        {lec.label}
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {hw.note && (
-                <div className="flex gap-2 sm:gap-3 p-3 sm:p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-900/50">
-                  <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600 dark:text-amber-500 flex-shrink-0" />
-                  <p className="text-[11px] sm:text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
-                    {hw.note}
+                <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-2xl p-4 mb-4 border border-slate-100 dark:border-zinc-800">
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-[#2196F3]" />
+                    {t.examIncludes}
                   </p>
+                  <div className="flex flex-wrap gap-2">
+                    {hw.lectures.map((lec, i) => {
+                      const actualLecture = allLectures.find(l => l.id === lec.lectureId);
+                      return (
+                        <a
+                          key={`${lec.lectureId}-${i}`}
+                          href={actualLecture?.pdfUrl || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-[12px] text-sm font-bold text-[#2196F3] dark:text-sky-400 hover:border-sky-300 transition-all shadow-sm"
+                        >
+                          {lec.label}
+                        </a>
+                      );
+                    })}
+                  </div>
                 </div>
-              )}
-            </motion.div>
-          )})}
+
+                {hw.note && (
+                  <div className="flex gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-900/50">
+                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                    <p className="text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
+                      {hw.note}
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            )})}
+            <SpotlightTooltip targetSelector="#homework-deadline-chip-0" text="اللون الأحمر = تسليم قريب!" placement="top" tooltipKey="homework_deadline" />
+          </div>
+
+          {/* Completed Section */}
+          {completedHomeworks.length > 0 && (
+            <div className="pt-4">
+              <button
+                onClick={() => setShowCompleted(!showCompleted)}
+                className="w-full flex items-center justify-between p-4 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-2xl font-bold"
+              >
+                <span>{isRtl ? `المكتملة (${completedHomeworks.length})` : `Completed (${completedHomeworks.length})`}</span>
+                <span className="transform transition-transform" style={{ transform: showCompleted ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+              </button>
+              <AnimatePresence>
+                {showCompleted && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-4 pt-4 overflow-hidden"
+                  >
+                     {completedHomeworks.map(hw => (
+                      <div key={hw.id} className="bg-white dark:bg-zinc-800 p-4 sm:p-6 rounded-[16px] border border-emerald-200 dark:border-emerald-900/50 shadow-sm opacity-75">
+                         <div className="flex items-start justify-between mb-2">
+                           <div className="flex flex-col gap-1">
+                             <h3 className="text-lg font-black text-slate-900 dark:text-stone-100 flex items-center gap-2">
+                               <Check className="w-5 h-5 text-emerald-500" />
+                               {t[CATEGORIES.find(c => c.value === hw.subject)?.labelKey || 'pharmacology']}
+                             </h3>
+                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase w-fit ${
+                               hw.type === 'theoretical' 
+                                 ? 'bg-[#2196F3]/10 text-[#2196F3] dark:bg-[#2196F3]/20 dark:text-sky-400'
+                                 : hw.type === 'practical' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                 : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                             }`}>
+                               {hw.type === 'theoretical' ? t.theoretical : hw.type === 'practical' ? t.practical : (t.both || (isRtl ? 'عملي ونظري' : 'Both'))}
+                             </span>
+                           </div>
+                           <button
+                             onClick={() => handleToggleComplete(hw.id)}
+                             className="p-2 rounded-full transition-colors bg-emerald-100 text-emerald-600 hover:bg-emerald-200"
+                           >
+                             <ClipboardCheck className="w-5 h-5" />
+                           </button>
+                         </div>
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
         </div>
       ) : (
         <div className="text-center py-12 bg-white dark:bg-zinc-800 rounded-3xl border border-slate-200 dark:border-zinc-700 border-dashed">
