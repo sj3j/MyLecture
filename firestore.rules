@@ -170,12 +170,37 @@ service cloud.firestore {
 
     match /announcements/{postId} {
       allow read: if hasAccess();
-      allow create, update, delete: if isAdminOrModerator();
+      allow create, delete: if isAdminOrModerator();
+      allow update: if isAdminOrModerator() || (
+        hasAccess() && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+      );
     }
     
     match /homeworks/{homeworkId} {
       allow read: if hasAccess();
       allow create, update, delete: if isAdminOrModerator();
+    }
+    
+    match /mcqs/{lectureId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdminOrModerator();
+    }
+
+    match /userMCQAnswers/{userId}/lectures/{lectureId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrModerator());
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /userMCQStats/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /adminAlerts/{alertId} {
+      allow create: if hasAccess();
+      allow read, update, delete: if isAdminOrModerator();
     }
     
     match /fcm_tokens/{userId} {

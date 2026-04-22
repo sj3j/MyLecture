@@ -33,9 +33,10 @@ interface AnnouncementsScreenProps {
   lang: Language;
   lectures: Lecture[];
   onNavigateToChat?: () => void;
+  onOpenMCQ?: (lecture: Lecture) => void;
 }
 
-export default function AnnouncementsScreen({ user, lang, lectures, onNavigateToChat }: AnnouncementsScreenProps) {
+export default function AnnouncementsScreen({ user, lang, lectures, onNavigateToChat, onOpenMCQ }: AnnouncementsScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -62,6 +63,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
 
   const [allowedReactions, setAllowedReactions] = useState<string[]>(['👍', '❤️', '🙏', '🔥']);
   const [showReactionsConfig, setShowReactionsConfig] = useState(false);
+  const [showReactionPickerForPost, setShowReactionPickerForPost] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -514,6 +516,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                                     lang={lang} 
                                     user={user} 
                                     onNavigateToChat={onNavigateToChat}
+                                    onOpenMCQ={onOpenMCQ}
                                   />
                                 );
                               })}
@@ -564,35 +567,60 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
 
                         {/* Reactions Bar */}
                         {user && (
-                          <div className="flex flex-wrap items-center mt-3 mb-1 gap-2">
-                            {allowedReactions.map(emoji => {
-                              const reactionArray = post.reactions?.[emoji] || [];
-                              const count = reactionArray.length;
-                              const hasReacted = reactionArray.includes(user.uid);
-                              
-                              if (count === 0 && !hasReacted) {
+                          <div className="relative mt-3 mb-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {allowedReactions.map(emoji => {
+                                const reactionArray = post.reactions?.[emoji] || [];
+                                const count = reactionArray.length;
+                                const hasReacted = reactionArray.includes(user.uid);
+                                
+                                // Hide unused reactions instead of displaying them at 0
+                                if (count === 0 && !hasReacted) return null;
+                                
                                 return (
                                   <button
                                     key={emoji}
                                     onClick={() => handleReaction(post.id, emoji)}
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border bg-slate-50 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700/50 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-700`}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${hasReacted ? 'bg-sky-50 dark:bg-sky-900/40 border-sky-300 dark:border-sky-700/50 text-sky-700 dark:text-sky-300 shadow-sm' : 'bg-slate-50 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-700'}`}
                                   >
                                     <span className="text-sm">{emoji}</span>
+                                    <span className="font-semibold">{count}</span>
                                   </button>
                                 );
-                              }
+                              })}
                               
-                              return (
-                                <button
-                                  key={emoji}
-                                  onClick={() => handleReaction(post.id, emoji)}
-                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${hasReacted ? 'bg-sky-50 dark:bg-sky-900/40 border-sky-300 dark:border-sky-700/50 text-sky-700 dark:text-sky-300 shadow-sm' : 'bg-slate-50 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-700'}`}
+                              <button
+                                onClick={() => setShowReactionPickerForPost(showReactionPickerForPost === post.id ? null : post.id)}
+                                className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-400 hover:text-sky-500 hover:bg-slate-100 transition-colors"
+                              >
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                              </button>
+                            </div>
+                            
+                            {/* Floating Reaction Menu */}
+                            <AnimatePresence>
+                              {showReactionPickerForPost === post.id && (
+                                <motion.div 
+                                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                                  className="absolute left-0 bottom-full mb-2 bg-white dark:bg-zinc-800 p-2 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-700 flex items-center gap-2 z-10"
                                 >
-                                  <span className="text-sm">{emoji}</span>
-                                  <span className="font-semibold">{count}</span>
-                                </button>
-                              );
-                            })}
+                                  {allowedReactions.map(emoji => (
+                                    <button
+                                      key={emoji}
+                                      onClick={() => {
+                                        handleReaction(post.id, emoji);
+                                        setShowReactionPickerForPost(null);
+                                      }}
+                                      className="w-10 h-10 flex items-center justify-center text-xl hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-transform hover:scale-125 focus:scale-90"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </div>
                         )}
                         

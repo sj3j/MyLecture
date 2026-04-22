@@ -20,10 +20,12 @@ import LoginScreen from './components/LoginScreen';
 import OnboardingScreen from './components/OnboardingScreen';
 import OnboardingSlides from './components/OnboardingSlides';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
+import MCQOverlay from './components/MCQOverlay';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 import { usePushNotifications } from './hooks/usePushNotifications';
+import { syncPendingSubmissions } from './services/mcqAnswerService';
 
 type SortField = 'title' | 'date' | 'number';
 type SortOrder = 'asc' | 'desc';
@@ -32,6 +34,14 @@ export default function App() {
   const [lang, setLang] = useState<Language>('ar');
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+
+  useEffect(() => {
+    // Attempt to sync any offline MCQ submissions when the app loads or comes online
+    syncPendingSubmissions();
+    const handleOnline = () => syncPendingSubmissions();
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !localStorage.getItem('hasSeenOnboarding');
@@ -53,6 +63,7 @@ export default function App() {
   const [showStudentManage, setShowStudentManage] = useState(false);
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [mcqLecture, setMcqLecture] = useState<Lecture | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
@@ -416,7 +427,7 @@ export default function App() {
         </div>
       )}
 
-      {['home', 'lectures', 'weekly', 'records'].includes(currentTab) && (
+      {['home', 'lectures', 'weekly', 'records', 'leaderboard'].includes(currentTab) && (
         <HomeScreen 
           user={user} 
           lang={lang} 
@@ -425,12 +436,13 @@ export default function App() {
           isLoading={isLoading} 
           onNavigateToChat={() => setCurrentTab('chat')} 
           onEdit={(l) => { setLectureToEdit(l); setShowUpload(true); }} 
+          onOpenMCQ={(l) => setMcqLecture(l)}
           setShowStudentManage={setShowStudentManage} 
           setShowAdminManage={setShowAdminManage} 
           initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
         />
       )}
-      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} />}
+      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} onOpenMCQ={(l) => setMcqLecture(l)} />}
       {currentTab === 'chat' && <ChatScreen user={user} lang={lang} />}
       {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} />}
 
@@ -447,6 +459,15 @@ export default function App() {
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
       
+      {mcqLecture && user && (
+        <MCQOverlay 
+          lecture={mcqLecture} 
+          user={user} 
+          lang={lang} 
+          onClose={() => setMcqLecture(null)} 
+        />
+      )}
+
       <GlobalAudioPlayer isRtl={isRtl} />
       <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
     </div>

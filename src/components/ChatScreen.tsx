@@ -57,6 +57,8 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageChat !== false;
+  const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+  const isMasterAdmin = user?.email && adminEmails.includes(user.email.toLowerCase());
   const CHAT_DOC_ID = 'config';
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -861,11 +863,11 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                             </button>
                           )}
 
-                          {isAdminOrModerator && msg.isAnonymous && (
+                          {isMasterAdmin && msg.isAnonymous && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                alert(`Original Sender: ${msg.originalSenderExamCode || msg.originalSenderName} (${msg.senderEmail})`);
+                                alert(`Original Sender Email: ${msg.senderEmail}`);
                                 setShowReactionPickerFor(null);
                               }}
                               title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
@@ -894,9 +896,9 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
 
-                        {isAdminOrModerator && msg.isAnonymous && (
+                        {isMasterAdmin && msg.isAnonymous && (
                           <button
-                            onClick={() => alert(`Original Sender: ${msg.originalSenderExamCode || msg.originalSenderName} (${msg.senderEmail})`)}
+                            onClick={() => alert(`Original Sender Email: ${msg.senderEmail}`)}
                             title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
                             className="p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110"
                           >

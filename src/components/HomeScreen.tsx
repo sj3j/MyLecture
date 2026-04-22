@@ -17,6 +17,7 @@ interface HomeScreenProps {
   isLoading: boolean;
   onNavigateToChat: () => void;
   onEdit: (l: Lecture) => void;
+  onOpenMCQ?: (l: Lecture) => void;
   setShowStudentManage: (val: boolean) => void;
   setShowAdminManage: (val: boolean) => void;
   initialTab?: InnerTab;
@@ -30,6 +31,7 @@ export default function HomeScreen({
   isLoading,
   onNavigateToChat,
   onEdit,
+  onOpenMCQ,
   setShowStudentManage,
   setShowAdminManage,
   initialTab = 'lectures'
@@ -122,6 +124,7 @@ export default function HomeScreen({
             isLoading={isLoading}
             onNavigateToChat={onNavigateToChat}
             onEdit={onEdit}
+            onOpenMCQ={onOpenMCQ}
           />
         )}
         {activeTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}

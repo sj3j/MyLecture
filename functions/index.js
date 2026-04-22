@@ -355,3 +355,68 @@ exports.sendHomeworkNotificationV3 = onDocumentCreated({
 
     return null;
   });
+
+exports.onFirstAttemptComplete = onDocumentCreated(
+  {
+    document: 'userMCQAnswers/{userId}/lectures/{lectureId}',
+    region: 'me-west1'
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+
+    const data = snapshot.data();
+    if (!data.hasCompletedFirstAttempt) {
+      return;
+    }
+
+    const { userId, lectureId } = event.params;
+    const { firstAttemptCorrect, firstAttemptTotal } = data;
+
+    const subjectId = data.subjectId || 'unknown_subject';
+
+    const userStatsRef = db.collection('userMCQStats').doc(userId);
+
+    try {
+      await db.runTransaction(async (transaction) => {
+        const statsDoc = await transaction.get(userStatsRef);
+
+        let stats = statsDoc.exists ? statsDoc.data() : {
+          userId,
+          totalFirstAttemptCorrect: 0,
+          totalFirstAttemptAnswered: 0,
+          lecturesAttempted: 0,
+          mcqLeaderboardScore: 0,
+          accuracy: 0,
+          subjectStats: {}
+        };
+
+        stats.totalFirstAttemptCorrect += firstAttemptCorrect;
+        stats.totalFirstAttemptAnswered += firstAttemptTotal;
+        stats.lecturesAttempted += 1;
+
+        if (!stats.subjectStats) stats.subjectStats = {};
+        if (!stats.subjectStats[subjectId]) {
+          stats.subjectStats[subjectId] = { correct: 0, total: 0, lecturesAttempted: 0 };
+        }
+        stats.subjectStats[subjectId].correct += firstAttemptCorrect;
+        stats.subjectStats[subjectId].total += firstAttemptTotal;
+        stats.subjectStats[subjectId].lecturesAttempted += 1;
+
+        if (stats.totalFirstAttemptAnswered > 0) {
+          stats.mcqLeaderboardScore = (stats.totalFirstAttemptCorrect / stats.totalFirstAttemptAnswered) * Math.sqrt(stats.totalFirstAttemptAnswered) * 100;
+          stats.accuracy = (stats.totalFirstAttemptCorrect / stats.totalFirstAttemptAnswered) * 100;
+        }
+
+        stats.lastUpdated = admin.firestore.FieldValue.serverTimestamp();
+
+        transaction.set(userStatsRef, stats, { merge: true });
+      });
+      console.log(`Successfully updated MCQ stats for user: ${userId}`);
+    } catch (error) {
+      console.error(`Error updating MCQ stats for user ${userId}:`, error);
+    }
+    
+    return null;
+  }
+);

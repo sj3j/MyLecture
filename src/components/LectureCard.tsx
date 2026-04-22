@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle, Youtube } from 'lucide-react';
+import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle, Youtube, ClipboardList } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, deleteDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -7,6 +7,7 @@ import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useOfflinePDF } from '../hooks/useOfflinePDF';
 import { forceDownload } from '../lib/utils';
+import { useMCQStatus } from '../hooks/useMCQStatus';
 
 interface LectureCardProps {
   lecture: Lecture;
@@ -15,10 +16,11 @@ interface LectureCardProps {
   onEdit?: (lecture: Lecture) => void;
   onRemoveDownload?: (lecture: Lecture) => void;
   onNavigateToChat?: () => void;
+  onOpenMCQ?: (lecture: Lecture) => void;
   key?: string;
 }
 
-export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat }: LectureCardProps) {
+export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat, onOpenMCQ }: LectureCardProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [showPreview, setShowPreview] = useState(false);
@@ -32,6 +34,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
   const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl);
 
   const isStudied = user?.studied?.includes(lecture.id) || false;
+  const mcqStatusItem = useMCQStatus(lecture.id, user);
 
   const handleToggleStudied = async () => {
     if (!user) return;
@@ -257,6 +260,55 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
               <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
             </button>
           )}
+
+          {user && (
+            <button
+              onClick={() => onOpenMCQ && onOpenMCQ(lecture)}
+              className={`inline-flex items-center justify-center p-1.5 sm:px-3 sm:py-2.5 bg-white dark:bg-zinc-800 border-2 rounded-lg sm:rounded-xl transition-all gap-1.5 ${
+                mcqStatusItem.status === 'generating' 
+                  ? 'border-blue-200 dark:border-blue-800 animate-pulse bg-blue-50/50 dark:bg-blue-900/10 text-blue-500'
+                  : mcqStatusItem.status === 'failed'
+                  ? 'border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 hover:rotate-1'
+                  : 'border-blue-100 dark:border-blue-900/50 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+              }`}
+            >
+              {mcqStatusItem.status === 'not_generated' && (
+                <>
+                   <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                   <span className="text-[10px] sm:text-xs font-bold leading-none">{isRtl ? 'ابدأ MCQ' : 'Start MCQ'}</span>
+                </>
+              )}
+              {mcqStatusItem.status === 'ready_new' && (
+                <>
+                   <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                   <span className="text-[10px] sm:text-xs font-bold leading-none">{isRtl ? 'ابدأ MCQ' : 'Start MCQ'}</span>
+                </>
+              )}
+              {mcqStatusItem.status === 'generating' && (
+                <>
+                   <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
+                   <span className="text-[10px] sm:text-xs font-bold leading-none">{isRtl ? 'توليد...' : 'Gen...'}</span>
+                </>
+              )}
+              {mcqStatusItem.status === 'failed' && (
+                <>
+                   <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                   <span className="text-[10px] sm:text-xs font-bold leading-none">{isRtl ? 'فشل التوليد' : 'Failed'}</span>
+                </>
+              )}
+              {mcqStatusItem.status === 'ready_retake' && (
+                <>
+                   <span className={`text-[10px] sm:text-xs font-bold leading-none ${
+                     (mcqStatusItem.score || 0) >= 75 ? 'text-emerald-500' :
+                     (mcqStatusItem.score || 0) >= 60 ? 'text-amber-500' : 'text-red-500'
+                   }`}>
+                     ✅ {isRtl ? 'إعادة' : 'Retake'} ({mcqStatusItem.correct}/{mcqStatusItem.total})
+                   </span>
+                </>
+              )}
+            </button>
+          )}
+
           {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && (
             <>
               <button

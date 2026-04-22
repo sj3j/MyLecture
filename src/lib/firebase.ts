@@ -1,12 +1,17 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getMessaging, isSupported } from 'firebase/messaging';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Set persistent auth state
+setPersistence(auth, browserLocalPersistence)
+  .catch((error) => console.error("Error setting auth persistence:", error));
+
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Enable offline persistence for Firestore

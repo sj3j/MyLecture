@@ -1,9 +1,9 @@
 import React from 'react';
-import { Bell, BookOpen, User, Mic, MessageSquare } from 'lucide-react';
+import { Bell, BookOpen, User, Trophy, MessageSquare } from 'lucide-react';
 import { Language, TRANSLATIONS } from '../types';
 import { motion } from 'motion/react';
 
-export type Tab = 'home' | 'announcements' | 'records' | 'chat' | 'profile';
+export type Tab = 'home' | 'announcements' | 'leaderboard' | 'chat' | 'profile';
 
 interface BottomNavProps {
   currentTab: Tab | 'weekly' | 'lectures'; // keep old tabs for backwards compat if needed temporarily
@@ -16,9 +16,9 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
   const isRtl = lang === 'ar';
 
   const tabs = [
-    { id: 'home', icon: BookOpen, label: isRtl ? 'محاضرات' : 'Study' },
+    { id: 'home', icon: BookOpen, label: isRtl ? 'قسم الدراسة' : 'Study' },
     { id: 'chat', icon: MessageSquare, label: isRtl ? 'الدردشة' : 'Chat' },
-    { id: 'records', icon: Mic, label: isRtl ? 'تسجيلات' : 'Records', isFab: true },
+    { id: 'leaderboard', icon: Trophy, label: isRtl ? 'المتصدرين' : 'Leaderboard', isFab: true },
     { id: 'announcements', icon: Bell, label: isRtl ? 'التبليغات' : 'Alerts' },
     { id: 'profile', icon: User, label: isRtl ? 'الملف الشخصي' : 'Profile' },
   ];

@@ -46,7 +46,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
   useEffect(() => {
     // Load homeworks
-    const q = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'homeworks'), orderBy('dueDate', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Homework));
       setHomeworks(docs);
@@ -157,10 +157,6 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedLectures.length === 0) {
-      alert(isRtl ? 'يرجى إضافة محاضرة واحدة على الأقل' : 'Please add at least one lecture');
-      return;
-    }
 
     setIsSubmitting(true);
     try {
