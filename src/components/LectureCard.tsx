@@ -137,7 +137,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
           {lecture.uploaderName && (
             <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 font-medium">
               <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-500" />
-              <span className="truncate text-emerald-600 dark:text-emerald-400">{isRtl ? `بواسطة الأدمين: ${lecture.uploaderName}` : `By Admin: ${lecture.uploaderName}`}</span>
+              <span className="truncate text-emerald-600 dark:text-emerald-400">{isRtl ? ` ${lecture.uploaderName}` : ` ${lecture.uploaderName}`}</span>
             </div>
           )}
         </div>

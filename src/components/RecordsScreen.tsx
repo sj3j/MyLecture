@@ -235,7 +235,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
                 {record.uploaderName && (
                   <div className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/10 px-2 py-1 rounded-md text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-100 dark:border-emerald-900/30">
                     <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                    <span>{isRtl ? `بواسطة الأدمين: ${record.uploaderName}` : `By Admin: ${record.uploaderName}`}</span>
+                    <span>{isRtl ? ` ${record.uploaderName}` : ` ${record.uploaderName}`}</span>
                   </div>
                 )}
               </div>
