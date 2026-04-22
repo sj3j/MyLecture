@@ -13,7 +13,7 @@ export default function OnboardingSlides({ onComplete }: OnboardingSlidesProps) 
     {
       id: 'welcome',
       icon: <Sparkles className="w-16 h-16 text-[#2196F3]" />,
-      title: 'مرحباً في محاضراتي الجديدة!',
+      title: 'مرحباً في واجهة محاضراتي الجديدة!',
       body: 'واجهة جديدة كلياً مع ميزات أقوى'
     },
     {
@@ -38,7 +38,7 @@ export default function OnboardingSlides({ onComplete }: OnboardingSlidesProps) 
       id: 'recordings',
       icon: <Mic className="w-16 h-16 text-emerald-500" />,
       title: 'تسجيل المحاضرات',
-      body: 'سجّل محاضراتك مباشرة من داخل التطبيق 🎤'
+      body: 'اسمع محاضراتك مباشرة من داخل التطبيق 🎤'
     },
     {
       id: 'ready',
