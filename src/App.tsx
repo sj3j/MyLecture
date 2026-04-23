@@ -8,6 +8,8 @@ import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
 import StudentManagement from './components/StudentManagement';
+import AdminGradesScreen from './components/grades/AdminGradesScreen';
+import StudentGradesScreen from './components/grades/StudentGradesScreen';
 import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
@@ -61,6 +63,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminManage, setShowAdminManage] = useState(false);
   const [showStudentManage, setShowStudentManage] = useState(false);
+  const [showAdminGrades, setShowAdminGrades] = useState(false);
+  const [showStudentGrades, setShowStudentGrades] = useState(false);
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [mcqLecture, setMcqLecture] = useState<Lecture | null>(null);
@@ -175,7 +179,7 @@ export default function App() {
             setUser({
               uid: firebaseUser.uid,
               name: resolvedName,
-              email: firebaseUser.email || '',
+              email: firebaseUser.email || userDoc.data().email || firebaseUser.uid || '',
               role: isMasterAdmin ? 'admin' : (whitelistRole || userDoc.data().role || 'student'),
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
               streakCount: userDoc.data().streakCount || 0,
@@ -195,7 +199,7 @@ export default function App() {
             setUser({
               uid: firebaseUser.uid,
               name: studentData?.name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
-              email: firebaseUser.email || '',
+              email: firebaseUser.email || firebaseUser.uid || '',
               role: isMasterAdmin ? 'admin' : (studentData?.role || 'student'),
               photoUrl: firebaseUser.photoURL || undefined,
               examCode: studentData?.examCode || undefined,
@@ -396,19 +400,23 @@ export default function App() {
 
 
 
+  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showStudentGrades || (mcqLecture !== null);
+
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 pb-20 font-sans transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
-      <Navbar
-        user={user}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        onShowUpload={() => setShowUpload(true)}
-        lang={lang}
-        setLang={setLang}
-        currentTab={currentTab}
-        theme={theme}
-        toggleTheme={toggleTheme}
-      />
+      {!isAnyOverlayOpen && (
+        <Navbar
+          user={user}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          onShowUpload={() => setShowUpload(true)}
+          lang={lang}
+          setLang={setLang}
+          currentTab={currentTab}
+          theme={theme}
+          toggleTheme={toggleTheme}
+        />
+      )}
 
       {user && permission === 'default' && (
         <div className="bg-sky-600 text-white px-4 py-3 sm:px-6 lg:px-8 flex items-center justify-between">
@@ -444,7 +452,7 @@ export default function App() {
       )}
       {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} onOpenMCQ={(l) => setMcqLecture(l)} />}
       {currentTab === 'chat' && <ChatScreen user={user} lang={lang} />}
-      {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} />}
+      {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />}
 
       <AdminUpload 
         isOpen={showUpload} 
@@ -458,6 +466,8 @@ export default function App() {
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
+      <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} />
+      <StudentGradesScreen isOpen={showStudentGrades} onClose={() => setShowStudentGrades(false)} />
       
       {mcqLecture && user && (
         <MCQOverlay 
@@ -469,7 +479,9 @@ export default function App() {
       )}
 
       <GlobalAudioPlayer isRtl={isRtl} />
-      <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
+      {!isAnyOverlayOpen && (
+        <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
+      )}
     </div>
   );
 }

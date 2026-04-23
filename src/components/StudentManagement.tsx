@@ -34,16 +34,35 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editExamCode, setEditExamCode] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
       const snapshot = await getDocs(collection(db, 'students'));
-      const studentsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toMillis ? doc.data().createdAt.toMillis() : Date.now()
-      })) as Student[];
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      
+      // Create a map of email to user data to easily append currentName
+      const userMap = new Map();
+      usersSnapshot.docs.forEach(doc => {
+        const userData = doc.data();
+        const userEmail = userData.email || doc.id;
+        if (userEmail) {
+          userMap.set(userEmail.toLowerCase().trim(), userData.name);
+        }
+      });
+
+      const studentsData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const emailKey = (data.email || doc.id).toLowerCase().trim();
+        return {
+          id: doc.id,
+          ...data,
+          currentName: userMap.get(emailKey),
+          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now()
+        };
+      }) as Student[];
+      
       setStudents(studentsData);
     } catch (err) {
       console.error('Error fetching students:', err);
@@ -242,6 +261,13 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   };
 
+  const filteredStudents = students.filter(student => 
+    student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.examCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (student.currentName && student.currentName.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -429,10 +455,21 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
               {/* Student List */}
               <div className="w-full md:w-2/3 flex flex-col">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                    {isRtl ? 'قائمة الطلاب' : 'Student List'} ({students.length})
-                  </h3>
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
+                  <div className="flex items-center gap-4 flex-1">
+                    <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                      {isRtl ? 'قائمة الطلاب' : 'Student List'} ({students.length})
+                    </h3>
+                    <div className="relative flex-1 max-w-sm">
+                      <input
+                        type="text"
+                        placeholder={isRtl ? 'البحث بالاسم، الإيميل، أو الكود...' : 'Search by name, email, or code...'}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700/50 text-slate-900 dark:text-zinc-100 rounded-xl focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all text-sm"
+                      />
+                    </div>
+                  </div>
                   {isMasterAdmin && students.length > 0 && (
                     <div className="relative">
                       {isDeletingAll ? (
@@ -468,10 +505,10 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                     <div className="flex justify-center items-center h-full py-12">
                       <Loader2 className="w-8 h-8 animate-spin text-sky-600 dark:text-sky-400" />
                     </div>
-                  ) : students.length === 0 ? (
+                  ) : filteredStudents.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full py-12 text-slate-400">
                       <Users className="w-12 h-12 mb-4 opacity-50" />
-                      <p>{isRtl ? 'لا يوجد طلاب مسجلين' : 'No students registered'}</p>
+                      <p>{isRtl ? 'لا توجد نتائج' : 'No results found'}</p>
                     </div>
                   ) : (
                     <table className="w-full text-left border-collapse">
@@ -485,9 +522,16 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         </tr>
                       </thead>
                       <tbody>
-                        {students.map((student) => (
+                        {filteredStudents.map((student) => (
                           <tr key={student.id} className="border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
-                            <td className="p-3 text-sm font-medium text-slate-900 dark:text-stone-100">{student.name}</td>
+                            <td className="p-3">
+                              <div className="text-sm font-medium text-slate-900 dark:text-stone-100">{student.name}</div>
+                              {student.currentName && student.currentName !== student.name && (
+                                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                  {isRtl ? 'الاسم الحالي: ' : 'Current: '}{student.currentName}
+                                </div>
+                              )}
+                            </td>
                             <td className="p-3 text-sm text-slate-500 dark:text-slate-400">{student.email}</td>
                             <td className="p-3 text-sm font-mono text-slate-500 dark:text-slate-400">{student.examCode}</td>
                             <td className="p-3 text-center">

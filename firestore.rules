@@ -78,6 +78,7 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 &&
              data.email is string && (data.email == '' || data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) &&
              data.role in ['admin', 'moderator', 'student'] &&
+             (!('originalName' in data) || data.originalName is string) &&
              (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
              (!('favorites' in data) || data.favorites is list) &&
@@ -133,7 +134,16 @@ service cloud.firestore {
       allow update: if isMasterAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && (
                       request.resource.data.role == (resource.data.role != null ? resource.data.role : 'student') ||
                       (request.resource.data.role in ['admin', 'moderator'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
-                    ));
+                    ) && (isAdminOrModerator() || !('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', '')));
+    }
+
+    match /degrees/{studentId}/exams/{examId} {
+      allow read: if isAdminOrModerator() || (isAuthenticated() && request.auth.uid == studentId);
+      allow write: if isAdminOrModerator();
+    }
+
+    match /degreeBatches/{batchId} {
+      allow read, write: if isAdminOrModerator();
     }
 
     match /lectures/{lectureId} {
@@ -183,8 +193,9 @@ service cloud.firestore {
     }
     
     match /mcqs/{lectureId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
+      allow read: if hasAccess();
+      // Allow Generation (Creation & Write) updates from regular users if permitted
+      allow create, update: if hasAccess();
       allow delete: if isAdminOrModerator();
     }
 
@@ -194,12 +205,13 @@ service cloud.firestore {
     }
 
     match /userMCQStats/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if hasAccess();
+      // Regular user or Admin can write stats
+      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdminOrModerator();
     }
 
     match /adminAlerts/{alertId} {
-      allow create: if hasAccess();
+      allow create: if hasAccess(); // E.g., when they trigger an incomplete Generation that requires admin review
       allow read, update, delete: if isAdminOrModerator();
     }
     

@@ -12,9 +12,11 @@ interface ProfileScreenProps {
   setLang: (lang: Language) => void;
   setShowAdminManage?: (val: boolean) => void;
   setShowStudentManage?: (val: boolean) => void;
+  setShowAdminGrades?: (val: boolean) => void;
+  setShowStudentGrades?: (val: boolean) => void;
 }
 
-export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage }: ProfileScreenProps) {
+export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage, setShowAdminGrades, setShowStudentGrades }: ProfileScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -479,6 +481,26 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             >
               <User className="w-5 h-5" />
               {isRtl ? 'إدارة الطلاب' : 'Manage Students'}
+            </button>
+          )}
+
+          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && setShowAdminGrades && (
+            <button
+              onClick={() => setShowAdminGrades(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-fuchsia-50 dark:bg-fuchsia-900/30 text-fuchsia-600 dark:text-fuchsia-400 rounded-xl font-bold hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/50 transition-colors mt-4"
+            >
+              <HardDrive className="w-5 h-5" />
+              {isRtl ? 'إدارة السعيّات والدرجات' : 'Manage Grades'}
+            </button>
+          )}
+
+          {user?.role === 'student' && setShowStudentGrades && (
+            <button
+              onClick={() => setShowStudentGrades(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors mt-4"
+            >
+              <Shield className="w-5 h-5" />
+              {isRtl ? 'السعيّات والدرجات المعتمدة' : 'Official Grades'}
             </button>
           )}
 

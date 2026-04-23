@@ -69,8 +69,10 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       if (!userSnap.exists()) {
         // Create new user document
+        const initialName = result.user.displayName || (userRole === 'admin' ? 'Admin' : userRole === 'moderator' ? 'Moderator' : 'Student');
         await setDoc(userRef, {
-          name: result.user.displayName || (userRole === 'admin' ? 'Admin' : userRole === 'moderator' ? 'Moderator' : 'Student'),
+          name: initialName,
+          originalName: initialName,
           email: result.user.email,
           role: userRole,
           photoUrl: result.user.photoURL,
@@ -133,9 +135,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       if (!userSnap.exists()) {
         const studentDoc = await getDoc(doc(db, 'students', emailLower));
         const studentData = studentDoc.data() || {};
+        const initialName = studentData.name || 'Student';
         
         await setDoc(userRef, {
-          name: studentData.name || 'Student',
+          name: initialName,
+          originalName: initialName,
           email: emailLower,
           role: studentData.role || 'student',
           examCode: studentData.examCode || '',

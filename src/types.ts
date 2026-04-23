@@ -53,6 +53,7 @@ export interface RecordItem {
 export interface UserProfile {
   uid: string;
   name: string;
+  originalName?: string;
   email: string;
   role: 'admin' | 'moderator' | 'student';
   photoUrl?: string;
@@ -92,6 +93,7 @@ export interface Student {
   examCode: string;
   isActive: boolean;
   createdAt: any;
+  currentName?: string; // Appended from users collection
 }
 
 export interface Homework {

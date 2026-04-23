@@ -420,3 +420,169 @@ exports.onFirstAttemptComplete = onDocumentCreated(
     return null;
   }
 );
+
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+
+exports.confirmDegreeBatch = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be logged in.');
+    }
+
+    const userRoleDoc = await db.collection('users').doc(request.auth.uid).get();
+    const role = userRoleDoc.exists ? userRoleDoc.data().role : null;
+    const email = request.auth.token.email;
+    const isMasterAdmin = email === 'almdrydyl335@gmail.com' || email === 'fenix.admin@gmail.com';
+
+    if (!isMasterAdmin && role !== 'admin' && role !== 'moderator') {
+      throw new HttpsError('permission-denied', 'Only admins can confirm batches.');
+    }
+
+    const { examName, confirmedResults } = request.data;
+    if (!examName || !Array.isArray(confirmedResults)) {
+      throw new HttpsError('invalid-argument', 'Missing or invalid parameters.');
+    }
+
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const examId = `exam_${batchId}`;
+    
+    let saved = 0;
+    let failed = 0;
+    const studentIds = [];
+
+    // Chunk size of 400 to stay safely under the 500 limit
+    const chunkSize = 400;
+    
+    for (let i = 0; i < confirmedResults.length; i += chunkSize) {
+      const chunk = confirmedResults.slice(i, i + chunkSize);
+      const batch = db.batch();
+      
+      for (const result of chunk) {
+        if (result.matchedUserId) {
+          const studentId = result.matchedUserId;
+          studentIds.push(studentId);
+          const degreeRef = db.collection(`degrees/${studentId}/exams`).doc(examId);
+          
+          batch.set(degreeRef, {
+            examName,
+            degree: result.degree || 0,
+            batchId: batchId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          saved++;
+        } else {
+          failed++;
+        }
+      }
+      
+      // On the last chunk, also write the degreeBatches document
+      if (i + chunkSize >= confirmedResults.length) {
+        const batchRef = db.collection('degreeBatches').doc(batchId);
+        batch.set(batchRef, {
+          id: batchId,
+          examName,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdBy: request.auth.uid,
+          status: 'confirmed',
+          studentIds: studentIds,
+          stats: {
+            totalRows: confirmedResults.length,
+            matched: saved,
+            unmatched: failed
+          }
+        });
+      }
+
+      await batch.commit();
+    }
+
+    // Handle case where confirmedResults mapping matched nothing, still write batch
+    if (confirmedResults.length === 0) {
+      const batch = db.batch();
+      const batchRef = db.collection('degreeBatches').doc(batchId);
+      batch.set(batchRef, {
+        id: batchId,
+        examName,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: request.auth.uid,
+        status: 'confirmed',
+        studentIds: studentIds,
+        stats: {
+          totalRows: 0,
+          matched: 0,
+          unmatched: 0
+        }
+      });
+      await batch.commit();
+    }
+
+    return { saved, failed, batchId };
+  } catch (error) {
+    console.error('Error confirming degree batch:', error);
+    
+    // Log error to Firestore
+    try {
+      await db.collection('debug_logs').add({
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        message: error.message || error.toString(),
+        stack: error.stack || null,
+        function: 'confirmDegreeBatch'
+      });
+    } catch (e) {
+      // Ignored
+    }
+
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    // Changed to 'unknown' so Firebase doesn't strip the error message from the client
+    throw new HttpsError('unknown', 'An internal error occurred: ' + (error.message || error.toString()));
+  }
+});
+
+exports.migrateOriginalNames = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be logged in.');
+  }
+
+  const userRoleDoc = await db.collection('users').doc(request.auth.uid).get();
+  const role = userRoleDoc.exists ? userRoleDoc.data().role : null;
+  const email = request.auth.token.email;
+  const isMasterAdmin = email === 'almdrydyl335@gmail.com' || email === 'fenix.admin@gmail.com';
+
+  if (!isMasterAdmin && role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Only admins can run migration.');
+  }
+
+  try {
+    const usersSnap = await db.collection('users').get();
+    let migratedCount = 0;
+    let batch = db.batch();
+    const batchSizeLimit = 400; // safe arbitrary margin below 500
+
+    for (const docSnap of usersSnap.docs) {
+      const data = docSnap.data();
+      if (!data.originalName) {
+        // Migration: set originalName to the current name (their real registered name initially or their current name)
+        batch.update(docSnap.ref, {
+          originalName: data.name || 'Unknown'
+        });
+        migratedCount++;
+
+        if (migratedCount % batchSizeLimit === 0) {
+          await batch.commit();
+          batch = db.batch();
+        }
+      }
+    }
+
+    if (migratedCount % batchSizeLimit !== 0) {
+      await batch.commit();
+    }
+
+    return { success: true, migratedCount };
+  } catch (err) {
+    console.error('Error during original name migration', err);
+    throw new HttpsError('internal', 'Migration failed: ' + err.message);
+  }
+});
