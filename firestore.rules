@@ -199,7 +199,7 @@ service cloud.firestore {
       allow delete: if isAdminOrModerator();
     }
 
-    match /userMCQAnswers/{userId}/lectures/{lectureId} {
+    match /userMCQAnswers/{userId}/lectures/{document=**} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrModerator());
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
@@ -213,6 +213,21 @@ service cloud.firestore {
     match /adminAlerts/{alertId} {
       allow create: if hasAccess(); // E.g., when they trigger an incomplete Generation that requires admin review
       allow read, update, delete: if isAdminOrModerator();
+    }
+
+    match /antiCheatLogs/{logId} {
+      allow create: if hasAccess();
+      allow read, update, delete: if isAdminOrModerator();
+    }
+    
+    match /questionBank/{questionId} {
+      allow read: if hasAccess();
+      allow create, update, delete: if isAdminOrModerator();
+    }
+
+    match /userBankAnswers/{userId}/questions/{questionId} {
+      allow read: if isAdminOrModerator() || isOwner(userId);
+      allow write: if isOwner(userId);
     }
     
     match /fcm_tokens/{userId} {

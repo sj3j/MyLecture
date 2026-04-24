@@ -1,7 +1,9 @@
 import { 
   doc, 
   getDoc, 
-  setDoc, 
+  setDoc,
+  collection,
+  getDocs,
   serverTimestamp,
   runTransaction
 } from 'firebase/firestore';
@@ -22,10 +24,7 @@ export async function syncPendingSubmissions() {
     if (!queue.length) return;
 
     for (const item of queue) {
-      if (item.type === 'first') {
-        // Attempt resubmit. (Bypass queueing logic by passing a flag if needed, but doing directly here)
-        await submitFirstAttempt(item.userId, item.lectureId, item.subjectId, item.answers, item.totalQuestions);
-      } else {
+      if (item.type === 'retake') {
         await submitRetakeAttempt(item.userId, item.lectureId, item.answers, item.totalQuestions);
       }
     }
@@ -45,10 +44,101 @@ function addToOfflineQueue(type: 'first' | 'retake', payload: any) {
 }
 
 /**
- * Submits the first attempt for a lecture.
- * Saves the response to userMCQAnswers collection.
+ * Locks a single answer in Firestore immediately.
  */
-export async function submitFirstAttempt(
+export async function lockSingleAnswer(
+  userIdParam: string,
+  lectureId: string,
+  questionId: string,
+  selected: string,
+  isCorrect: boolean,
+  answerExplanation: string,
+  correctAnswer: string
+) {
+  const userId = auth.currentUser?.uid || userIdParam;
+  
+  if (!navigator.onLine) {
+    return { isCorrect, correctAnswer, explanation: answerExplanation, offline: true };
+  }
+
+  const answerRef = doc(db, `userMCQAnswers/${userId}/lectures/${lectureId}`);
+  
+  try {
+    const docSnap = await getDoc(answerRef);
+    let lockedAnswers: Record<string, any> = {};
+    
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data.hasCompletedFirstAttempt) {
+        return { isCorrect, correctAnswer, explanation: answerExplanation, error: true };
+      }
+      lockedAnswers = data.lockedAnswers || {};
+    }
+
+    if (lockedAnswers[questionId]) {
+      const data = lockedAnswers[questionId];
+      return { 
+        isCorrect: data.isCorrect, 
+        correctAnswer: data.serverCorrectAnswer || correctAnswer, 
+        explanation: data.serverExplanation || answerExplanation,
+        alreadyLocked: true
+      };
+    }
+
+    const newLock = {
+      questionId,
+      selected,
+      isCorrect, // Note: In production, Cloud Function would overwrite this
+      userId,
+      answeredAt: new Date().toISOString(),
+      lockedAt: new Date().toISOString(),
+      isLocked: true,
+      serverCorrectAnswer: correctAnswer,
+      serverExplanation: answerExplanation
+    };
+
+    await setDoc(answerRef, {
+      lockedAnswers: {
+        [questionId]: newLock
+      }
+    }, { merge: true });
+
+    return { isCorrect, correctAnswer, explanation: answerExplanation };
+  } catch (err) {
+    console.error("Failed to lock answer:", err);
+    return { isCorrect, correctAnswer, explanation: answerExplanation, error: true };
+  }
+}
+
+/**
+ * Retrieves all locked answers for the first attempt to resume.
+ */
+export async function getLockedAnswers(userIdParam: string, lectureId: string) {
+  const userId = auth.currentUser?.uid || userIdParam;
+  const answerRef = doc(db, `userMCQAnswers/${userId}/lectures/${lectureId}`);
+  
+  try {
+    const docSnap = await getDoc(answerRef);
+    if (!docSnap.exists()) return {};
+
+    const lockedAnswers = docSnap.data().lockedAnswers || {};
+    const answers: Record<string, { selected: string, isCorrect: boolean }> = {};
+    
+    for (const [qId, data] of Object.entries(lockedAnswers)) {
+      answers[qId] = { selected: (data as any).selected, isCorrect: (data as any).isCorrect };
+    }
+    
+    return answers;
+  } catch (err) {
+    console.error("Failed to get locked answers", err);
+    return {};
+  }
+}
+
+/**
+ * Finalizes the first attempt once all 20 questions are locked.
+ */
+export async function finalizeFirstAttempt(
   userIdParam: string, 
   lectureId: string, 
   subjectId: string,
@@ -74,7 +164,6 @@ export async function submitFirstAttempt(
   const scorePercentage = (correctCount / totalQuestions) * 100;
 
   if (!navigator.onLine) {
-    addToOfflineQueue('first', { userId, lectureId, subjectId, answers, totalQuestions });
     return { success: true, score: scorePercentage, correct: correctCount, offline: true };
   }
 
@@ -91,7 +180,6 @@ export async function submitFirstAttempt(
   try {
     const answersDoc = await getDoc(answersDocRef);
     if (answersDoc.exists() && answersDoc.data()?.hasCompletedFirstAttempt) {
-      // Avoid silent fail if already done
       return { success: true, score: scorePercentage, correct: correctCount };
     }
 
@@ -109,18 +197,11 @@ export async function submitFirstAttempt(
     };
 
     await runTransaction(db, async (transaction) => {
-      // 1. Read userMCQStats first (ALL READS MUST BE BEFORE WRITES)
       const statsRef = doc(db, `userMCQStats/${userId}`);
       const statsDoc = await transaction.get(statsRef);
 
-      //-----------------------------------------------
-      // WRITES PORTION
-      //-----------------------------------------------
-
-      // 2. Set the answer doc
       transaction.set(answersDocRef, answerDocData);
 
-      // 3. Update userMCQStats
       let newTotalCorrect = correctCount;
       let newTotalAnswered = totalQuestions;
       let newLecturesAttempted = 1;
@@ -170,7 +251,6 @@ export async function submitFirstAttempt(
     return { success: true, score: scorePercentage, correct: correctCount };
   } catch (error) {
     console.error("Submission failed: ", error);
-    addToOfflineQueue('first', { userId, lectureId, subjectId, answers, totalQuestions });
     return { success: true, score: scorePercentage, correct: correctCount, offline: true };
   }
 }

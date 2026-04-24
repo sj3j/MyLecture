@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { Lecture } from '../../types';
 import { Trophy, ArrowRight, RotateCcw, CheckCircle, XCircle, Search, Share2 } from 'lucide-react';
+import { auth } from '../../lib/firebase';
+import { enableAntiScreenshot, disableAntiScreenshot } from '../../services/antiCheatService';
 
 interface Props {
   lecture: Lecture;
@@ -17,6 +19,16 @@ interface Props {
 export default function MCQResultScreen({ lecture, result, isFirstAttempt, questionsCount, onReview, onRetake, onClose }: Props) {
   const { score, correct } = result;
   const [canShare, setCanShare] = useState(false);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (user) {
+      enableAntiScreenshot(user.uid, lecture.id);
+    }
+    return () => {
+      if (user) disableAntiScreenshot(user.uid, lecture.id);
+    };
+  }, [lecture.id]);
 
   useEffect(() => {
     // Check if share is available

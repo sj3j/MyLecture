@@ -6,6 +6,8 @@ import { Check, X, ChevronUp, ArrowUp, Loader2 } from 'lucide-react';
 import { trackEvent } from '../../lib/analytics';
 import { auth, db } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { lockSingleAnswer, getLockedAnswers } from '../../services/mcqAnswerService';
+import { enableAntiScreenshot, disableAntiScreenshot } from '../../services/antiCheatService';
 
 interface Props {
   lecture: Lecture;
@@ -20,10 +22,26 @@ type QuizState = {
 };
 
 type QuizAction = 
-  | { type: 'SELECT_ANSWER'; payload: { questionId: string; selected: string; isCorrect: boolean } };
+  | { type: 'SELECT_ANSWER'; payload: { questionId: string; selected: string; isCorrect: boolean } }
+  | { type: 'RESTORE_ANSWERS'; payload: Record<string, { selected: string; isCorrect: boolean }> };
 
 function quizReducer(state: QuizState, action: QuizAction): QuizState {
   switch (action.type) {
+    case 'RESTORE_ANSWERS': {
+      const restored = { ...state.answers };
+      let restoredCount = state.answeredCount;
+      Object.keys(action.payload).forEach(qId => {
+         if (!restored[qId]?.answered) {
+           restored[qId] = {
+             selected: action.payload[qId].selected,
+             isCorrect: action.payload[qId].isCorrect,
+             answered: true
+           };
+           restoredCount++;
+         }
+      });
+      return { answers: restored, answeredCount: restoredCount };
+    }
     case 'SELECT_ANSWER': {
       if (state.answers[action.payload.questionId]?.answered) return state; 
       
@@ -61,7 +79,22 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
   const questionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    // Check if it's a retake
+    const user = auth.currentUser;
+    if (user) {
+      enableAntiScreenshot(user.uid, lecture.id, () => {
+        alert("تم اكتشاف محاولة تصوير. هذا مخالف. قد يؤدي تكرار هذا للفصل.");
+      });
+    }
+
+    return () => {
+      if (user) {
+        disableAntiScreenshot(user.uid, lecture.id);
+      }
+    };
+  }, [lecture.id]);
+
+  useEffect(() => {
+    // Check if it's a retake and fetch locked answers if it's the first attempt
     const checkAttempt = async () => {
       const user = auth.currentUser;
       if (!user) return;
@@ -72,6 +105,11 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
           setIsRetake(true);
         } else {
           setIsRetake(false);
+          // Fetch existing locked answers for partial attempt
+          const locked = await getLockedAnswers(user.uid, lecture.id);
+          if (Object.keys(locked).length > 0) {
+            dispatch({ type: 'RESTORE_ANSWERS', payload: locked });
+          }
         }
       } catch (e) {
         setIsRetake(false);
@@ -82,11 +120,34 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
 
   const allAnswered = state.answeredCount === questions.length;
 
-  const handleSelect = (questionId: string, choiceLabel: string, expectedAnswer: string, index: number) => {
-    if (state.answers[questionId]?.answered) return;
+  const [loadingQuestionId, setLoadingQuestionId] = useState<string | null>(null);
+
+  const handleSelect = async (questionId: string, choiceLabel: string, expectedAnswer: string, index: number) => {
+    if (state.answers[questionId]?.answered || loadingQuestionId) return;
     
-    const isCorrect = choiceLabel === expectedAnswer;
+    let isCorrect = choiceLabel === expectedAnswer;
     
+    // Only lock per-question for the first attempt
+    if (isRetake === false) {
+      setLoadingQuestionId(questionId);
+      const user = auth.currentUser;
+      const questionData = questions.find(q => q.id === questionId);
+      const res = await lockSingleAnswer(
+        user?.uid || '',
+        lecture.id,
+        questionId,
+        choiceLabel,
+        isCorrect,
+        questionData?.explanation || '',
+        expectedAnswer
+      );
+      setLoadingQuestionId(null);
+      // In case server overrides correct status
+      if (res && res.isCorrect !== undefined) {
+        isCorrect = res.isCorrect;
+      }
+    }
+
     // Analytics
     trackEvent('mcq_question_answered', { questionId, isCorrect });
     
@@ -224,7 +285,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
                 </div>
                 
                 {/* Stem */}
-                <h3 className="text-[17px] sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed mb-5" dir="auto">
+                <h3 className="text-[17px] sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed mb-5 select-none" dir="auto" onContextMenu={(e) => e.preventDefault()}>
                   {question.stemFormat === 'except' && <span className="inline-block px-1.5 py-0.5 mr-2 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-xs font-black rounded uppercase">Except</span>}
                   {question.stemFormat === 'regarding' && <span className="inline-block px-1.5 py-0.5 mr-2 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-xs font-black rounded uppercase">Regarding</span>}
                   {question.stem}
@@ -237,10 +298,12 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
                       <ChoiceRow 
                         label="True" text="صحيح" expected={question.correctAnswer} 
                         isAnswered={isAnswered} answerState={answerState} 
+                        isLoading={loadingQuestionId === question.id}
                         onSelect={() => handleSelect(question.id, 'True', question.correctAnswer, index)} />
                       <ChoiceRow 
                         label="False" text="خطأ" expected={question.correctAnswer} 
                         isAnswered={isAnswered} answerState={answerState} 
+                        isLoading={loadingQuestionId === question.id}
                         onSelect={() => handleSelect(question.id, 'False', question.correctAnswer, index)} />
                     </>
                   ) : (
@@ -248,6 +311,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
                       <ChoiceRow 
                         key={c.label} label={c.label} text={c.text} expected={question.correctAnswer}
                         isAnswered={isAnswered} answerState={answerState}
+                        isLoading={loadingQuestionId === question.id}
                         onSelect={() => handleSelect(question.id, c.label, question.correctAnswer, index)}
                       />
                     ))
@@ -376,7 +440,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
 }
 
 // Sub-component for individual choices
-function ChoiceRow({ label, text, expected, isAnswered, answerState, onSelect }: any) {
+function ChoiceRow({ label, text, expected, isAnswered, answerState, onSelect, isLoading }: any) {
   const isSelected = answerState?.selected === label;
   const isCorrectOption = expected === label;
   
@@ -400,14 +464,14 @@ function ChoiceRow({ label, text, expected, isAnswered, answerState, onSelect }:
 
   return (
     <motion.button
-      whileTap={!isAnswered ? { scale: 0.97 } : {}}
+      whileTap={!isAnswered && !isLoading ? { scale: 0.97 } : {}}
       onClick={onSelect}
-      disabled={isAnswered}
+      disabled={isAnswered || isLoading}
       className={`w-full relative text-left rounded-xl transition-all overflow-hidden border ${
         isAnswered 
           ? (isCorrectOption ? 'border-green-200 dark:border-green-800' : isSelected ? 'border-red-200 dark:border-red-800' : 'border-transparent')
           : 'border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-700/50'
-      }`}
+      } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
       dir="auto"
     >
       {/* Background fill for Telegram style */}
@@ -422,19 +486,21 @@ function ChoiceRow({ label, text, expected, isAnswered, answerState, onSelect }:
       
       <div className="relative z-10 p-3 sm:p-4 flex items-center gap-3">
         {!isAnswered ? (
-           <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-zinc-600 flex-shrink-0" />
+           <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-zinc-600 flex-shrink-0 flex items-center justify-center">
+             {isLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
+           </div>
         ) : (
            <div className="w-5 flex items-center justify-center font-bold text-sm flex-shrink-0">
              {isCorrectOption ? '100%' : isSelected ? '100%' : '0%'}
            </div>
         )}
         
-        <div className="flex-1 text-sm sm:text-base font-medium text-slate-700 dark:text-slate-200 pr-2">
+        <div className="flex-1 text-sm sm:text-base font-medium text-slate-700 dark:text-slate-200 pr-2 select-none" onContextMenu={(e) => e.preventDefault()}>
           {text}
         </div>
         
         {isAnswered && suffix && (
-          <div className="flex-shrink-0 flex items-center justify-center bg-white/50 dark:bg-black/20 rounded-full p-0.5">
+          <div className="flex-shrink-0 flex items-center justify-center bg-white/50 dark:bg-black/20 rounded-full p-0.5 select-none text-xl lg:text-lg text-lg">
             {suffix}
           </div>
         )}

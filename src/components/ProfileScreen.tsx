@@ -4,7 +4,7 @@ import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText } from 'lucide-react';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -491,6 +491,26 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             >
               <HardDrive className="w-5 h-5" />
               {isRtl ? 'إدارة السعيّات والدرجات' : 'Manage Grades'}
+            </button>
+          )}
+
+          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-admin-bank'))}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors mt-4"
+            >
+              <FileText className="w-5 h-5" />
+              {isRtl ? 'إدارة بنك الأسئلة' : 'Manage Question Bank'}
+            </button>
+          )}
+
+          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-anti-cheat-board'))}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors mt-4"
+            >
+              <Shield className="w-5 h-5" />
+              {isRtl ? 'مراقبة الغش (MCQ)' : 'MCQ Anti-Cheat'}
             </button>
           )}
 

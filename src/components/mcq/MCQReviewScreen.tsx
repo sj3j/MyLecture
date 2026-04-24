@@ -1,17 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { MCQQuestion } from '../../types/mcq.types';
 import { ArrowRight, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { auth } from '../../lib/firebase';
+import { enableAntiScreenshot, disableAntiScreenshot } from '../../services/antiCheatService';
 
 interface Props {
   questions: MCQQuestion[];
   answers: Record<string, { selected: string, isCorrect: boolean }>;
   onBack: () => void;
+  lectureId: string;
 }
 
-export default function MCQReviewScreen({ questions, answers, onBack }: Props) {
+export default function MCQReviewScreen({ questions, answers, onBack, lectureId }: Props) {
   const [filter, setFilter] = useState<'all' | 'correct' | 'incorrect'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (user && lectureId) {
+      enableAntiScreenshot(user.uid, lectureId);
+    }
+    return () => {
+      if (user && lectureId) disableAntiScreenshot(user.uid, lectureId);
+    };
+  }, [lectureId]);
 
   const filteredQuestions = questions.filter(q => {
     if (filter === 'all') return true;
@@ -67,7 +80,7 @@ export default function MCQReviewScreen({ questions, answers, onBack }: Props) {
                  {ans?.isCorrect ? <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> : <X className="w-5 h-5 text-red-500 flex-shrink-0" />}
               </div>
 
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4" dir="auto">{q.stem}</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 select-none" dir="auto" onContextMenu={(e) => e.preventDefault()}>{q.stem}</h3>
 
               <div className="space-y-2 mb-4">
                 {/* Only show selected and correct answers to save space */}

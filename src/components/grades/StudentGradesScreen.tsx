@@ -3,6 +3,7 @@ import { Award, Target, Trophy, Clock, Search, X } from 'lucide-react';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { StudentDegree } from '../../types/grades.types';
+import { CATEGORIES, TRANSLATIONS } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 export interface StudentGradesScreenProps {
@@ -35,6 +36,46 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
 
   const filteredDegrees = degrees.filter(d => 
     d.examName.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const groupedDegrees = filteredDegrees.reduce((acc, degree) => {
+    const mat = degree.material || 'other';
+    if (!acc[mat]) acc[mat] = [];
+    acc[mat].push(degree);
+    return acc;
+  }, {} as Record<string, StudentDegree[]>);
+
+  const renderDegreeCard = (degree: StudentDegree) => (
+    <div key={degree.id} className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      
+      <div className="flex items-start justify-between mb-4">
+        <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl flex items-center justify-center">
+          <Award className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+        </div>
+        {degree.createdAt && (
+          <div className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-zinc-500">
+            <Clock className="w-3 h-3" />
+            {new Date((degree.createdAt as any)?.toDate ? (degree.createdAt as any).toDate() : degree.createdAt).toLocaleDateString('ar-EG')}
+          </div>
+        )}
+      </div>
+      
+      <h3 className="font-bold text-gray-900 dark:text-white mb-1 line-clamp-1">{degree.examName}</h3>
+      <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">النتيجة المعتمدة</p>
+      
+      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 flex items-center justify-between border border-gray-100 dark:border-zinc-700/50">
+        <span className="text-sm font-medium text-gray-600 dark:text-zinc-400 flex items-center gap-2">
+          <Target className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> الدرجة:
+        </span>
+        <div className="text-xl font-black text-gray-900 dark:text-white font-mono flex items-baseline gap-1" dir="ltr">
+          <span>{degree.degree}</span>
+          {degree.maxDegree && (
+            <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {degree.maxDegree}</span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -84,39 +125,25 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
           <p className="text-gray-500 dark:text-zinc-400">ستظهر السعيّات والنتائج هنا بمجرد اعتمادها من الإدارة.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-          {filteredDegrees.map(degree => (
-            <div key={degree.id} className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl flex items-center justify-center">
-                  <Award className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                {degree.createdAt && (
-                  <div className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-zinc-500">
-                    <Clock className="w-3 h-3" />
-                    {new Date((degree.createdAt as any)?.toDate ? (degree.createdAt as any).toDate() : degree.createdAt).toLocaleDateString('ar-EG')}
-                  </div>
-                )}
-              </div>
-              
-              <h3 className="font-bold text-gray-900 dark:text-white mb-1 line-clamp-1">{degree.examName}</h3>
-              <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">النتيجة المعتمدة</p>
-              
-              <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 flex items-center justify-between border border-gray-100 dark:border-zinc-700/50">
-                <span className="text-sm font-medium text-gray-600 dark:text-zinc-400 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> الدرجة:
-                </span>
-                <div className="text-xl font-black text-gray-900 dark:text-white font-mono flex items-baseline gap-1" dir="ltr">
-                  <span>{degree.degree}</span>
-                  {degree.maxDegree && (
-                    <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {degree.maxDegree}</span>
-                  )}
+        <div className="space-y-8">
+          {Object.entries(groupedDegrees).map(([material, matDegrees]) => {
+            const materialName = material === 'other' ? 'أخرى' : 
+              (CATEGORIES.find(c => c.value === material)?.labelKey 
+                ? TRANSLATIONS.ar[CATEGORIES.find(c => c.value === material)!.labelKey as keyof typeof TRANSLATIONS.ar] 
+                : material);
+                
+            return (
+              <div key={material}>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <div className="w-2 h-6 bg-emerald-500 rounded-full"></div>
+                  {materialName}
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  {matDegrees.map(degree => renderDegreeCard(degree))}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
             </div>

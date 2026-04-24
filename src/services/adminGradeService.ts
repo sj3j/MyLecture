@@ -6,7 +6,8 @@ import { GradeBatch, MatchedResult } from '../types/grades.types';
 export async function confirmDegreeBatchClient(
   examName: string,
   confirmedResults: MatchedResult[],
-  maxDegree?: number | string
+  maxDegree?: number | string,
+  material?: string
 ) {
   const user = auth.currentUser;
   if (!user) throw new Error("يجب تسجيل الدخول");
@@ -42,6 +43,7 @@ export async function confirmDegreeBatchClient(
             createdAt: serverTimestamp()
           };
           if (maxDegree) degreeData.maxDegree = maxDegree;
+          if (material) degreeData.material = material;
 
           firestoreBatch.set(degreeRef, degreeData);
           saved++;
@@ -67,6 +69,7 @@ export async function confirmDegreeBatchClient(
           }
         };
         if (maxDegree) batchDocData.maxDegree = maxDegree;
+        if (material) batchDocData.material = material;
         firestoreBatch.set(batchRef, batchDocData);
       }
 
@@ -91,6 +94,7 @@ export async function confirmDegreeBatchClient(
         }
       };
       if (maxDegree) emptyBatchData.maxDegree = maxDegree;
+      if (material) emptyBatchData.material = material;
       firestoreBatch.set(batchRef, emptyBatchData);
       await firestoreBatch.commit();
     }

@@ -1,6 +1,7 @@
 export interface GradeBatch {
   id: string;
   examName: string;
+  material?: string;
   maxDegree?: number | string;
   createdAt: string;
   createdBy: string;
@@ -26,6 +27,7 @@ export interface MatchedResult {
 export interface StudentDegree {
   id: string; // usually same as batchId or combined
   examName: string;
+  material?: string;
   degree: number | string;
   maxDegree?: number | string;
   batchId: string;

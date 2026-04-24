@@ -9,7 +9,9 @@ import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
 import StudentManagement from './components/StudentManagement';
 import AdminGradesScreen from './components/grades/AdminGradesScreen';
+import AdminQuestionBankScreen from './components/questionBank/AdminQuestionBankScreen';
 import StudentGradesScreen from './components/grades/StudentGradesScreen';
+import AntiCheatDashboard from './components/AntiCheatDashboard';
 import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
@@ -64,7 +66,20 @@ export default function App() {
   const [showAdminManage, setShowAdminManage] = useState(false);
   const [showStudentManage, setShowStudentManage] = useState(false);
   const [showAdminGrades, setShowAdminGrades] = useState(false);
+  const [showAdminBank, setShowAdminBank] = useState(false);
+  const [showAntiCheat, setShowAntiCheat] = useState(false);
   const [showStudentGrades, setShowStudentGrades] = useState(false);
+
+  useEffect(() => {
+    const handleOpenAntiCheat = () => setShowAntiCheat(true);
+    const handleOpenBank = () => setShowAdminBank(true);
+    window.addEventListener('open-anti-cheat-board', handleOpenAntiCheat);
+    window.addEventListener('open-admin-bank', handleOpenBank);
+    return () => {
+      window.removeEventListener('open-anti-cheat-board', handleOpenAntiCheat);
+      window.removeEventListener('open-admin-bank', handleOpenBank);
+    };
+  }, []);
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [mcqLecture, setMcqLecture] = useState<Lecture | null>(null);
@@ -400,7 +415,7 @@ export default function App() {
 
 
 
-  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showStudentGrades || (mcqLecture !== null);
+  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || (mcqLecture !== null);
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 pb-20 font-sans transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -467,6 +482,8 @@ export default function App() {
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
       <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} />
+      <AdminQuestionBankScreen isOpen={showAdminBank} onClose={() => setShowAdminBank(false)} lang={lang} />
+      <AntiCheatDashboard isOpen={showAntiCheat} onClose={() => setShowAntiCheat(false)} lang={lang} />
       <StudentGradesScreen isOpen={showStudentGrades} onClose={() => setShowStudentGrades(false)} />
       
       {mcqLecture && user && (

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save, Undo } from 'lucide-react';
 import { collection, query, getDocs, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
-import { UserProfile } from '../../types';
+import { UserProfile, CATEGORIES, TRANSLATIONS } from '../../types';
 import { parseGradeFile, ParsedRow } from '../../services/gradeFileParser';
 import { matchGradesToStudents } from '../../services/fuzzyMatchingService';
 import { MatchedResult, GradeBatch } from '../../types/grades.types';
@@ -21,6 +21,7 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
 
   // Upload/Review State
   const [examName, setExamName] = useState('');
+  const [material, setMaterial] = useState('');
   const [maxDegree, setMaxDegree] = useState('100');
   const [isParsing, setIsParsing] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
@@ -115,6 +116,11 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
       setErrorMsg("يرجى إدخال اسم الاختبار/السعي أولاً");
       return;
     }
+    
+    if (!material) {
+      setErrorMsg("يرجى اختيار المادة الدراسية");
+      return;
+    }
 
     setErrorMsg('');
     setIsParsing(true);
@@ -176,9 +182,10 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
     if (!matchedResults.length) return;
     setIsSaving(true);
     try {
-       await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100);
+       await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material);
        setMatchedResults([]);
        setExamName('');
+       setMaterial('');
        setMaxDegree('100');
        setTab('history');
     } catch (err: any) {
@@ -277,6 +284,22 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white"
                   />
                 </div>
+              </div>
+
+              <div className="max-w-md mx-auto mb-8 text-right">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">المادة الدراسية *</label>
+                <select
+                  value={material}
+                  onChange={(e) => setMaterial(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white appearance-none"
+                >
+                  <option value="" disabled>اختر المادة الدراسية...</option>
+                  {CATEGORIES.map(c => (
+                    <option key={c.value} value={c.value}>
+                      {TRANSLATIONS.ar[c.labelKey]}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="max-w-md mx-auto relative group">
@@ -430,7 +453,14 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
             batches.map(batch => (
               <div key={batch.id} className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{batch.examName}</h3>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                    {batch.examName}
+                    {batch.material && (
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        {TRANSLATIONS.ar[CATEGORIES.find(c => c.value === batch.material)?.labelKey as keyof typeof TRANSLATIONS.ar] || batch.material}
+                      </span>
+                    )}
+                  </h3>
                   <div className="flex gap-4 mt-2 text-sm text-gray-500 dark:text-zinc-400">
                     <span>التاريخ: {batch.createdAt?.toDate ? new Date(batch.createdAt.toDate()).toLocaleDateString('ar-EG') : 'الآن'}</span>
                     <span>الطلاب المقيمين: {batch.stats.matched}</span>
