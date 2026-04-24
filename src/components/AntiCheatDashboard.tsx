@@ -14,11 +14,29 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [lecturesMap, setLecturesMap] = useState<Record<string, string>>({});
+  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
 
   const fetchLogs = async () => {
     setLoading(true);
     setErrorMsg('');
     try {
+      // Fetch lectures for mapping
+      const lecturesSnap = await getDocs(collection(db, 'lectures'));
+      const lMap: Record<string, string> = {};
+      lecturesSnap.forEach(d => {
+        lMap[d.id] = d.data().title;
+      });
+      setLecturesMap(lMap);
+
+      // Fetch users for mapping
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const uMap: Record<string, string> = {};
+      usersSnap.forEach(d => {
+        uMap[d.id] = d.data().name || d.data().email || d.id;
+      });
+      setUsersMap(uMap);
+
       const q = query(collection(db, 'antiCheatLogs'), orderBy('timestamp', 'desc'));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -140,10 +158,10 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                              <UserX className="w-4 h-4 text-slate-500" />
-                             <span className="font-bold text-slate-900 dark:text-white">{group.userId}</span>
+                             <span className="font-bold text-slate-900 dark:text-white">{usersMap[group.userId] || group.userId}</span>
                              <span className="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 rounded text-xs font-bold">⚠️ مشبوه</span>
                           </div>
-                          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">المحاضرة: {group.lectureId}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">المحاضرة: {lecturesMap[group.lectureId] || group.lectureId}</p>
                           <p className="text-xs text-slate-400 mt-1">آخر نشاط: {group.latestTimestamp.toLocaleString('ar-EG')}</p>
                         </div>
                       </div>

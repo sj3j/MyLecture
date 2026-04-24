@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, query, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { X, Save } from 'lucide-react';
@@ -42,9 +43,13 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
 
   useEffect(() => {
     if (isOpen) {
-      getDocs(query(collection(db, 'lectures'))).then(snap => {
-        setLectures(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      });
+      getDocs(query(collection(db, 'lectures')))
+        .then(snap => {
+          setLectures(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        })
+        .catch(err => {
+          console.error("Failed to fetch lectures", err);
+        });
     }
   }, [isOpen]);
 
@@ -112,7 +117,7 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-zinc-800 bg-sky-50 dark:bg-sky-900/10">
@@ -301,6 +306,7 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
            </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
