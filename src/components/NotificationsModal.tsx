@@ -67,27 +67,45 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
         });
 
         // 2. Fetch Chat Mentions (last 200 messages)
-        const chatQuery = query(collection(db, 'chat_messages'), orderBy('createdAt', 'desc'), limit(200));
+        const chatQuery = query(collection(db, 'chat_messages'), orderBy('timestamp', 'desc'), limit(200));
         const chatSnap = await getDocs(chatQuery);
         
-        const possibleMentions = [`@${user.name}`, `@${user.originalName}`, `@${user.email.split('@')[0]}`];
+        const normalizeArabic = (text: string) => {
+          if (!text) return '';
+          return text.toLowerCase()
+                     .replace(/[أإآا]/g, 'ا')
+                     .replace(/ة/g, 'ه')
+                     .replace(/ى/g, 'ي');
+        };
+
+        const firstName = user.name ? user.name.split(' ')[0] : '';
+        const originalFirstName = user.originalName ? user.originalName.split(' ')[0] : '';
+        const possibleMentions = [
+          `@${normalizeArabic(user.name)}`, 
+          `@${normalizeArabic(user.originalName)}`, 
+          `@${normalizeArabic(user.email.split('@')[0])}`,
+          `@${normalizeArabic(firstName)}`,
+          `@${normalizeArabic(originalFirstName)}`
+        ].filter(m => m && m.length > 2); // Exclude very short or empty mentions like "@"
         
         chatSnap.forEach(docSnap => {
           const msg = docSnap.data();
           if (!msg.text) return;
           
-          const text = msg.text.toLowerCase();
-          const isMentioned = possibleMentions.some(m => m && text.includes(m.toLowerCase()));
+          const text = normalizeArabic(msg.text);
+          const isMentioned = possibleMentions.some(m => text.includes(m));
+          const isRepliedTo = msg.replyTo?.senderId === user.uid || 
+                              (msg.replyTo?.senderName && (msg.replyTo.senderName === user.name || msg.replyTo.senderName === user.originalName));
           
-          if (isMentioned && msg.senderId !== user.uid && msg.senderEmail !== user.email) {
+          if ((isMentioned || isRepliedTo) && msg.senderId !== user.uid && msg.senderEmail !== user.email) {
             items.push({
               id: docSnap.id,
               type: 'mention',
-              title: isRtl ? ' إشارة جديدة' : 'New Mention',
+              title: isRepliedTo ? (isRtl ? 'رد جديد' : 'New Reply') : (isRtl ? 'إشارة جديدة' : 'New Mention'),
               body: isRtl 
-                ? `قام ${msg.senderName} بذكرك في المحادثة: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`
-                : `${msg.senderName} mentioned you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`,
-              createdAt: msg.createdAt,
+                ? (isRepliedTo ? `قام ${msg.senderName} بالرد عليك: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"` : `قام ${msg.senderName} بذكرك في المحادثة: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`)
+                : (isRepliedTo ? `${msg.senderName} replied to you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"` : `${msg.senderName} mentioned you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`),
+              createdAt: msg.timestamp?.toMillis ? msg.timestamp.toMillis() : Date.now(),
               icon: MessageSquare
             });
           }

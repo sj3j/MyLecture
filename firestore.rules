@@ -166,7 +166,7 @@ service cloud.firestore {
       allow create: if hasAccess() && (isAdminOrModerator() || get(/databases/$(database)/documents/chat_settings/config).data.isChatOpen == true);
       allow update: if isAdminOrModerator() || (
         hasAccess() && 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'viewers']) &&
         // Ensure they only add/remove their own email/id (basic check)
         request.auth.token.email != null
       );

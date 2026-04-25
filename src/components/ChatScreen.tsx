@@ -76,7 +76,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   });
   
   const [newMessage, setNewMessage] = useState('');
-  const [replyingTo, setReplyingTo] = useState<{messageId: string; senderName: string; text: string} | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{messageId: string; senderName: string; text: string; senderId?: string} | null>(null);
   const [showReactionPickerFor, setShowReactionPickerFor] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -1081,7 +1081,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                           </div>
 
                           <button 
-                            onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50) }); setShowReactionPickerFor(null); }} 
+                            onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50), senderId: msg.senderId }); setShowReactionPickerFor(null); }} 
                             className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
                           >
                             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
