@@ -90,8 +90,8 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
         }
       }
     } catch (error: any) {
-      console.error('Error signing in:', error);
       if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+        console.error('Error signing in:', error);
         if (!externalError) {
           setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
         }

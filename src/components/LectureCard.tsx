@@ -20,7 +20,7 @@ interface LectureCardProps {
   key?: string;
 }
 
-export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat, onOpenMCQ }: LectureCardProps) {
+export default React.memo(function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat, onOpenMCQ }: LectureCardProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [showPreview, setShowPreview] = useState(false);
@@ -510,4 +510,4 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
       </AnimatePresence>
     </>
   );
-}
+});

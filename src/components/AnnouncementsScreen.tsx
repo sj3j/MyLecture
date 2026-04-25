@@ -58,6 +58,25 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const postsEndRef = useRef<HTMLDivElement>(null);
+  const hasInitiallyScrolled = useRef(false);
+  const prevPostsLength = useRef(0);
+
+  const scrollToBottom = () => {
+    postsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+  };
+
+  useEffect(() => {
+    if (!isLoading && posts.length > 0) {
+      if (!hasInitiallyScrolled.current || posts.length > prevPostsLength.current) {
+        setTimeout(() => {
+          scrollToBottom();
+          hasInitiallyScrolled.current = true;
+        }, 100);
+      }
+      prevPostsLength.current = posts.length;
+    }
+  }, [posts.length, isLoading]);
 
   const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageAnnouncements !== false;
 
@@ -75,7 +94,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       }
     });
 
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const newPosts: TelegramPost[] = [];
@@ -328,7 +347,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 sticky top-20 z-30 bg-stone-50/90 dark:bg-zinc-900/90 backdrop-blur pb-2">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
           <Megaphone className="w-6 h-6 text-sky-600 dark:text-sky-400" />
           {t.navAnnouncements}
@@ -637,6 +656,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
             </div>
             );
           })}
+          <div ref={postsEndRef} className="h-px" />
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-20 px-4 text-center">

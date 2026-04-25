@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit, updateDoc } from 'firebase/firestore';
@@ -271,17 +271,18 @@ export default function App() {
   useEffect(() => {
     if (user && user.uid) {
       const today = new Date().toISOString().split('T')[0];
-      const lastActive = user.lastActiveDate;
+      const lastActiveStr = user.lastActiveDate;
+      const lastActiveDay = lastActiveStr?.split('T')[0];
       
-      if (lastActive !== today) {
+      if (lastActiveDay !== today) {
         let newStreak = user.streakCount || 0;
         
-        if (lastActive) {
+        if (lastActiveDay) {
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const yesterdayStr = yesterday.toISOString().split('T')[0];
           
-          if (lastActive === yesterdayStr) {
+          if (lastActiveDay === yesterdayStr) {
             newStreak += 1;
           } else {
             newStreak = 1;
@@ -292,7 +293,7 @@ export default function App() {
         
         // Update in Firestore
         updateDoc(doc(db, 'users', user.uid), {
-          lastActiveDate: today,
+          lastActiveDate: new Date().toISOString(),
           streakCount: newStreak
         }).catch(console.error);
       }
@@ -379,6 +380,11 @@ export default function App() {
     return sortOrder === 'asc' ? comparison : -comparison;
   });
 
+  const handleNavigateToChat = useCallback(() => setCurrentTab('chat'), []);
+  const handleEditLecture = useCallback((l: Lecture) => { setLectureToEdit(l); setShowUpload(true); }, []);
+  const handleOpenMCQ = useCallback((l: Lecture) => setMcqLecture(l), []);
+  const handleCloseUpload = useCallback(() => { setShowUpload(false); setLectureToEdit(null); }, []);
+
   if (!isAuthReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
@@ -450,71 +456,34 @@ export default function App() {
         </div>
       )}
 
-      <AnimatePresence mode="wait">
-        {['home', 'lectures', 'weekly', 'records', 'leaderboard', 'downloads'].includes(currentTab) && (
-          <motion.div
-            key="home"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
-          >
-            <HomeScreen 
-              user={user} 
-              lang={lang} 
-              lectures={lectures} 
-              searchQuery={searchQuery} 
-              isLoading={isLoading} 
-              onNavigateToChat={() => setCurrentTab('chat')} 
-              onEdit={(l) => { setLectureToEdit(l); setShowUpload(true); }} 
-              onOpenMCQ={(l) => setMcqLecture(l)}
-              setShowStudentManage={setShowStudentManage} 
-              setShowAdminManage={setShowAdminManage} 
-              initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
-            />
-          </motion.div>
-        )}
-        {currentTab === 'announcements' && (
-          <motion.div
-            key="announcements"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
-          >
-            <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} onOpenMCQ={(l) => setMcqLecture(l)} />
-          </motion.div>
-        )}
-        {currentTab === 'chat' && (
-          <motion.div
-            key="chat"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
-          >
-            <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} />
-          </motion.div>
-        )}
-        {currentTab === 'profile' && (
-          <motion.div
-            key="profile"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
-          >
-            <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {['home', 'lectures', 'weekly', 'records', 'leaderboard', 'downloads'].includes(currentTab) && (
+        <HomeScreen 
+          user={user} 
+          lang={lang} 
+          lectures={lectures} 
+          searchQuery={searchQuery} 
+          isLoading={isLoading} 
+          onNavigateToChat={handleNavigateToChat} 
+          onEdit={handleEditLecture} 
+          onOpenMCQ={handleOpenMCQ}
+          setShowStudentManage={setShowStudentManage} 
+          setShowAdminManage={setShowAdminManage} 
+          initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
+        />
+      )}
+      {currentTab === 'announcements' && (
+        <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={handleNavigateToChat} onOpenMCQ={handleOpenMCQ} />
+      )}
+      {currentTab === 'chat' && (
+        <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} />
+      )}
+      {currentTab === 'profile' && (
+        <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
+      )}
 
       <AdminUpload 
         isOpen={showUpload} 
-        onClose={() => {
-          setShowUpload(false);
-          setLectureToEdit(null);
-        }} 
+        onClose={handleCloseUpload} 
         lang={lang} 
         lectureToEdit={lectureToEdit}
         user={user}

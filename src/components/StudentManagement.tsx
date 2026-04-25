@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { hashPassword } from '../lib/hash';
 
 interface StudentManagementProps {
   isOpen: boolean;
@@ -91,7 +92,6 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         throw new Error(isRtl ? 'الطالب موجود بالفعل' : 'Student already exists');
       }
 
-      const { hashPassword } = await import('../lib/hash');
       const hashedPassword = await hashPassword(password);
 
       await setDoc(doc(db, 'students', emailLower), {
@@ -173,7 +173,6 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       };
 
       if (editPassword) {
-        const { hashPassword } = await import('../lib/hash');
         updateData.password = await hashPassword(editPassword);
       }
 
@@ -223,7 +222,6 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
       }
 
-      const { hashPassword } = await import('../lib/hash');
       const batch = writeBatch(db);
       let count = 0;
 

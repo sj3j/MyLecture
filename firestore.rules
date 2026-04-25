@@ -151,6 +151,11 @@ service cloud.firestore {
       allow create, update, delete: if isAdminOrModerator();
     }
     
+    match /chat_presence/{userId} {
+      allow read: if hasAccess();
+      allow write: if isOwner(userId);
+    }
+
     match /chat_settings/{documentId} {
       allow read: if hasAccess();
       allow write: if isAdminOrModerator();

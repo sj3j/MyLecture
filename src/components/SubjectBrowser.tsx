@@ -250,26 +250,25 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
               </button>
             </div>
           </div>
-          <motion.div layout className={`grid gap-2 sm:gap-4 md:gap-6 px-2 sm:px-0 ${
+          <div className={`grid gap-2 sm:gap-4 md:gap-6 px-2 sm:px-0 ${
             gridColumns === 1 ? 'grid-cols-1' : 
             gridColumns === 2 ? 'grid-cols-2' : 
             'grid-cols-3'
           }`}>
             <AnimatePresence mode="popLayout">
-              {filteredLectures.map((lecture, index) => (
+              {filteredLectures.map((lecture) => (
                 <motion.div
-                  layout
                   key={lecture.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.3, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1] }} 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }} 
                 >
                   <LectureCard lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
                 </motion.div>
               ))}
             </AnimatePresence>
-          </motion.div>
+          </div>
         </>
       )}
     </div>

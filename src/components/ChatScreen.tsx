@@ -83,7 +83,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const [isSending, setIsSending] = useState(false);
   const [lastMessageTime, setLastMessageTime] = useState<number>(0);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
-  const [onlineStudentsCount, setOnlineStudentsCount] = useState<number>(0);
+  const [onlineStudentsCount, setOnlineStudentsCount] = useState<number>(1);
   const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [isBundling, setIsBundling] = useState(false);
@@ -102,8 +102,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   
   // Mention states
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
-  const [mentionUsersPool, setMentionUsersPool] = useState<{name: string, photoUrl?: string}[]>([]);
-  const [mentionFiltered, setMentionFiltered] = useState<{name: string, photoUrl?: string}[]>([]);
+  const [mentionUsersPool, setMentionUsersPool] = useState<{name: string, photoUrl?: string, hidePhoto?: boolean}[]>([]);
+  const [mentionFiltered, setMentionFiltered] = useState<{name: string, photoUrl?: string, hidePhoto?: boolean}[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,15 +132,12 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   // Presence Tracking
   useEffect(() => {
     if (!user) return;
-    const presenceRef = doc(db, 'chat_presence', user.uid);
     const updatePresence = () => {
-      setDoc(presenceRef, { lastSeen: Date.now() }, { merge: true }).catch(() => {});
+      updateDoc(doc(db, 'users', user.uid), { lastActiveDate: new Date().toISOString() }).catch(() => {});
     };
     updatePresence();
     const interval = setInterval(updatePresence, 60000); // Heartbeat every 1 minute
     
-    // Remove presence ungracefully handles by polling timestamp query,
-    // but we can try to clean up when they leave:
     return () => {
       clearInterval(interval);
     };
@@ -150,20 +147,25 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   useEffect(() => {
     const fetchCounts = async () => {
       try {
+        const threeMinsAgo = new Date(Date.now() - 3 * 60000).toISOString();
         const qOnline = query(
-          collection(db, 'chat_presence'),
-          where('lastSeen', '>', Date.now() - 3 * 60000) // Active in last 3 mins
+          collection(db, 'users'),
+          where('lastActiveDate', '>', threeMinsAgo) // Active in last 3 mins
         );
         const onlineSnapshot = await getCountFromServer(qOnline);
-        setOnlineStudentsCount(onlineSnapshot.data().count);
+        // Ensure it's at least 1 since the current user is online viewing the chat
+        setOnlineStudentsCount(Math.max(1, onlineSnapshot.data().count));
       } catch (err) {
-        // Handle error silently, e.g., index or network issues
+        // Fallback to 1 if the query fails (e.g. index issue or permission issue)
+        setOnlineStudentsCount(prev => Math.max(1, prev));
       }
     };
     
     const fetchTotalUsers = async () => {
       try {
-        const totalUsersSnapshot = await getCountFromServer(collection(db, 'users'));
+        // Only count students
+        const qStudents = query(collection(db, 'users'), where('role', '==', 'student'));
+        const totalUsersSnapshot = await getCountFromServer(qStudents);
         setTotalUsersCount(totalUsersSnapshot.data().count);
       } catch (err) {
       }
@@ -305,8 +307,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       if (mentionUsersPool.length === 0) {
         getDocs(collection(db, 'users')).then(snap => {
           const users = snap.docs.map(d => ({
-            name: d.data().name as string,
-            photoUrl: d.data().photoUrl as string | undefined
+            name: (d.data().hideNameOnLeaderboard ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : d.data().name) as string,
+            photoUrl: d.data().photoUrl as string | undefined,
+            hidePhoto: (d.data().hidePhotoOnLeaderboard || d.data().hideNameOnLeaderboard) as boolean | undefined
           }));
           setMentionUsersPool(users);
           setMentionFiltered(users.filter(u => u.name && u.name.toLowerCase().startsWith(search)).slice(0, 5));
@@ -670,7 +673,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               {totalUsersCount > 0 && (
                 <>
                   <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                  <span>{totalUsersCount} {isRtl ? 'عضو' : 'members'}</span>
+                  <span>{totalUsersCount} {isRtl ? 'طالب' : 'students'}</span>
                 </>
               )}
               {onlineStudentsCount >= 0 && (
@@ -865,7 +868,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                         '?'
                       ) : (
                         msg.senderAvatar?.startsWith('http') ? (
-                          <img src={msg.senderAvatar} alt={msg.senderName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <img src={msg.senderAvatar} alt={msg.senderName} loading="lazy" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
                         )
@@ -927,7 +930,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                         <div className="mb-2">
                           {msg.fileType === 'image' ? (
                             <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                              <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
+                              <img src={msg.fileUrl} alt="attachment" loading="lazy" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
                             </a>
                           ) : (
                             <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); forceDownload(msg.fileUrl!, msg.fileName || 'Attachment'); }} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white hover:bg-sky-700/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800/80'} transition-colors text-left`}>
@@ -1132,7 +1135,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                       className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
                     >
                       <div className="w-8 h-8 bg-sky-100 dark:bg-sky-900 overflow-hidden font-bold text-sky-600 dark:text-sky-400 rounded-full flex items-center justify-center shrink-0">
-                        {u.photoUrl ? <img src={u.photoUrl} alt={u.name} className="w-full h-full object-cover" /> : u.name?.charAt(0)}
+                        {u.photoUrl && !u.hidePhoto ? <img src={u.photoUrl} alt={u.name} className="w-full h-full object-cover" /> : (u.name?.charAt(0) || '?')}
                       </div>
                       <span className="font-medium text-sm text-slate-700 dark:text-slate-200">{u.name}</span>
                     </button>
