@@ -716,6 +716,50 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
      return isRtl ? `${activeTypers[0]} و ${activeTypers.length - 1} آخرين يكتبون...` : `${activeTypers[0]} and ${activeTypers.length - 1} others are typing...`;
   };
 
+  // Intersection Observer for auto-marking messages as viewed
+  useEffect(() => {
+    if (!user || !user.email) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const msgId = entry.target.getAttribute('data-message-id');
+            const msgSender = entry.target.getAttribute('data-sender-id');
+            
+            if (msgId && msgSender && msgSender !== user.uid) {
+              const msg = messages.find(m => m.id === msgId);
+              if (msg) {
+                const viewersList = msg.reactions?.viewers || msg.viewers || [];
+                if (!viewersList.includes(user.email!)) {
+                  // Optimistic UI Update for viewing
+                  setMessages(prev => prev.map(m => {
+                    if (m.id === msgId) {
+                      const newReactions = { ...m.reactions, like: m.reactions?.like || [], heart: m.reactions?.heart || [], thanks: m.reactions?.thanks || [] };
+                      newReactions.viewers = [...(m.reactions?.viewers || m.viewers || []), user.email!];
+                      return { ...m, reactions: newReactions };
+                    }
+                    return m;
+                  }));
+                  // Update Firestore
+                  updateDoc(doc(db, 'chat_messages', msgId), {
+                    'reactions.viewers': arrayUnion(user.email)
+                  }).catch(() => {});
+                }
+              }
+            }
+          }
+        });
+      },
+      { threshold: 0.5 }
+    );
+
+    const messageElements = document.querySelectorAll('.message-bubble-container');
+    messageElements.forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, [messages, user, db]);
+
   return (
     <div className="flex flex-col fixed top-[64px] bottom-[88px] sm:bottom-[96px] left-0 right-0 z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header and Pinned Message */}
@@ -925,7 +969,13 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
             const showHeader = !isMe && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMins > 5);
 
             return (
-              <div id={`msg-${msg.id}`} key={msg.id} className={`flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}>
+              <div 
+                id={`msg-${msg.id}`} 
+                key={msg.id} 
+                data-message-id={msg.id}
+                data-sender-id={msg.senderId}
+                className={`message-bubble-container flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}
+              >
                 <div className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                   
                   {/* Avatar */}
@@ -961,24 +1011,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                       }`}
                       onClick={() => {
                         setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
-                        if (!isMe && user && user.email) {
-                          const viewersList = msg.reactions?.viewers || msg.viewers || [];
-                          if (!viewersList.includes(user.email)) {
-                            // Optimistic UI Update for viewing
-                            setMessages(prev => prev.map(m => {
-                              if (m.id === msg.id) {
-                                const newReactions = { ...m.reactions, like: m.reactions?.like || [], heart: m.reactions?.heart || [], thanks: m.reactions?.thanks || [] };
-                                newReactions.viewers = [...(m.reactions?.viewers || m.viewers || []), user.email!];
-                                return { ...m, reactions: newReactions };
-                              }
-                              return m;
-                            }));
-                            // Update Firestore
-                            updateDoc(doc(db, 'chat_messages', msg.id), {
-                              'reactions.viewers': arrayUnion(user.email)
-                            }).catch(() => {});
-                          }
-                        }
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();

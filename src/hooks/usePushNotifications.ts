@@ -38,12 +38,7 @@ export function usePushNotifications(user: UserProfile | null) {
   const requestPermission = async () => {
     if (!user) return;
     try {
-      const msg = await messaging();
-      if (!msg) {
-        console.log('Firebase Messaging is not supported in this browser.');
-        return;
-      }
-
+      // Request permission FIRST before any async operations to preserve user gesture context
       const perm = await Notification.requestPermission();
       setPermission(perm);
 
@@ -61,13 +56,15 @@ export function usePushNotifications(user: UserProfile | null) {
   useEffect(() => {
     if (!user) return;
 
+    let unsubscribe: (() => void) | undefined;
+
     const setupForegroundListener = async () => {
       try {
         const msg = await messaging();
         if (!msg) return;
 
-        // Handle foreground messages
-        onMessage(msg, (payload) => {
+        // Handle foreground messages and save the unsubscribe function
+        unsubscribe = onMessage(msg, (payload) => {
           console.log('Message received. ', payload);
           
           // Show a native notification even when the app is in the foreground
@@ -95,7 +92,13 @@ export function usePushNotifications(user: UserProfile | null) {
     if (permission === 'granted') {
       requestToken();
     }
-  }, [user, permission]);
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user?.uid, permission]);
 
   return { permission, requestPermission };
 }
