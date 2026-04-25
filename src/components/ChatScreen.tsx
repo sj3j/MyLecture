@@ -24,6 +24,7 @@ interface ChatMessage {
     like: string[];
     heart: string[];
     thanks: string[];
+    viewers?: string[];
   };
   viewers?: string[];
   isAnonymous?: boolean;
@@ -961,10 +962,20 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                       onClick={() => {
                         setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
                         if (!isMe && user && user.email) {
-                          if (!msg.viewers?.includes(user.email)) {
-                            // Update Firestore using arrayUnion
+                          const viewersList = msg.reactions?.viewers || msg.viewers || [];
+                          if (!viewersList.includes(user.email)) {
+                            // Optimistic UI Update for viewing
+                            setMessages(prev => prev.map(m => {
+                              if (m.id === msg.id) {
+                                const newReactions = { ...m.reactions, like: m.reactions?.like || [], heart: m.reactions?.heart || [], thanks: m.reactions?.thanks || [] };
+                                newReactions.viewers = [...(m.reactions?.viewers || m.viewers || []), user.email!];
+                                return { ...m, reactions: newReactions };
+                              }
+                              return m;
+                            }));
+                            // Update Firestore
                             updateDoc(doc(db, 'chat_messages', msg.id), {
-                              viewers: arrayUnion(user.email)
+                              'reactions.viewers': arrayUnion(user.email)
                             }).catch(() => {});
                           }
                         }
@@ -1077,7 +1088,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                           
                           <div className="flex items-center gap-1 px-2 text-xs font-bold text-slate-500 dark:text-slate-400 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l" title={isRtl ? 'المشاهدات' : 'Views'}>
                             <Eye className="w-4 h-4" />
-                            <span>{msg.viewers ? msg.viewers.length : 0}</span>
+                            <span>{(msg.reactions?.viewers || msg.viewers) ? (msg.reactions?.viewers || msg.viewers)!.length : 0}</span>
                           </div>
 
                           <button 

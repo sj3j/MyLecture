@@ -13,6 +13,28 @@ export function usePushNotifications(user: UserProfile | null) {
     }
   }, []);
 
+  const requestToken = async () => {
+    if (!user) return;
+    try {
+      const msg = await messaging();
+      if (!msg) return;
+      
+      const registration = await navigator.serviceWorker.ready;
+      const currentToken = await getToken(msg, {
+        serviceWorkerRegistration: registration,
+      });
+
+      if (currentToken) {
+        await setDoc(doc(db, 'fcm_tokens', user.uid), {
+          token: currentToken,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const requestPermission = async () => {
     if (!user) return;
     try {
@@ -27,24 +49,7 @@ export function usePushNotifications(user: UserProfile | null) {
 
       if (perm === 'granted') {
         console.log('Notification permission granted.');
-        
-        // Get the service worker registration registered by vite-plugin-pwa
-        const registration = await navigator.serviceWorker.ready;
-
-        const currentToken = await getToken(msg, {
-          serviceWorkerRegistration: registration,
-          // vapidKey: 'YOUR_PUBLIC_VAPID_KEY_HERE'
-        });
-
-        if (currentToken) {
-          console.log('FCM Token retrieved:', currentToken);
-          await setDoc(doc(db, 'fcm_tokens', user.uid), {
-            token: currentToken,
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        } else {
-          console.log('No registration token available. Request permission to generate one.');
-        }
+        await requestToken();
       } else {
         console.log('Notification permission denied.');
       }
@@ -88,7 +93,7 @@ export function usePushNotifications(user: UserProfile | null) {
 
     // If permission is already granted, refresh the token
     if (permission === 'granted') {
-      requestPermission();
+      requestToken();
     }
   }, [user, permission]);
 
