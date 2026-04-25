@@ -59,7 +59,8 @@ export default async function handler(req: Request, res: Response) {
 
     // 4. Save Bundle to Firebase Storage
     // Use default bucket or env bucket
-    const bucket = admin.storage().bucket();
+    const bucketName = process.env.FIREBASE_STORAGE_BUCKET || (process.env.FIREBASE_PROJECT_ID + '.appspot.com');
+    const bucket = admin.storage().bucket(bucketName);
     const file = bucket.file('bundles/chat-bundle.bundle');
     
     await file.save(bundleBuffer, {
@@ -69,9 +70,15 @@ export default async function handler(req: Request, res: Response) {
       }
     });
 
-    // Make public so frontend can fetch it simply or use signed URL
-    await file.makePublic();
-    const publicUrl = file.publicUrl();
+    let publicUrl = '';
+    try {
+      await file.makePublic();
+      publicUrl = file.publicUrl();
+    } catch (e) {
+      console.warn('Could not make file public. Generating signed URL instead.', e);
+      const urls = await file.getSignedUrl({ action: 'read', expires: '01-01-2099' });
+      publicUrl = urls[0];
+    }
 
     await db.collection('chat_settings').doc('config').set({
       latestBundleUrl: publicUrl,

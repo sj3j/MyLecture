@@ -59,7 +59,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-zinc-800 bg-sky-50 dark:bg-sky-900/10">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">📚 بنك الأسئلة</h2>
@@ -69,8 +69,8 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
         </div>
 
         <div className="p-4 border-b border-gray-100 dark:border-zinc-800">
-           <div className="flex flex-col sm:flex-row gap-4 mb-4">
-              <div className="flex-1 relative">
+           <div className="flex flex-col sm:flex-row flex-wrap gap-4 mb-4">
+              <div className="flex-1 relative min-w-[200px]">
                 <Search className="w-5 h-5 absolute right-3 top-2.5 text-gray-400" />
                 <input 
                   type="text" 
@@ -80,6 +80,12 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
                   onChange={e => setSearchTerm(e.target.value)}
                 />
               </div>
+              <button 
+                onClick={() => window.dispatchEvent(new CustomEvent('open-anti-cheat-board'))} 
+                className="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 dark:hover:bg-red-900/40 dark:text-red-400 px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 border border-red-200 dark:border-red-800"
+              >
+                <ShieldAlert className="w-5 h-5" /> مراقبة الغش (MCQ)
+              </button>
               <button 
                 onClick={() => setIsAddOpen(true)} 
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2"

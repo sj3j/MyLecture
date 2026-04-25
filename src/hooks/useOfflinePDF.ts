@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 const CACHE_NAME = 'offline-pdfs-v1';
 
-export function useOfflinePDF(pdfUrl: string | undefined) {
+export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -15,17 +15,19 @@ export function useOfflinePDF(pdfUrl: string | undefined) {
       const response = await cache.match(pdfUrl);
       if (response) {
         setIsDownloaded(true);
+        if (lectureId) localStorage.setItem(`pdf_${lectureId}`, 'true');
         // Create a blob URL for offline viewing
         const blob = await response.blob();
         setOfflineUrl(URL.createObjectURL(blob));
       } else {
         setIsDownloaded(false);
         setOfflineUrl(null);
+        if (lectureId) localStorage.removeItem(`pdf_${lectureId}`);
       }
     } catch (error) {
       console.error('Error checking cache:', error);
     }
-  }, [pdfUrl]);
+  }, [pdfUrl, lectureId]);
 
   useEffect(() => {
     checkIsDownloaded();
@@ -116,6 +118,7 @@ export function useOfflinePDF(pdfUrl: string | undefined) {
       }
       setIsDownloaded(false);
       setOfflineUrl(null);
+      if (lectureId) localStorage.removeItem(`pdf_${lectureId}`);
     } catch (error) {
       console.error('Error removing PDF from cache:', error);
     }

@@ -103,6 +103,9 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
     }
   };
 
+  const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+  const isMasterAdminUser = !!user?.email && adminEmails.includes(user.email.toLowerCase());
+
   const handleLogout = async () => {
     await signOut(auth);
   };
@@ -464,7 +467,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </div>
           </div>
 
-          {(user?.role === 'admin' && user?.permissions?.manageAdmins !== false) && setShowAdminManage && (
+          {(user?.role === 'admin' && (user?.email === 'almdrydyl335@gmail.com' || user?.email === 'fenix.admin@gmail.com')) && setShowAdminManage && (
             <button
               onClick={() => setShowAdminManage(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors mt-4"
@@ -484,33 +487,13 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && setShowAdminGrades && (
+          {isMasterAdminUser && setShowAdminGrades && (
             <button
               onClick={() => setShowAdminGrades(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-fuchsia-50 dark:bg-fuchsia-900/30 text-fuchsia-600 dark:text-fuchsia-400 rounded-xl font-bold hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/50 transition-colors mt-4"
             >
               <HardDrive className="w-5 h-5" />
               {isRtl ? 'إدارة السعيّات والدرجات' : 'Manage Grades'}
-            </button>
-          )}
-
-          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && (
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-admin-bank'))}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors mt-4"
-            >
-              <FileText className="w-5 h-5" />
-              {isRtl ? 'إدارة بنك الأسئلة' : 'Manage Question Bank'}
-            </button>
-          )}
-
-          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && (
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-anti-cheat-board'))}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors mt-4"
-            >
-              <Shield className="w-5 h-5" />
-              {isRtl ? 'مراقبة الغش (MCQ)' : 'MCQ Anti-Cheat'}
             </button>
           )}
 

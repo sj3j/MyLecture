@@ -116,7 +116,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         
         <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-zinc-800 bg-red-50 dark:bg-red-900/10">

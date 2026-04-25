@@ -182,19 +182,47 @@ async function startServer() {
       bundle.add('chat-bundle-query', querySnapshot);
       const bundleBuffer = await bundle.build();
   
-      // Assume Firebase Admin Storage is enabled or initialized
-      const bucket = admin.storage().bucket(process.env.FIREBASE_STORAGE_BUCKET || (process.env.FIREBASE_PROJECT_ID + '.appspot.com'));
-      const file = bucket.file('bundles/chat-bundle.bundle');
+      let publicUrl = '';
       
-      await file.save(bundleBuffer, {
-        metadata: {
-          contentType: 'application/octet-stream',
-          cacheControl: 'public, max-age=3600'
+      if (s3Client && process.env.R2_BUCKET_NAME) {
+        // Upload to R2
+        const objectKey = 'bundles/chat-bundle.bundle';
+        const command = new PutObjectCommand({
+          Bucket: process.env.R2_BUCKET_NAME,
+          Key: objectKey,
+          ContentType: 'application/octet-stream',
+          Body: bundleBuffer
+        });
+        await s3Client.send(command);
+        const publicUrlBase = process.env.R2_PUBLIC_URL || "";
+        publicUrl = publicUrlBase.endsWith('/') 
+          ? `${publicUrlBase}${objectKey}` 
+          : `${publicUrlBase}/${objectKey}`;
+      } else {
+        // Fallback to Firebase Storage
+        const bucketName = process.env.FIREBASE_STORAGE_BUCKET || (process.env.FIREBASE_PROJECT_ID + '.appspot.com');
+        const bucket = admin.storage().bucket(bucketName);
+        const file = bucket.file('bundles/chat-bundle.bundle');
+        
+        await file.save(bundleBuffer, {
+          metadata: {
+            contentType: 'application/octet-stream',
+            cacheControl: 'public, max-age=3600'
+          }
+        });
+    
+        try {
+          await file.makePublic();
+          publicUrl = file.publicUrl();
+        } catch (e) {
+          console.warn('Could not make file public (possibly uniform bucket access). Generating signed URL instead.', e);
+          const urls = await file.getSignedUrl({
+            action: 'read',
+            expires: '01-01-2099'
+          });
+          publicUrl = urls[0];
         }
-      });
-  
-      await file.makePublic();
-      const publicUrl = file.publicUrl();
+      }
 
       // Save the bundle link to Firestore config
       await db.collection('chat_settings').doc('config').set({

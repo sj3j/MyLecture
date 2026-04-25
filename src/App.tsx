@@ -450,24 +450,64 @@ export default function App() {
         </div>
       )}
 
-      {['home', 'lectures', 'weekly', 'records', 'leaderboard'].includes(currentTab) && (
-        <HomeScreen 
-          user={user} 
-          lang={lang} 
-          lectures={lectures} 
-          searchQuery={searchQuery} 
-          isLoading={isLoading} 
-          onNavigateToChat={() => setCurrentTab('chat')} 
-          onEdit={(l) => { setLectureToEdit(l); setShowUpload(true); }} 
-          onOpenMCQ={(l) => setMcqLecture(l)}
-          setShowStudentManage={setShowStudentManage} 
-          setShowAdminManage={setShowAdminManage} 
-          initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
-        />
-      )}
-      {currentTab === 'announcements' && <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} onOpenMCQ={(l) => setMcqLecture(l)} />}
-      {currentTab === 'chat' && <ChatScreen user={user} lang={lang} />}
-      {currentTab === 'profile' && <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />}
+      <AnimatePresence mode="wait">
+        {['home', 'lectures', 'weekly', 'records', 'leaderboard', 'downloads'].includes(currentTab) && (
+          <motion.div
+            key="home"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25 }}
+          >
+            <HomeScreen 
+              user={user} 
+              lang={lang} 
+              lectures={lectures} 
+              searchQuery={searchQuery} 
+              isLoading={isLoading} 
+              onNavigateToChat={() => setCurrentTab('chat')} 
+              onEdit={(l) => { setLectureToEdit(l); setShowUpload(true); }} 
+              onOpenMCQ={(l) => setMcqLecture(l)}
+              setShowStudentManage={setShowStudentManage} 
+              setShowAdminManage={setShowAdminManage} 
+              initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
+            />
+          </motion.div>
+        )}
+        {currentTab === 'announcements' && (
+          <motion.div
+            key="announcements"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25 }}
+          >
+            <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={() => setCurrentTab('chat')} onOpenMCQ={(l) => setMcqLecture(l)} />
+          </motion.div>
+        )}
+        {currentTab === 'chat' && (
+          <motion.div
+            key="chat"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25 }}
+          >
+            <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} />
+          </motion.div>
+        )}
+        {currentTab === 'profile' && (
+          <motion.div
+            key="profile"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25 }}
+          >
+            <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AdminUpload 
         isOpen={showUpload} 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Lecture } from '../../types';
-import { BookOpen, X, Clock, Trophy, AlertTriangle, ArrowRight, ArrowLeft, Bot, Library } from 'lucide-react';
+import { Lecture, UserProfile } from '../../types';
+import { BookOpen, X, Clock, Trophy, AlertTriangle, ArrowRight, ArrowLeft, Bot, Library, ShieldAlert, FileText } from 'lucide-react';
 import { getLockedAnswers } from '../../services/mcqAnswerService';
 import { BankQuestion } from '../../types/questionBank.types';
 
@@ -12,10 +12,11 @@ interface Props {
   firstAttemptStatus: { hasCompleted: boolean; score: number | null };
   onStart: () => void;
   onClose: () => void;
+  user: UserProfile | null;
   userId: string;
 }
 
-export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions = [], firstAttemptStatus, onStart, onClose, userId }: Props) {
+export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions = [], firstAttemptStatus, onStart, onClose, user, userId }: Props) {
   const isRetake = firstAttemptStatus.hasCompleted;
   const [lockedCount, setLockedCount] = useState(0);
 
@@ -151,6 +152,28 @@ export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions 
             </div>
           </div>
         )}
+
+        {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && (
+          <div className="bg-white dark:bg-zinc-800 rounded-2xl p-5 border border-slate-100 dark:border-zinc-700 shadow-sm mb-6">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4">أدوات المشرف</h2>
+            
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-admin-bank'))}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors mb-3"
+            >
+              <FileText className="w-5 h-5" />
+              إدارة بنك الأسئلة
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-anti-cheat-board'))}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+            >
+              <ShieldAlert className="w-5 h-5" />
+              مراقبة الغش (MCQ)
+            </button>
+          </div>
+        )}
+
       </div>
     </motion.div>
   );

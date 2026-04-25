@@ -17,6 +17,11 @@ export interface AdminGradesScreenProps {
 export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreenProps) {
   const isMasterAdmin = auth.currentUser?.email === 'almdrydyl335@gmail.com' || auth.currentUser?.email === 'fenix.admin@gmail.com';
   
+  if (isOpen && !isMasterAdmin) {
+    onClose();
+    return null;
+  }
+  
   const [tab, setTab] = useState<'upload' | 'history'>('upload');
 
   // Upload/Review State

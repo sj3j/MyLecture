@@ -153,14 +153,17 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
 
       {filteredRecords.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-          {filteredRecords.map(record => (
-            <motion.div
-              layout
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              key={record.id}
-              className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col relative"
-            >
+          <AnimatePresence mode="popLayout">
+            {filteredRecords.map((record, index) => (
+              <motion.div
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.3, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1] }} 
+                key={record.id}
+                className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col relative hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+              >
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -294,6 +297,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
               </div>
             </motion.div>
           ))}
+          </AnimatePresence>
         </div>
       ) : (
         <div className="text-center py-20 px-4">

@@ -31,7 +31,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
   const categoryLabel = categoryData ? t[categoryData.labelKey] : lecture.category;
   const date = lecture.createdAt?.toDate ? lecture.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently;
 
-  const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl);
+  const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl, lecture.id);
 
   const isStudied = user?.studied?.includes(lecture.id) || false;
   const mcqStatusItem = useMCQStatus(lecture.id, user);
@@ -78,9 +78,8 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
     <>
       <motion.div
         layout
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
+        whileHover={{ y: -4, transition: { duration: 0.2 } }}
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
         className="group bg-white dark:bg-zinc-800 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-zinc-700 p-2.5 sm:p-5 hover:shadow-xl hover:shadow-slate-200 dark:hover:shadow-none hover:border-sky-200 dark:hover:border-sky-500/50 transition-all duration-300 flex flex-col h-full"
         dir={isRtl ? 'rtl' : 'ltr'}
       >
@@ -143,14 +142,27 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
         </div>
 
         <div className="mt-3 sm:mt-6 flex flex-wrap gap-1 sm:gap-2">
-          <button
-            onClick={() => setShowPreview(true)}
-            className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-4 sm:py-2.5 bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 rounded-lg sm:rounded-xl hover:bg-slate-800 dark:hover:bg-white transition-colors text-[11px] sm:text-sm font-semibold min-w-0 sm:min-w-[100px]"
-          >
-            <Maximize2 className="w-3 h-3 sm:w-4 sm:h-4" />
-            {t.view}
-          </button>
-          
+          {isDownloaded && offlineUrl ? (
+            <button
+               onClick={(e) => {
+                 e.preventDefault();
+                 window.open(offlineUrl, '_blank');
+               }}
+               className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-4 sm:py-2.5 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-zinc-900 rounded-lg sm:rounded-xl hover:bg-emerald-700 dark:hover:bg-emerald-600 transition-colors text-[11px] sm:text-sm font-semibold min-w-0 sm:min-w-[100px]"
+            >
+              <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
+              {isRtl ? 'عرض بلا إنترنت' : 'Offline View'}
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowPreview(true)}
+              className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-4 sm:py-2.5 bg-slate-900 dark:bg-stone-100 text-white dark:text-zinc-900 rounded-lg sm:rounded-xl hover:bg-slate-800 dark:hover:bg-white transition-colors text-[11px] sm:text-sm font-semibold min-w-0 sm:min-w-[100px]"
+            >
+              <Maximize2 className="w-3 h-3 sm:w-4 sm:h-4" />
+              {t.view}
+            </button>
+          )}
+
           {user && (
             <>
               <button
@@ -161,53 +173,6 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                 <CheckCircle2 className={`w-3.5 h-3.5 sm:w-5 sm:h-5 ${isStudied ? 'fill-current' : ''}`} />
               </button>
             </>
-          )}
-
-          {isDownloaded ? (
-            <button
-              onClick={async () => {
-                await removePDF();
-                if (onRemoveDownload) onRemoveDownload(lecture);
-              }}
-              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg sm:rounded-xl hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors group"
-              title={isRtl ? 'حذف من التنزيلات' : 'Remove offline download'}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 group-hover:hidden" />
-              <CloudOff className="w-3.5 h-3.5 sm:w-5 sm:h-5 hidden group-hover:block" />
-            </button>
-          ) : (
-            <button
-              onClick={downloadPDF}
-              disabled={isDownloading}
-              className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-lg sm:rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-100 relative overflow-hidden"
-              title={isRtl ? 'تنزيل للمشاهدة بدون إنترنت' : 'Download for offline viewing'}
-            >
-              {isDownloading ? (
-                <div className="relative w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                    <path
-                      className="text-sky-200 dark:text-sky-800/50"
-                      strokeWidth="4"
-                      stroke="currentColor"
-                      fill="none"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                    />
-                    <path
-                      className="text-sky-600 dark:text-sky-400 transition-all duration-300"
-                      strokeDasharray={`${downloadProgress}, 100`}
-                      strokeWidth="4"
-                      strokeLinecap="round"
-                      stroke="currentColor"
-                      fill="none"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                    />
-                  </svg>
-                  <span className="absolute text-[6px] sm:text-[8px] font-bold leading-none">{downloadProgress}</span>
-                </div>
-              ) : (
-                <CloudDownload className="w-3.5 h-3.5 sm:w-5 sm:h-5 relative z-10" />
-              )}
-            </button>
           )}
 
           <button
@@ -261,7 +226,7 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
             </button>
           )}
 
-          {user && (
+          {user && (!lecture.version || lecture.version === 'original') && (
             <button
               onClick={() => onOpenMCQ && onOpenMCQ(lecture)}
               className={`inline-flex items-center justify-center p-1.5 sm:px-3 sm:py-2.5 bg-white dark:bg-zinc-800 border-2 rounded-lg sm:rounded-xl transition-all gap-1.5 ${
@@ -446,7 +411,44 @@ export default function LectureCard({ lecture, lang, user, onEdit, onRemoveDownl
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
                       {isRtl ? 'تفاصيل المحاضرة' : 'Lecture Details'}
                     </h3>
-                    <div className="flex items-center gap-2">
+                     <div className="flex items-center flex-wrap gap-2">
+                       {isDownloaded ? (
+                         <button
+                           onClick={async () => {
+                             await removePDF();
+                             if (onRemoveDownload) onRemoveDownload(lecture);
+                           }}
+                           className="inline-flex items-center justify-center px-4 py-2 border-2 border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full font-bold hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 transition-colors group"
+                         >
+                           <CheckCircle2 className="w-4 h-4 group-hover:hidden" />
+                           <CloudOff className="w-4 h-4 hidden group-hover:block" />
+                           <span className="hidden sm:inline mx-1">{isRtl ? 'حذف من التنزيلات' : 'Remove Download'}</span>
+                         </button>
+                       ) : (
+                         <button
+                           onClick={downloadPDF}
+                           disabled={isDownloading}
+                           className="inline-flex items-center justify-center px-4 py-2 border-2 border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-full font-bold hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors disabled:opacity-100 relative overflow-hidden"
+                         >
+                           {isDownloading ? (
+                             <div className="flex items-center gap-2">
+                               <div className="relative w-4 h-4 flex items-center justify-center">
+                                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                   <path className="text-sky-200 dark:text-sky-800/50" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                   <path className="text-sky-600 dark:text-sky-400 transition-all duration-300" strokeDasharray={`${downloadProgress}, 100`} strokeWidth="4" strokeLinecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                 </svg>
+                                 <span className="absolute text-[6px] font-bold leading-none">{downloadProgress}</span>
+                               </div>
+                               <span className="hidden sm:inline text-xs">{isRtl ? 'جاري التحميل' : 'Downloading'}</span>
+                             </div>
+                           ) : (
+                             <>
+                               <CloudDownload className="w-4 h-4" />
+                               <span className="hidden sm:inline mx-1">{isRtl ? 'حفظ للمشاهدة بدون إنترنت' : 'Save Offline'}</span>
+                             </>
+                           )}
+                         </button>
+                       )}
                        <button
                          onClick={async (e) => {
                            e.preventDefault();

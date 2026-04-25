@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart, Image as ImageIcon, FileText, Link } from 'lucide-react';
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
+import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart, Image as ImageIcon, FileText, Link, Eye, Users } from 'lucide-react';
+import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot, getCountFromServer, setDoc } from 'firebase/firestore';
 import { db, storage } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { forceDownload } from '../lib/utils';
@@ -25,6 +25,7 @@ interface ChatMessage {
     heart: string[];
     thanks: string[];
   };
+  viewers?: string[];
   isAnonymous?: boolean;
   originalSenderName?: string;
   originalSenderExamCode?: string;
@@ -46,14 +47,20 @@ interface ChatSettings {
   closedMessage: string;
   latestBundleUrl?: string;
   allowAttachments?: boolean;
+  pinnedMessage?: {
+    id: string;
+    text: string;
+    senderName: string;
+  } | null;
 }
 
 interface ChatScreenProps {
   user: UserProfile | null;
   lang: Language;
+  setCurrentTab?: (tab: string) => void;
 }
 
-export default function ChatScreen({ user, lang }: ChatScreenProps) {
+export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageChat !== false;
@@ -76,6 +83,8 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const [isSending, setIsSending] = useState(false);
   const [lastMessageTime, setLastMessageTime] = useState<number>(0);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+  const [onlineStudentsCount, setOnlineStudentsCount] = useState<number>(0);
+  const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [isBundling, setIsBundling] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -90,6 +99,11 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [embeddedItem, setEmbeddedItem] = useState<ChatMessage['embeddedItem'] | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  
+  // Mention states
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null);
+  const [mentionUsersPool, setMentionUsersPool] = useState<{name: string, photoUrl?: string}[]>([]);
+  const [mentionFiltered, setMentionFiltered] = useState<{name: string, photoUrl?: string}[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -114,6 +128,52 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       return () => clearTimeout(timer);
     }
   }, [cooldownRemaining]);
+
+  // Presence Tracking
+  useEffect(() => {
+    if (!user) return;
+    const presenceRef = doc(db, 'chat_presence', user.uid);
+    const updatePresence = () => {
+      setDoc(presenceRef, { lastSeen: Date.now() }, { merge: true }).catch(() => {});
+    };
+    updatePresence();
+    const interval = setInterval(updatePresence, 60000); // Heartbeat every 1 minute
+    
+    // Remove presence ungracefully handles by polling timestamp query,
+    // but we can try to clean up when they leave:
+    return () => {
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  // Poll Online and Total Students Count
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const qOnline = query(
+          collection(db, 'chat_presence'),
+          where('lastSeen', '>', Date.now() - 3 * 60000) // Active in last 3 mins
+        );
+        const onlineSnapshot = await getCountFromServer(qOnline);
+        setOnlineStudentsCount(onlineSnapshot.data().count);
+      } catch (err) {
+        // Handle error silently, e.g., index or network issues
+      }
+    };
+    
+    const fetchTotalUsers = async () => {
+      try {
+        const totalUsersSnapshot = await getCountFromServer(collection(db, 'users'));
+        setTotalUsersCount(totalUsersSnapshot.data().count);
+      } catch (err) {
+      }
+    };
+    
+    fetchCounts();
+    fetchTotalUsers();
+    const interval = setInterval(fetchCounts, 15000); // Check every 15s
+    return () => clearInterval(interval);
+  }, []);
 
   // Load Settings
   const loadSettings = async () => {
@@ -234,6 +294,30 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       }
     }
   }, [user, settings.messageCooldown]);
+
+  // Mention handling
+  useEffect(() => {
+    const match = newMessage.match(/@([^\s]*)$/);
+    if (match) {
+      const search = match[1].toLowerCase();
+      setMentionSearch(search);
+      
+      if (mentionUsersPool.length === 0) {
+        getDocs(collection(db, 'users')).then(snap => {
+          const users = snap.docs.map(d => ({
+            name: d.data().name as string,
+            photoUrl: d.data().photoUrl as string | undefined
+          }));
+          setMentionUsersPool(users);
+          setMentionFiltered(users.filter(u => u.name && u.name.toLowerCase().startsWith(search)).slice(0, 5));
+        }).catch(() => {});
+      } else {
+        setMentionFiltered(mentionUsersPool.filter(u => u.name && u.name.toLowerCase().startsWith(search)).slice(0, 5));
+      }
+    } else {
+      setMentionSearch(null);
+    }
+  }, [newMessage, mentionUsersPool]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -551,10 +635,22 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
     }
   };
 
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const parts = text.split(/(@\S+)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('@')) {
+        return <span key={i} className="text-sky-600 dark:text-sky-400 font-bold bg-sky-100 dark:bg-sky-900/40 px-1 rounded mx-0.5 whitespace-nowrap">{part}</span>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative pb-16" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Header */}
-      <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 sticky top-0 z-30 flex justify-between items-center shadow-sm">
+      {/* Header and Pinned Message */}
+      <div className="sticky top-[64px] z-40 flex flex-col shadow-sm">
+        <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400">
@@ -569,8 +665,23 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           </div>
           <div>
             <h1 className="font-bold text-lg text-slate-800 dark:text-stone-100 leading-tight">شات الدفعة</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              {settings.isChatOpen ? (isRtl ? 'مفتوح للمناقشة' : 'Open for discussion') : (isRtl ? 'مغلق حالياً' : 'Currently closed')}
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 flex-wrap">
+              <span>{settings.isChatOpen ? (isRtl ? 'مفتوح' : 'Open') : (isRtl ? 'مغلق' : 'Closed')}</span>
+              {totalUsersCount > 0 && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                  <span>{totalUsersCount} {isRtl ? 'عضو' : 'members'}</span>
+                </>
+              )}
+              {onlineStudentsCount >= 0 && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                    <Users className="w-3 h-3" />
+                    <span>{onlineStudentsCount} {isRtl ? 'متصل' : 'online'}</span>
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -582,6 +693,39 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           >
             <Settings className="w-5 h-5" />
           </button>
+        )}
+        </div>
+
+        {/* Pinned Message */}
+        {settings.pinnedMessage && (
+          <div 
+            className="bg-white/95 backdrop-blur dark:bg-zinc-900/95 border-b border-slate-200 dark:border-zinc-800 p-2 sm:px-4 cursor-pointer flex items-center gap-2"
+            onClick={() => {
+              const el = document.getElementById(`msg-${settings.pinnedMessage!.id}`);
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
+          >
+            <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0">
+              📌
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400">{isRtl ? 'رسالة مثبتة' : 'Pinned Message'}</div>
+              <div className="text-sm text-slate-600 dark:text-slate-300 truncate">{settings.pinnedMessage.text}</div>
+            </div>
+            {isAdminOrModerator && (
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { pinnedMessage: null });
+                }}
+                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 transition-colors"
+                title={isRtl ? 'إلغاء التثبيت' : 'Unpin'}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -745,7 +889,17 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                           ? (msg.isAnonymous ? 'bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' : 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm') 
                           : (msg.isAnonymous ? 'bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50' : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700')
                       }`}
-                      onClick={() => setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id)}
+                      onClick={() => {
+                        setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
+                        if (!isMe && user && user.email) {
+                          if (!msg.viewers?.includes(user.email)) {
+                            // Update Firestore using arrayUnion
+                            updateDoc(doc(db, 'chat_messages', msg.id), {
+                              viewers: arrayUnion(user.email)
+                            }).catch(() => {});
+                          }
+                        }
+                      }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
@@ -785,20 +939,30 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                       )}
                       
                       {msg.embeddedItem && (
-                         <div onClick={(e) => e.stopPropagation()} className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}>
+                         <div 
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             if (setCurrentTab) {
+                               if (msg.embeddedItem!.type === 'lecture') setCurrentTab('lectures');
+                               else if (msg.embeddedItem!.type === 'record') setCurrentTab('records');
+                               else if (msg.embeddedItem!.type === 'announcement') setCurrentTab('announcements');
+                             }
+                           }} 
+                           className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 cursor-pointer hover:opacity-90 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}
+                         >
                            <div className="flex items-center gap-1.5 opacity-80 text-[10px] uppercase font-bold tracking-wider">
                               {msg.embeddedItem.type === 'lecture' && <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">Lecture</span>}
                               {msg.embeddedItem.type === 'record' && <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">Record</span>}
                               {msg.embeddedItem.type === 'announcement' && <span className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded">Announcement</span>}
                            </div>
-                           <a href={msg.embeddedItem.link || '#'} target="_blank" rel="noopener noreferrer" className="font-bold hover:underline line-clamp-2 text-sm">
+                           <div className="font-bold hover:underline line-clamp-2 text-sm">
                              {msg.embeddedItem.title}
-                           </a>
+                           </div>
                            {msg.embeddedItem.subtitle && <span className="text-xs opacity-70 truncate">{msg.embeddedItem.subtitle}</span>}
                          </div>
                       )}
 
-                      <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{msg.text}</p>
+                      <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{renderMessageText(msg.text)}</p>
                       
                       <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
                         <span className="text-[10px] font-medium">{timeStr}</span>
@@ -841,6 +1005,12 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                             <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
                             <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
                           </div>
+                          
+                          <div className="flex items-center gap-1 px-2 text-xs font-bold text-slate-500 dark:text-slate-400 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l" title={isRtl ? 'المشاهدات' : 'Views'}>
+                            <Eye className="w-4 h-4" />
+                            <span>{msg.viewers ? msg.viewers.length : 0}</span>
+                          </div>
+
                           <button 
                             onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50) }); setShowReactionPickerFor(null); }} 
                             className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
@@ -892,9 +1062,28 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
                             setMessageToDelete(msg.id);
                           }}
                           className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
+                          title={isRtl ? 'حذف الرسالة' : 'Delete'}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
+
+                        {isAdminOrModerator && (
+                          <button 
+                            onClick={() => {
+                              updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), {
+                                pinnedMessage: {
+                                  id: msg.id,
+                                  text: msg.text,
+                                  senderName: msg.senderName
+                                }
+                              });
+                            }}
+                            className="p-1.5 bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-400 rounded-full shadow-sm hover:scale-110"
+                            title={isRtl ? 'تثبيت الرسالة' : 'Pin Message'}
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+                          </button>
+                        )}
 
                         {isMasterAdmin && msg.isAnonymous && (
                           <button
@@ -917,7 +1106,7 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
       </div>
 
       {/* Input Area */}
-      <div className="bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-2 sm:p-4 pb-[max(env(safe-area-inset-bottom),1rem)] mt-auto z-20 relative">
+      <div className="bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-2 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+96px)] mt-auto sticky bottom-0 z-40">
         {!settings.isChatOpen && !isAdminOrModerator ? (
           <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
             <StopCircle className="w-5 h-5" />
@@ -925,53 +1114,80 @@ export default function ChatScreen({ user, lang }: ChatScreenProps) {
           </div>
         ) : (
           <div className="relative">
-            {replyingTo && (
-              <div className="absolute bottom-full left-0 right-0 mb-3 mx-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-start gap-2">
-                <div className="flex-1 overflow-hidden">
-                  <div className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-0.5">
-                    ↩ {isRtl ? 'رد على' : 'Replying to'} {replyingTo.senderName}
-                  </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 truncate" dir="auto">{replyingTo.text}</div>
-                </div>
-                <button type="button" onClick={() => setReplyingTo(null)} className="p-1 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-            
-            {/* Attachment Preview */}
-            {(attachmentFile || embeddedItem) && (
-              <div className="absolute bottom-full left-0 right-0 mb-3 mx-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-center justify-between">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  {attachmentType === 'image' && attachmentFile ? (
-                    <img src={URL.createObjectURL(attachmentFile)} alt="Preview" className="w-10 h-10 rounded object-cover" />
-                  ) : embeddedItem ? (
-                      <div className="flex items-center gap-2 p-1.5 bg-sky-50 dark:bg-sky-900/30 rounded border border-sky-100 dark:border-sky-800">
-                        <Link className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                        <div className="flex flex-col">
-                           <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{embeddedItem.title}</span>
-                           <span className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">{embeddedItem.type}</span>
-                        </div>
+            {/* Absolute popovers */}
+            <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 flex flex-col gap-2 z-50 pointer-events-none">
+              
+              {/* Mentions */}
+              {mentionSearch !== null && mentionFiltered.length > 0 && (
+                <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-lg overflow-hidden pointer-events-auto">
+                  {mentionFiltered.map(u => (
+                    <button
+                      key={u.name}
+                      type="button"
+                      onClick={() => {
+                        const newMsg = newMessage.replace(/@([^\s]*)$/, `@${u.name.replace(/\s+/g, '_')} `);
+                        setNewMessage(newMsg);
+                        setMentionSearch(null);
+                      }}
+                      className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
+                    >
+                      <div className="w-8 h-8 bg-sky-100 dark:bg-sky-900 overflow-hidden font-bold text-sky-600 dark:text-sky-400 rounded-full flex items-center justify-center shrink-0">
+                        {u.photoUrl ? <img src={u.photoUrl} alt={u.name} className="w-full h-full object-cover" /> : u.name?.charAt(0)}
                       </div>
-                  ) : (
-                    <div className="p-2 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-100 dark:border-zinc-700">
-                      <Paperclip className="w-5 h-5 text-sky-600" />
-                    </div>
-                  )}
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-                      {attachmentFile ? attachmentFile.name : embeddedItem?.title}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                       {attachmentFile ? `${(attachmentFile.size / 1024 / 1024).toFixed(2)} MB` : 'Embedded Media'}
-                    </span>
-                  </div>
+                      <span className="font-medium text-sm text-slate-700 dark:text-slate-200">{u.name}</span>
+                    </button>
+                  ))}
                 </div>
-                <button type="button" onClick={() => { setAttachmentFile(null); setEmbeddedItem(null); setAttachmentType(null); }} className="p-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 hover:bg-red-100 text-slate-500 hover:text-red-600 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+              )}
+
+              {replyingTo && (
+                <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-start gap-2 pointer-events-auto">
+                  <div className="flex-1 overflow-hidden">
+                    <div className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-0.5">
+                      ↩ {isRtl ? 'رد على' : 'Replying to'} {replyingTo.senderName}
+                    </div>
+                    <div className="text-sm text-slate-500 dark:text-slate-400 truncate" dir="auto">{replyingTo.text}</div>
+                  </div>
+                  <button type="button" onClick={() => setReplyingTo(null)} className="p-1 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              
+              {/* Attachment Preview */}
+              {(attachmentFile || embeddedItem) && (
+                <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-center justify-between pointer-events-auto">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    {attachmentType === 'image' && attachmentFile ? (
+                      <img src={URL.createObjectURL(attachmentFile)} alt="Preview" className="w-10 h-10 rounded object-cover" />
+                    ) : embeddedItem ? (
+                        <div className="flex items-center gap-2 p-1.5 bg-sky-50 dark:bg-sky-900/30 rounded border border-sky-100 dark:border-sky-800">
+                          <Link className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                          <div className="flex flex-col">
+                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{embeddedItem.title}</span>
+                             <span className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">{embeddedItem.type}</span>
+                          </div>
+                        </div>
+                    ) : (
+                      <div className="p-2 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-100 dark:border-zinc-700">
+                        <Paperclip className="w-5 h-5 text-sky-600" />
+                      </div>
+                    )}
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                        {attachmentFile ? attachmentFile.name : embeddedItem?.title}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                         {attachmentFile ? `${(attachmentFile.size / 1024 / 1024).toFixed(2)} MB` : 'Embedded Media'}
+                      </span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => { setAttachmentFile(null); setEmbeddedItem(null); setAttachmentType(null); }} className="p-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 hover:bg-red-100 text-slate-500 hover:text-red-600 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Attachment Menu Popup */}
             <AnimatePresence>

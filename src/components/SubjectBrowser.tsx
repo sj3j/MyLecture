@@ -166,9 +166,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
 
   const currentCategoryData = CATEGORIES.find(c => c.value === selectedCategory);
   const categoryLectures = lectures.filter(l => l.category === selectedCategory);
-  const filteredLectures = selectedType === 'both' 
-    ? categoryLectures 
-    : categoryLectures.filter(l => l.type === selectedType);
+  const filteredLectures = categoryLectures.filter(l => l.type === selectedType);
 
   // Sort by lecture number
   filteredLectures.sort((a, b) => (a.number || 0) - (b.number || 0));
@@ -207,16 +205,6 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
           }`}
         >
           {t.practical}
-        </button>
-        <button
-          onClick={() => setSelectedType('both' as any)}
-          className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all ${
-            selectedType === 'both' as any
-              ? 'bg-white dark:bg-zinc-700 text-sky-600 dark:text-sky-400 shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-          }`}
-        >
-          {isRtl ? 'نظري/عملي' : 'Both (Theory/Practical)'}
         </button>
       </div>
 
@@ -268,8 +256,17 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
             'grid-cols-3'
           }`}>
             <AnimatePresence mode="popLayout">
-              {filteredLectures.map(lecture => (
-                <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
+              {filteredLectures.map((lecture, index) => (
+                <motion.div
+                  layout
+                  key={lecture.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.3, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1] }} 
+                >
+                  <LectureCard lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
+                </motion.div>
               ))}
             </AnimatePresence>
           </motion.div>

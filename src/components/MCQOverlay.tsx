@@ -164,6 +164,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             firstAttemptStatus={firstAttemptStatus}
             onStart={handleStartQuiz}
             onClose={onClose}
+            user={user}
             userId={user.uid}
           />
         )}

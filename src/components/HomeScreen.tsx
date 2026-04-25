@@ -5,9 +5,9 @@ import SubjectBrowser from './SubjectBrowser';
 import WeeklyListScreen from './WeeklyListScreen';
 import RecordsScreen from './RecordsScreen';
 import LeaderboardTab from './LeaderboardTab';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
-type InnerTab = 'lectures' | 'weekly' | 'records' | 'leaderboard';
+type InnerTab = 'lectures' | 'weekly' | 'records' | 'leaderboard' | 'downloads';
 
 interface HomeScreenProps {
   user: UserProfile | null;
@@ -56,6 +56,7 @@ export default function HomeScreen({
     { id: 'weekly', label: isRtl ? 'واجبات الأسبوع' : 'Weekly Tasks' },
     { id: 'records', label: isRtl ? 'التسجيلات' : 'Records' },
     { id: 'lectures', label: isRtl ? 'المحاضرات' : 'Lectures' },
+    { id: 'downloads', label: isRtl ? 'التنزيلات المحفوظة' : 'Saved Downloads' },
     { id: 'leaderboard', label: isRtl ? '🏆 لوحة الصدارة' : '🏆 Leaderboard' }
   ];
 
@@ -115,21 +116,81 @@ export default function HomeScreen({
 
       {/* Content Area */}
       <div className="relative">
-        {activeTab === 'lectures' && (
-          <SubjectBrowser
-            lectures={lectures}
-            lang={lang}
-            user={user}
-            searchQuery={searchQuery}
-            isLoading={isLoading}
-            onNavigateToChat={onNavigateToChat}
-            onEdit={onEdit}
-            onOpenMCQ={onOpenMCQ}
-          />
-        )}
-        {activeTab === 'weekly' && <WeeklyListScreen user={user} lang={lang} />}
-        {activeTab === 'records' && <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} onNavigateToChat={onNavigateToChat} />}
-        {activeTab === 'leaderboard' && <LeaderboardTab user={user} lang={lang} />}
+        <AnimatePresence mode="wait">
+          {activeTab === 'lectures' && (
+            <motion.div
+              key="lectures"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <SubjectBrowser
+                lectures={lectures}
+                lang={lang}
+                user={user}
+                searchQuery={searchQuery}
+                isLoading={isLoading}
+                onNavigateToChat={onNavigateToChat}
+                onEdit={onEdit}
+                onOpenMCQ={onOpenMCQ}
+              />
+            </motion.div>
+          )}
+          {activeTab === 'downloads' && (
+            <motion.div
+              key="downloads"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <SubjectBrowser
+                lectures={lectures.filter(l => Boolean(localStorage.getItem(`pdf_${l.id}`)))}
+                lang={lang}
+                user={user}
+                searchQuery={searchQuery}
+                isLoading={isLoading}
+                onNavigateToChat={onNavigateToChat}
+                onEdit={onEdit}
+                onOpenMCQ={onOpenMCQ}
+              />
+            </motion.div>
+          )}
+          {activeTab === 'weekly' && (
+            <motion.div
+              key="weekly"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <WeeklyListScreen user={user} lang={lang} />
+            </motion.div>
+          )}
+          {activeTab === 'records' && (
+            <motion.div
+              key="records"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <RecordsScreen user={user} lang={lang} searchQuery={searchQuery} onNavigateToChat={onNavigateToChat} />
+            </motion.div>
+          )}
+          {activeTab === 'leaderboard' && (
+            <motion.div
+              key="leaderboard"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <LeaderboardTab user={user} lang={lang} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </main>
   );
