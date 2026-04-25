@@ -50,7 +50,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
         }
 
         // 0. Fetch Bank Questions
-        const bq = await getQuestionsForLecture(lecture.id, lecture.subjectId || '');
+        const bq = await getQuestionsForLecture(lecture.id, lecture.category || '');
         if (active) setBankQuestions(bq);
 
         // 1. Fetch first attempt status

@@ -178,6 +178,11 @@ service cloud.firestore {
                     ));
     }
 
+    match /chat_typing/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAdminOrModerator();
+    }
+
     match /records/{recordId} {
       allow read: if hasAccess();
       allow create, update, delete: if isAdminOrModerator();

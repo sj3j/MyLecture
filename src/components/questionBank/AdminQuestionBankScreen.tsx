@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth } from '../../lib/firebase';
 import { X, Search, Filter, Plus, Edit2, Trash2, ShieldAlert } from 'lucide-react';
-import { TRANSLATIONS, Language } from '../types';
-import { BankQuestion } from '../types/questionBank.types';
+import { TRANSLATIONS, Language } from '../../types';
+import { BankQuestion } from '../../types/questionBank.types';
 import { getAllBankQuestionsForAdmin, softDeleteBankQuestion } from '../../services/questionBankService';
 import AddBankQuestionModal from './AddBankQuestionModal';
 

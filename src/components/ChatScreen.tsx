@@ -105,6 +105,10 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const [mentionUsersPool, setMentionUsersPool] = useState<{name: string, photoUrl?: string, hidePhoto?: boolean}[]>([]);
   const [mentionFiltered, setMentionFiltered] = useState<{name: string, photoUrl?: string, hidePhoto?: boolean}[]>([]);
   
+  // Typing Indicator states
+  const [isTyping, setIsTyping] = useState(false);
+  const [activeTypers, setActiveTypers] = useState<string[]>([]);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +160,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         // Ensure it's at least 1 since the current user is online viewing the chat
         setOnlineStudentsCount(Math.max(1, onlineSnapshot.data().count));
       } catch (err) {
+        console.error('Failed to fetch online presence count:', err);
         // Fallback to 1 if the query fails (e.g. index issue or permission issue)
         setOnlineStudentsCount(prev => Math.max(1, prev));
       }
@@ -199,6 +204,56 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       console.error('Failed to load settings', e);
     }
   };
+
+  // Typing State Tracking & Sync
+  useEffect(() => {
+    if (!user || (!newMessage.trim() && !mentionSearch)) {
+      if (isTyping) setIsTyping(false);
+      return;
+    }
+    setIsTyping(true);
+    const timeout = setTimeout(() => setIsTyping(false), 3000);
+    return () => clearTimeout(timeout);
+  }, [newMessage, mentionSearch]);
+
+  useEffect(() => {
+    if (!user) return;
+    const typingRef = doc(db, 'chat_typing', user.uid);
+    if (isTyping) {
+      setDoc(typingRef, {
+        name: (user.hideNameOnLeaderboard && !isAdminOrModerator) ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : user.name,
+        timestamp: new Date().toISOString()
+      }).catch(() => {});
+    } else {
+      deleteDoc(typingRef).catch(() => {});
+    }
+    return () => {
+      deleteDoc(typingRef).catch(() => {});
+    };
+  }, [isTyping, user?.uid]);
+
+  // Listen to other users typing
+  useEffect(() => {
+    if (!user) return;
+    const qTyping = query(collection(db, 'chat_typing'));
+    const unsub = onSnapshot(qTyping, (snapshot) => {
+       const now = Date.now();
+       const typers: string[] = [];
+       snapshot.forEach(docSnap => {
+          if (docSnap.id === user.uid) return; // ignore self
+          const data = docSnap.data();
+          const ts = new Date(data.timestamp).getTime();
+          // Keep active if updated within last 10 seconds
+          if (now - ts < 10000 && data.name) {
+              typers.push(data.name);
+          }
+       });
+       setActiveTypers(typers);
+    }, (error) => {
+       console.error("Typing listener permission or index error:", error);
+    });
+    return () => unsub();
+  }, [user?.uid]);
 
   // Poll Settings every 15 seconds
   useEffect(() => {
@@ -649,8 +704,19 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     });
   };
 
+  const getTypingText = () => {
+     if (activeTypers.length === 0) return null;
+     if (activeTypers.length === 1) {
+       return isRtl ? `${activeTypers[0]} يكتب..` : `${activeTypers[0]} is typing..`;
+     }
+     if (activeTypers.length === 2) {
+       return isRtl ? `${activeTypers[0]} و ${activeTypers[1]} يكتبون...` : `${activeTypers[0]} and ${activeTypers[1]} are typing...`;
+     }
+     return isRtl ? `${activeTypers[0]} و ${activeTypers.length - 1} آخرين يكتبون...` : `${activeTypers[0]} and ${activeTypers.length - 1} others are typing...`;
+  };
+
   return (
-    <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative pb-16" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="flex flex-col min-h-screen max-w-2xl mx-auto w-full relative pb-52" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header and Pinned Message */}
       <div className="sticky top-[64px] z-40 flex flex-col shadow-sm">
         <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex justify-between items-center">
@@ -1109,8 +1175,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       </div>
 
       {/* Input Area */}
-      <div className="bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-2 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+96px)] mt-auto sticky bottom-0 z-40">
-        {!settings.isChatOpen && !isAdminOrModerator ? (
+      <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none pb-[calc(env(safe-area-inset-bottom)+88px)] px-2 sm:px-4 flex justify-center">
+        <div className="pointer-events-auto w-full max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-2 sm:p-4 shadow-xl dark:shadow-[0_-5px_20px_rgba(0,0,0,0.3)]">
+          {!settings.isChatOpen && !isAdminOrModerator ? (
           <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
             <StopCircle className="w-5 h-5" />
             <span className="font-medium text-sm">{settings.closedMessage || 'الشات مغلق حالياً — يمكنك القراءة فقط'}</span>
@@ -1188,6 +1255,20 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                   <button type="button" onClick={() => { setAttachmentFile(null); setEmbeddedItem(null); setAttachmentType(null); }} className="p-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 hover:bg-red-100 text-slate-500 hover:text-red-600 transition-colors">
                     <X className="w-4 h-4" />
                   </button>
+                </div>
+              )}
+
+              {/* Typing Indicator */}
+              {activeTypers.length > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 pointer-events-auto">
+                  <div className="flex gap-0.5 items-center justify-center p-1.5 px-2 bg-slate-200 dark:bg-zinc-700/80 rounded-2xl w-fit shadow-sm">
+                    <motion.div className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full" animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", delay: 0 }} />
+                    <motion.div className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full" animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", delay: 0.2 }} />
+                    <motion.div className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full" animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", delay: 0.4 }} />
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {getTypingText()}
+                  </span>
                 </div>
               )}
             </div>
@@ -1286,6 +1367,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
             </form>
           </div>
         )}
+      </div>
       </div>
 
       {/* Clear All Confirm Modal */}

@@ -177,7 +177,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
 
   const handleFinish = () => {
     let correctCount = 0;
-    Object.values(state.answers).forEach((a) => { if (a.isCorrect) correctCount++ });
+    Object.values(state.answers).forEach((a: any) => { if (a.isCorrect) correctCount++ });
     const score = (correctCount / questions.length) * 100;
     
     trackEvent('mcq_quiz_completed', { lectureId: lecture.id, score });
