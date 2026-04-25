@@ -4,7 +4,8 @@ import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight } from 'lucide-react';
+import NotificationsModal from './NotificationsModal';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -22,6 +23,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState('');
   const [showManageDownloads, setShowManageDownloads] = useState(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
@@ -358,6 +360,17 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           )}
         </div>
 
+        <button
+          onClick={() => setShowNotificationsModal(true)}
+          className="w-full flex items-center justify-between px-4 py-4 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 text-sky-700 dark:text-sky-300 rounded-2xl font-bold transition-colors mb-6 mt-6 border border-sky-100 dark:border-sky-800/50"
+        >
+          <div className="flex items-center gap-3">
+            <Bell className="w-5 h-5" />
+            <span>{isRtl ? 'إشعارات المحادثة والتطبيق' : 'Chat & App Notifications'}</span>
+          </div>
+          <ChevronRight className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
+        </button>
+
         <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700">
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'إعدادات الإشعارات' : 'Notification Settings'}</h3>
           
@@ -516,6 +529,14 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           </button>
         </div>
       </div>
+
+      {showNotificationsModal && user && (
+        <NotificationsModal
+          user={user}
+          lang={lang}
+          onClose={() => setShowNotificationsModal(false)}
+        />
+      )}
     </div>
   );
 }

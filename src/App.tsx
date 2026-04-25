@@ -424,7 +424,7 @@ export default function App() {
   const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || (mcqLecture !== null);
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 pb-20 font-sans transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-20'} font-sans transition-colors duration-300`} dir={isRtl ? 'rtl' : 'ltr'}>
       {!isAnyOverlayOpen && (
         <Navbar
           user={user}

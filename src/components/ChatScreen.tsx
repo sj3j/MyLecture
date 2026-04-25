@@ -716,9 +716,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   };
 
   return (
-    <div className="flex flex-col min-h-screen max-w-2xl mx-auto w-full relative pb-52" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="flex flex-col fixed top-[64px] bottom-[88px] sm:bottom-[96px] left-0 right-0 z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header and Pinned Message */}
-      <div className="sticky top-[64px] z-40 flex flex-col shadow-sm">
+      <div className="flex-none z-40 flex flex-col shadow-sm">
         <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -889,7 +889,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       {/* Messages Area */}
       <div 
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-zinc-950 pb-20 scroll-smooth"
+        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-zinc-950 scroll-smooth"
       >
         {hasMore && !isLoading && (
           <div className="flex justify-center mb-4">
@@ -1175,8 +1175,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       </div>
 
       {/* Input Area */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none pb-[calc(env(safe-area-inset-bottom)+88px)] px-2 sm:px-4 flex justify-center">
-        <div className="pointer-events-auto w-full max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-2 sm:p-4 shadow-xl dark:shadow-[0_-5px_20px_rgba(0,0,0,0.3)]">
+      <div className="flex-none p-2 sm:p-4 pb-2 sm:pb-4 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/50 dark:border-zinc-800/50">
+        <div className="pointer-events-auto w-full mx-auto max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-2 sm:p-4 shadow-xl dark:shadow-[0_-5px_20px_rgba(0,0,0,0.3)]">
           {!settings.isChatOpen && !isAdminOrModerator ? (
           <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
             <StopCircle className="w-5 h-5" />
