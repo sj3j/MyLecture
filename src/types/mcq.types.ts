@@ -29,6 +29,7 @@ export interface LectureMCQSets {
   questions: MCQQuestion[];
   totalQuestions: number;
   status: MCQStatus;
+  startedAt?: any; // Firestore Timestamp for tracking generation timeout
 }
 
 export interface MCQAnswerState {

@@ -90,7 +90,7 @@ export default function App() {
     return 'light';
   });
 
-  const { permission, requestPermission } = usePushNotifications(user);
+  const { permission, requestPermission, isRequesting } = usePushNotifications(user);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -449,9 +449,10 @@ export default function App() {
           </div>
           <button
             onClick={requestPermission}
-            className="px-4 py-1.5 bg-white text-sky-600 text-sm font-bold rounded-lg hover:bg-sky-50 transition-colors whitespace-nowrap"
+            disabled={isRequesting}
+            className="px-4 py-1.5 bg-white text-sky-600 text-sm font-bold rounded-lg hover:bg-sky-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isRtl ? 'تفعيل' : 'Enable'}
+            {isRequesting ? (isRtl ? 'جاري التفعيل...' : 'Enabling...') : (isRtl ? 'تفعيل' : 'Enable')}
           </button>
         </div>
       )}

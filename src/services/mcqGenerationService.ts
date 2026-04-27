@@ -215,7 +215,11 @@ export async function generateMCQsForLecture(lectureId: string, subjectId: strin
         return data.questions;
       }
       if (data.status === 'generating') {
-        throw new Error('MCQs are currently being generated for this lecture.');
+        const startedAt = data.startedAt?.toMillis ? data.startedAt.toMillis() : 0;
+        // If generating for more than 5 minutes, assume it failed and allow recreation
+        if (Date.now() - startedAt < 5 * 60 * 1000) {
+          throw new Error('MCQs are currently being generated for this lecture.');
+        }
       }
     }
 
@@ -236,6 +240,7 @@ export async function generateMCQsForLecture(lectureId: string, subjectId: strin
       lectureId,
       subjectId,
       status: 'generating',
+      startedAt: serverTimestamp(),
       totalQuestions: 20
     });
 

@@ -6,6 +6,7 @@ import { UserProfile } from '../types';
 
 export function usePushNotifications(user: UserProfile | null) {
   const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [isRequesting, setIsRequesting] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -36,7 +37,8 @@ export function usePushNotifications(user: UserProfile | null) {
   };
 
   const requestPermission = async () => {
-    if (!user) return;
+    if (!user || isRequesting) return;
+    setIsRequesting(true);
     try {
       // Request permission FIRST before any async operations to preserve user gesture context
       const perm = await Notification.requestPermission();
@@ -50,6 +52,8 @@ export function usePushNotifications(user: UserProfile | null) {
       }
     } catch (error) {
       console.error('An error occurred while setting up notifications:', error);
+    } finally {
+      setIsRequesting(false);
     }
   };
 
@@ -100,5 +104,5 @@ export function usePushNotifications(user: UserProfile | null) {
     };
   }, [user?.uid, permission]);
 
-  return { permission, requestPermission };
+  return { permission, requestPermission, isRequesting };
 }
