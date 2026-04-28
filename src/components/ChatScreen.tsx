@@ -28,6 +28,7 @@ interface ChatMessage {
   };
   viewers?: string[];
   isAnonymous?: boolean;
+  isPending?: boolean;
   originalSenderName?: string;
   originalSenderExamCode?: string;
   fileUrl?: string;
@@ -192,13 +193,11 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       } else if (isAdminOrModerator) {
         // Initialize if not exists
         const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 30, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
-        await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { ...defaultSettings }).catch(async () => {
-          // If update fails, might need to set (if doc doesn't exist)
-           try {
-             const setDoc = (await import('firebase/firestore')).setDoc;
-             await setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings);
-           } catch(e) {}
-        });
+        try {
+          await setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings, { merge: true });
+        } catch (e) {
+          console.error('Failed to init settings', e);
+        }
         setSettings(defaultSettings);
       }
     } catch (e) {
@@ -289,6 +288,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               replyTo: data.replyTo || null,
               reactions: data.reactions || { like: [], heart: [], thanks: [] },
               isAnonymous: data.isAnonymous || false,
+              isPending: change.doc.hasPendingWrites,
               originalSenderName: data.originalSenderName || '',
               fileUrl: data.fileUrl || undefined,
               fileName: data.fileName || undefined,
@@ -297,8 +297,11 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
             };
 
             if (change.type === 'added') {
-               if (!newArray.some(m => m.id === msg.id)) {
-                  newArray.push(msg);
+               const idx = newArray.findIndex(m => m.id === msg.id);
+               if (idx >= 0) {
+                 newArray[idx] = msg;
+               } else {
+                 newArray.push(msg);
                }
             }
             if (change.type === 'modified') {
@@ -447,13 +450,13 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
          payload.embeddedItem = embedData;
       }
 
-      const docRef = await addDoc(collection(db, 'chat_messages'), payload);
+      const docRef = doc(collection(db, 'chat_messages'));
 
       if (isAnon) {
          setIsAnonymous(false);
       }
 
-      // Optimistic UI update
+      // Optimistic UI update instantly before network wait
       setMessages(prev => {
         if (prev.some(m => m.id === docRef.id)) return prev;
         return [...prev, {
@@ -468,6 +471,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
           replyTo: replyData,
           reactions: { like: [], heart: [], thanks: [] },
           isAnonymous: isAnon,
+          isPending: true,
           originalSenderName: user.name,
           originalSenderExamCode: user.examCode || '',
           fileUrl: finalFileUrl || undefined,
@@ -478,15 +482,24 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       });
       setTimeout(() => scrollToBottom(), 100);
 
-      // Start cooldown if not admin
+      // Instantly start cooldown for students
       if (!isAdminOrModerator) {
-        setCooldownRemaining(settings.messageCooldown);
+        const cooldown = settings.messageCooldown || 30;
+        setCooldownRemaining(cooldown);
         localStorage.setItem(`chat_cooldown_${user.uid}`, Date.now().toString());
       }
+
+      // Release UI early so it doesn't spin
+      setIsSending(false);
+      setIsUploadingAttachment(false);
+
+      // Perform setDoc
+      await setDoc(docRef, payload);
+
     } catch (e) {
       console.error('Failed to send message', e);
       setAlertMessage(t.errorUnknown);
-    } finally {
+      // Failsafe state cleanup just in case sync errors occurred before setDoc
       setIsSending(false);
       setIsUploadingAttachment(false);
     }
@@ -600,7 +613,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       if (!targetTimestamp) return;
 
       const oldestLoaded = messages[0];
-      if (oldestLoaded && oldestLoaded.timestamp > targetTimestamp) {
+      if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp.toMillis()) {
         const q = query(
           collection(db, 'chat_messages'),
           orderBy('timestamp', 'desc'),
@@ -1058,7 +1071,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
             // Should display name? (If previous message is not from same user or it's > 5 mins difference)
             const prevMsg = index > 0 ? messages[index - 1] : null;
             const diffMins = prevMsg ? (msg.createdAt - prevMsg.createdAt) / 60000 : 999;
-            const showHeader = !isMe && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMins > 5);
+            const isAnonGroupChange = prevMsg ? (!!prevMsg.isAnonymous !== !!msg.isAnonymous) : false;
+            const showHeader = (!isMe || msg.isAnonymous) && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMins > 5 || isAnonGroupChange);
 
             return (
               <div 
@@ -1071,7 +1085,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                 <div className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                   
                   {/* Avatar */}
-                  {!isMe && showHeader && (
+                  {showHeader && !isMe && (
                     <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border ${msg.isAnonymous ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-zinc-800' : 'bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-zinc-800'}`}>
                       {msg.isAnonymous ? (
                         '?'
@@ -1084,13 +1098,13 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                       )}
                     </div>
                   )}
-                  {!isMe && !showHeader && <div className="w-8 flex-shrink-0" />}
+                  {!showHeader && !isMe && <div className="w-8 flex-shrink-0" />}
 
                   {/* Bubble */}
-                  <div className={`group relative flex flex-col`}>
-                    {!isMe && showHeader && (
-                      <span className={`text-xs font-bold ml-1 rtl:ml-0 rtl:mr-1 mb-1 ${msg.isAnonymous ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {msg.senderName} 
+                  <div className={`group relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                    {showHeader && (
+                      <span className={`text-xs font-bold ${isMe ? 'mr-1 rtl:mr-0 rtl:ml-1 text-right' : 'ml-1 rtl:ml-0 rtl:mr-1'} mb-1 ${msg.isAnonymous ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {msg.isAnonymous && isMe ? (isRtl ? 'أنت (مجهول)' : 'You (Anonymous)') : msg.senderName} 
                         {msg.senderEmail === 'almdrydyl335@gmail.com' && !msg.isAnonymous && <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">Admin</span>}
                       </span>
                     )}
@@ -1169,6 +1183,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                       <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{renderMessageText(msg.text)}</p>
                       
                       <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
+                        {msg.isPending && (
+                           <Clock className="w-2.5 h-2.5 opacity-80" />
+                        )}
                         <span className="text-[10px] font-medium">{timeStr}</span>
                       </div>
                     </div>
