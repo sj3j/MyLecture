@@ -23,7 +23,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
   const [category, setCategory] = useState<Category>('pharmacology');
   const [type, setType] = useState<LectureType>('theoretical');
   const [description, setDescription] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -38,40 +38,53 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
       setCategory(recordToEdit.category);
       setType(recordToEdit.type);
       setDescription(recordToEdit.description || '');
-      setFile(null); // Optional to upload a new file
+      setFiles([]); // Optional to upload a new file
     } else {
       resetForm();
     }
   }, [recordToEdit, isOpen]);
 
-  const processFile = (selectedFile: File) => {
-    if (!selectedFile.type.startsWith('audio/')) {
-      setError(isRtl ? 'يرجى اختيار ملف صوتي فقط' : 'Please select an audio file only');
-      return;
-    }
-    if (selectedFile.size > 500 * 1024 * 1024) { // 500MB limit for audio
-      setError(isRtl ? 'الحد الأقصى 500 ميجابايت' : 'Max 500MB');
-      return;
+  const processFiles = (selectedFiles: FileList | null) => {
+    if (!selectedFiles) return;
+
+    const validFiles: File[] = [];
+    let hasError = false;
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const selectedFile = selectedFiles[i];
+      if (!selectedFile.type.startsWith('audio/')) {
+        setError(isRtl ? 'يرجى اختيار ملفات صوتية فقط' : 'Please select audio files only');
+        hasError = true;
+        break;
+      }
+      if (selectedFile.size > 500 * 1024 * 1024) { // 500MB limit for audio
+        setError(isRtl ? 'الحد الأقصى 500 ميجابايت' : 'Max 500MB');
+        hasError = true;
+        break;
+      }
+      validFiles.push(selectedFile);
     }
     
-    setFile(selectedFile);
-    setError(null);
+    if (!hasError && validFiles.length > 0) {
+      setFiles(prev => [...prev, ...validFiles]);
+      setError(null);
 
-    // Smart title extraction if title is empty
-    if (!title) {
-      const nameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
-      const cleanTitle = nameWithoutExt
-        .replace(/[_-]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      setTitle(cleanTitle);
+      // Smart title extraction if title is empty and only one file
+      if (validFiles.length === 1 && files.length === 0 && !title) {
+        const nameWithoutExt = validFiles[0].name.replace(/\.[^/.]+$/, "");
+        const cleanTitle = nameWithoutExt
+          .replace(/[_-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        setTitle(cleanTitle);
+      } else if (validFiles.length > 1 || files.length > 0) {
+        setTitle('');
+      }
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
+    processFiles(e.target.files);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -87,16 +100,14 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
-    }
+    processFiles(e.dataTransfer.files);
   };
 
   const resetForm = () => {
     setTitle('');
     setRecordNumber('');
     setDescription('');
-    setFile(null);
+    setFiles([]);
     setUploadProgress(null);
     setShowSuccess(false);
     setError(null);
@@ -119,99 +130,146 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
-    if (!recordToEdit && !file) return;
+    if (!recordToEdit && files.length === 0) return;
 
     setIsSubmitting(true);
     setError(null);
     setUploadProgress(0);
 
     try {
-      let downloadUrl = recordToEdit?.audioUrl;
-      let duration = recordToEdit?.duration || 0;
-      let size = recordToEdit?.size || 0;
+      if (recordToEdit || files.length === 0) {
+        let downloadUrl = recordToEdit?.audioUrl;
+        let duration = recordToEdit?.duration || 0;
+        let size = recordToEdit?.size || 0;
 
-      if (file) {
-        // Get duration and size
-        duration = await getAudioDuration(file);
-        size = parseFloat((file.size / (1024 * 1024)).toFixed(2)); // Size in MB
+        const currentFile = files.length > 0 ? files[0] : null;
 
-        // 1. Get presigned URL from our backend
-        const token = await auth.currentUser.getIdToken();
-        const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (!response.ok) {
-          let errorMessage = 'Failed to get upload URL. Please check Cloudflare R2 configuration.';
-          try {
-            const errorData = await response.json();
-            if (errorData.error) errorMessage = errorData.error;
-          } catch (e) {
-            // If response is not JSON (e.g. Vercel 500 HTML page), log the raw text
-            const text = await response.text().catch(() => 'No response text');
-            console.error('Non-JSON error response from /api/get-upload-url:', text);
-            errorMessage = `Server error (${response.status}). Check Vercel Function Logs.`;
-          }
-          throw new Error(errorMessage);
-        }
-        
-        const { uploadUrl, publicUrl } = await response.json();
+        if (currentFile) {
+          duration = await getAudioDuration(currentFile);
+          size = parseFloat((currentFile.size / (1024 * 1024)).toFixed(2));
 
-        // 2. Upload file directly to Cloudflare R2 using XMLHttpRequest for progress tracking
-        downloadUrl = await new Promise<string>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
+          const token = await auth.currentUser.getIdToken();
+          const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(currentFile.name)}&contentType=${encodeURIComponent(currentFile.type)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
           
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) {
-              const progress = (event.loaded / event.total) * 100;
-              setUploadProgress(progress);
+          if (!response.ok) {
+            let errorMessage = 'Failed to get upload URL.';
+            try {
+              const errorData = await response.json();
+              if (errorData.error) errorMessage = errorData.error;
+            } catch (e) {
+              errorMessage = `Server error (${response.status}).`;
             }
-          };
+            throw new Error(errorMessage);
+          }
+          
+          const { uploadUrl, publicUrl } = await response.json();
 
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              resolve(publicUrl);
-            } else {
-              reject(new Error(`Upload failed with status ${xhr.status}`));
+          downloadUrl = await new Promise<string>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) setUploadProgress((event.loaded / event.total) * 100);
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) resolve(publicUrl);
+              else reject(new Error(`Upload failed with status ${xhr.status}`));
+            };
+            xhr.onerror = () => reject(new Error('Network error occurred during upload.'));
+            xhr.open('PUT', uploadUrl, true);
+            xhr.setRequestHeader('Content-Type', currentFile.type);
+            xhr.send(currentFile);
+          });
+        }
+
+        const recordData: any = {
+          title,
+          category,
+          type,
+          description,
+          audioUrl: downloadUrl,
+          duration,
+          size,
+          uploadedBy: auth.currentUser?.uid,
+          uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
+        };
+        
+        if (recordNumber) recordData.number = parseInt(recordNumber, 10);
+        else recordData.number = null; 
+
+        if (recordToEdit) {
+          await updateDoc(doc(db, 'records', recordToEdit.id), recordData);
+        } else {
+          recordData.createdAt = serverTimestamp();
+          await addDoc(collection(db, 'records'), recordData);
+        }
+      } else {
+        // Multiple files creation mode
+        for (let i = 0; i < files.length; i++) {
+          const currentFile = files[i];
+          const duration = await getAudioDuration(currentFile);
+          const size = parseFloat((currentFile.size / (1024 * 1024)).toFixed(2));
+
+          const token = await auth.currentUser.getIdToken();
+          const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(currentFile.name)}&contentType=${encodeURIComponent(currentFile.type)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (!response.ok) {
+            let errorMessage = 'Failed to get upload URL.';
+            try {
+              const errorData = await response.json();
+              if (errorData.error) errorMessage = errorData.error;
+            } catch (e) {
+              errorMessage = `Server error (${response.status}).`;
             }
+            throw new Error(errorMessage);
+          }
+          
+          const { uploadUrl, publicUrl } = await response.json();
+
+          const downloadUrl = await new Promise<string>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                const fileProgress = (event.loaded / event.total) * 100;
+                const totalProgress = ((i + (fileProgress / 100)) / files.length) * 100;
+                setUploadProgress(totalProgress);
+              }
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) resolve(publicUrl);
+              else reject(new Error(`Upload failed with status ${xhr.status}`));
+            };
+            xhr.onerror = () => reject(new Error('Network error occurred during upload.'));
+            xhr.open('PUT', uploadUrl, true);
+            xhr.setRequestHeader('Content-Type', currentFile.type);
+            xhr.send(currentFile);
+          });
+
+          const fileTitle = title ? `${title} ${files.length > 1 ? i + 1 : ''}`.trim() : currentFile.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
+          
+          const recordData: any = {
+            title: fileTitle,
+            category,
+            type,
+            description,
+            audioUrl: downloadUrl,
+            duration,
+            size,
+            uploadedBy: auth.currentUser?.uid,
+            uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
+            createdAt: serverTimestamp(),
           };
+          
+          if (recordNumber && files.length === 1) {
+            recordData.number = parseInt(recordNumber, 10);
+          } else {
+            recordData.number = null; 
+          }
 
-          xhr.onerror = () => {
-            reject(new Error('Network error occurred during upload.'));
-          };
-
-          xhr.open('PUT', uploadUrl, true);
-          xhr.setRequestHeader('Content-Type', file.type);
-          xhr.send(file);
-        });
-      }
-
-      // 3. Save metadata to Firestore
-      const recordData: any = {
-        title,
-        category,
-        type,
-        description,
-        audioUrl: downloadUrl,
-        duration,
-        size,
-        uploadedBy: auth.currentUser.uid,
-        uploaderName: user?.name || auth.currentUser.displayName || 'Admin',
-      };
-      
-      if (recordNumber) {
-        recordData.number = parseInt(recordNumber, 10);
-      } else {
-        recordData.number = null; 
-      }
-
-      if (recordToEdit) {
-        await updateDoc(doc(db, 'records', recordToEdit.id), recordData);
-      } else {
-        recordData.createdAt = serverTimestamp();
-        await addDoc(collection(db, 'records'), recordData);
+          await addDoc(collection(db, 'records'), recordData);
+        }
       }
 
       setShowSuccess(true);
@@ -379,7 +437,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
                       onDrop={handleDrop}
                       className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
                         isDragging ? 'border-sky-500 dark:border-sky-500 bg-sky-50 dark:bg-sky-900/30 scale-[1.02]' : 
-                        file ? 'border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30' : 
+                        files.length > 0 ? 'border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30' : 
                         'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 hover:border-sky-300 dark:hover:border-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/10'
                       }`}
                     >
@@ -388,18 +446,24 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
                         ref={fileInputRef}
                         onChange={handleFileChange}
                         accept="audio/*"
+                        multiple={!recordToEdit}
                         className="hidden"
                       />
-                      {file ? (
+                      {files.length > 0 ? (
                         <>
                           <CheckCircle2 className="w-8 h-8 text-sky-500 dark:text-sky-400" />
-                          <span className="text-sm font-bold text-sky-700 dark:text-sky-300 truncate max-w-xs">{file.name}</span>
-                          <span className="text-xs text-sky-600 dark:text-sky-500">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                          <span className="text-sm font-bold text-sky-700 dark:text-sky-300 truncate max-w-xs">{files.length === 1 ? files[0].name : isRtl ? `تم تحديد ${files.length} ملفات` : `${files.length} files selected`}</span>
+                          <span className="text-xs text-sky-600 dark:text-sky-500">
+                            {files.length === 1 
+                              ? `${(files[0].size / 1024 / 1024).toFixed(2)} MB` 
+                              : `${(files.reduce((acc, f) => acc + f.size, 0) / 1024 / 1024).toFixed(2)} MB total`
+                            }
+                          </span>
                         </>
                       ) : (
                         <>
                           <FileUp className={`w-8 h-8 ${isDragging ? 'text-sky-500 dark:text-sky-400 animate-bounce' : 'text-slate-400 dark:text-slate-500'}`} />
-                          <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{isRtl ? 'اضغط لرفع ملف صوتي' : 'Click to upload audio file'}</span>
+                          <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{isRtl ? 'اضغط لرفع ملف صوتي' : 'Click to upload audio file'} {recordToEdit ? '' : isRtl ? '(يمكنك اختيار عدة ملفات)' : '(Multiple files allowed)'}</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500">{t.dragDrop}</span>
                           <span className="text-[10px] text-slate-300 dark:text-slate-600 uppercase tracking-widest mt-1">{isRtl ? 'الحد الأقصى 500 ميجابايت' : 'Max 500MB'}</span>
                         </>
@@ -433,7 +497,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
                   )}
 
                   <button
-                    disabled={isSubmitting || (!recordToEdit && !file)}
+                    disabled={isSubmitting || (!recordToEdit && files.length === 0)}
                     type="submit"
                     className="w-full py-3.5 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-sky-700 dark:hover:bg-sky-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-sky-200 dark:shadow-none"
                   >

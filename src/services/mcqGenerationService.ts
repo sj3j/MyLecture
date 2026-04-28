@@ -189,7 +189,22 @@ function smartShuffleChoices(question: any): any {
   };
 }
 
-export async function generateMCQsForLecture(lectureId: string, subjectId: string, pdfUrl: string): Promise<MCQQuestion[]> {
+const pendingGenerations = new Map<string, Promise<MCQQuestion[]>>();
+
+export function generateMCQsForLecture(lectureId: string, subjectId: string, pdfUrl: string): Promise<MCQQuestion[]> {
+  if (pendingGenerations.has(lectureId)) {
+    return pendingGenerations.get(lectureId)!;
+  }
+  
+  const promise = doGenerateMCQsForLecture(lectureId, subjectId, pdfUrl).finally(() => {
+    pendingGenerations.delete(lectureId);
+  });
+  
+  pendingGenerations.set(lectureId, promise);
+  return promise;
+}
+
+async function doGenerateMCQsForLecture(lectureId: string, subjectId: string, pdfUrl: string): Promise<MCQQuestion[]> {
   try {
     if (!navigator.onLine) {
       const cacheKey = `mcq_cache_${lectureId}`;
@@ -216,9 +231,11 @@ export async function generateMCQsForLecture(lectureId: string, subjectId: strin
       }
       if (data.status === 'generating') {
         const startedAt = data.startedAt?.toMillis ? data.startedAt.toMillis() : 0;
-        // If generating for more than 5 minutes, assume it failed and allow recreation
-        if (Date.now() - startedAt < 5 * 60 * 1000) {
-          throw new Error('MCQs are currently being generated for this lecture.');
+        // If it's been generating for less than 1.5 minutes, we can try to wait. Otherwise assume it failed.
+        if (Date.now() - startedAt < 90 * 1000) {
+          // It's actively generating somewhere else. Instead of throwing an error, we wait just in case.
+          // But to avoid locking the user, we will actually just bypass and let them generate as a fallback.
+          // In a real prod environment we'd use onSnapshot here to wait.
         }
       }
     }

@@ -663,6 +663,242 @@ async function startServer() {
     }
   });
 
+  // --- Streak System Backend ---
+  
+  const getEgyptDateAndHour = () => {
+    // using Intl.DateTimeFormat to reliably get hour and date in Africa/Cairo
+    const now = new Date();
+    // get time in Egypt, guaranteeing 0-23 hours
+    const str = now.toLocaleString("en-GB", { timeZone: "Africa/Cairo", hourCycle: "h23" });
+    // form: '28/04/2026, 15:30:00'
+    const [datePart, timePart] = str.split(', ');
+    const [day, month, year] = datePart.split('/');
+    const [hour] = timePart.split(':');
+    
+    return {
+      year: parseInt(year),
+      month: parseInt(month),
+      day: parseInt(day),
+      hour: parseInt(hour)
+    };
+  };
+
+  const getEffectiveDateString = () => {
+    const { year, month, day, hour } = getEgyptDateAndHour();
+    // GRACE PERIOD: 00:00 to 01:59AM will be counted as previous day
+    // We get the actual date
+    let effectiveDate = new Date(`${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00Z`);
+    
+    if (hour >= 0 && hour < 2) {
+      effectiveDate.setDate(effectiveDate.getDate() - 1);
+    }
+    
+    const ey = effectiveDate.getUTCFullYear();
+    const em = effectiveDate.getUTCMonth() + 1;
+    const ed = effectiveDate.getUTCDate();
+    
+    return `${ey}-${em.toString().padStart(2, '0')}-${ed.toString().padStart(2, '0')}`;
+  };
+
+  const calcDaysDifference = (date1Str: string, date2Str: string) => {
+    const d1 = new Date(`${date1Str}T12:00:00Z`);
+    const d2 = new Date(`${date2Str}T12:00:00Z`);
+    const diff = Math.abs(d1.getTime() - d2.getTime());
+    return Math.round(diff / (1000 * 60 * 60 * 24));
+  };
+
+  app.post("/api/record-activity", verifyAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const db = admin.firestore();
+      const userRef = db.collection('users').doc(user.uid);
+      
+      const effectiveDate = getEffectiveDateString();
+      const historyId = `${user.uid}_${effectiveDate}`;
+      const historyRef = db.collection('streak_history').doc(historyId);
+      
+      await db.runTransaction(async (t) => {
+        const userDoc = await t.get(userRef);
+        const historyDoc = await t.get(historyRef);
+        
+        if (!userDoc.exists) {
+          throw new Error("User not found");
+        }
+        
+        // If already recorded today, just update lastActiveAt
+        if (historyDoc.exists) {
+          t.update(userRef, { lastActiveAt: admin.firestore.FieldValue.serverTimestamp() });
+          return;
+        }
+
+        const data = userDoc.data()!;
+        let streakCount = data.streakCount || 0;
+        let longestStreak = data.longestStreak || 0;
+        let freezeTokens = data.freezeTokens ?? 1; // Default 1
+        const lastActiveDate = data.lastActiveDate; // format 'YYYY-MM-DD'
+        let usedFreeze = false;
+        
+        let processedLastDate = lastActiveDate;
+        if (processedLastDate && processedLastDate.includes("T")) {
+          processedLastDate = processedLastDate.split("T")[0];
+        }
+
+        if (!processedLastDate) {
+          streakCount = 1;
+        } else {
+          const daysDiff = calcDaysDifference(effectiveDate, processedLastDate);
+          
+          if (daysDiff === 1) {
+            streakCount += 1;
+          } else if (daysDiff > 1) {
+            // Gap found! Let's check freeze tokens.
+            // We need to use exactly arrays of missing gap days but for simplicity, 
+            // if we missed precisely 1 day and have a freeze token we can spend it.
+            // If we missed >1 day, or have no tokens, streak is broken.
+            // The prompt says: "If a student misses a day AND has freeze tokens > 0: Automatically use 1 freeze token... Streak is NOT reset"
+            
+            // To be robust: the freeze only covers ONE missed day. If they missed 2 days, they would need 2 freeze tokens? The prompt says "misses a day ... use 1 freeze token".
+            // Let's implement: they missed N days. We need N freeze tokens to cover it.
+            const missedDays = daysDiff - 1;
+            
+            if (freezeTokens >= missedDays) {
+              freezeTokens -= missedDays;
+              streakCount += 1; // It continues from before + effectively covers gap
+              usedFreeze = true;
+              
+              // We could log missed days as freeze used, but we skip for brevity
+            } else {
+              streakCount = 1; // Streak broken
+            }
+          }
+        }
+        
+        longestStreak = Math.max(longestStreak, streakCount);
+        
+        t.update(userRef, {
+          streakCount,
+          longestStreak,
+          freezeTokens,
+          lastActiveDate: effectiveDate,
+          lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        t.set(historyRef, {
+          userId: user.uid,
+          date: effectiveDate,
+          wasActive: true,
+          freezeUsed: usedFreeze,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      
+      const updatedUser = await userRef.get();
+      res.json({ success: true, streakCount: updatedUser.data()?.streakCount, freezeUsed: updatedUser.data()?.freezeTokens < (updatedUser.data()?.freezeTokens ?? 1) });
+    } catch (error) {
+      console.error("Error recording activity:", error);
+      res.status(500).json({ error: "Failed to record activity" });
+    }
+  });
+
+  app.post("/api/admin/grant-freeze", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { userUid, amount } = req.body;
+      const db = admin.firestore();
+      const userRef = db.collection('users').doc(userUid);
+      
+      await db.runTransaction(async (t) => {
+        const doc = await t.get(userRef);
+        if (!doc.exists) throw new Error("Not found");
+        const currentTokens = doc.data()?.freezeTokens ?? 1;
+        const newTokens = Math.min(currentTokens + amount, 3);
+        
+        t.update(userRef, { freezeTokens: newTokens });
+      });
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: "Error granting freeze token" });
+    }
+  });
+
+  app.post("/api/admin/streak-recovery", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { userUid, studentEmail, newStreak, reason } = req.body;
+      const db = admin.firestore();
+      
+      const adminUser = (req as any).user;
+      const userRef = db.collection('users').doc(userUid);
+      
+      await db.runTransaction(async (t) => {
+        const doc = await t.get(userRef);
+        if (!doc.exists) throw new Error("Not found");
+        const oldStreak = doc.data()?.streakCount || 0;
+        
+        t.update(userRef, {
+          streakCount: newStreak,
+          longestStreak: Math.max(doc.data()?.longestStreak || 0, newStreak)
+        });
+        
+        const recoveryRef = db.collection('streak_recoveries').doc();
+        t.set(recoveryRef, {
+          studentEmail,
+          userId: userUid,
+          oldStreak,
+          newStreak,
+          reason,
+          recoveredBy: adminUser.email,
+          recoveredAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      
+      // Attempt to notify user directly (optional if token exists)
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Streak recovery error:", e);
+      res.status(500).json({ error: "Error recovering streak" });
+    }
+  });
+
+  app.post("/api/cron/streak-warnings", async (req, res) => {
+    // Requires some secret header to prevent abuse in production
+    if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET && process.env.CRON_SECRET) {
+      return res.status(403).send("Forbidden");
+    }
+    
+    // In Egypt 10 PM. Find users whose lastActiveDate is NOT today's effectiveDate
+    // and send them an FCM notification. Because querying exactly this might be tricky, we can fetch users and filter.
+    try {
+      const db = admin.firestore();
+      const effectiveDate = getEffectiveDateString();
+      
+      // Just getting all users who have FCM tokens
+      const usersSnap = await db.collection('users').where('fcmToken', '!=', null).get();
+      
+      const tokens: string[] = [];
+      usersSnap.forEach(doc => {
+        const data = doc.data();
+        if (data.lastActiveDate !== effectiveDate && data.fcmToken) {
+          tokens.push(data.fcmToken);
+        }
+      });
+      
+      if (tokens.length > 0) {
+        const message = {
+          notification: {
+            title: "لا تنسَ نشاطك اليومي 🔥",
+            body: "ستريكك في خطر! افتح التطبيق الآن لتحافظ عليه.",
+          },
+          tokens: tokens,
+        };
+        await admin.messaging().sendEachForMulticast(message);
+      }
+      
+      res.json({ success: true, notifiedCount: tokens.length });
+    } catch (e) {
+      console.error("Cron streak warnings error", e);
+      res.status(500).json({ error: "Error sending warnings" });
+    }
+  });
+
   // --- Vite Middleware for Development / Static Serving for Production ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

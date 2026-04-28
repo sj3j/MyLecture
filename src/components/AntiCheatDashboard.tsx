@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { X, ShieldAlert, Trash2, Ban, UserX, AlertTriangle, Eye, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS, Language } from '../types';
@@ -71,17 +71,33 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
     }
   }, [isOpen]);
 
-  const handleCancelResult = async (userId: string, lectureId: string) => {
+  const handleCancelResult = async (group: any) => {
     if (!window.confirm('هل أنت متأكد من إلغاء نتيجة هذا الطالب لهذه المحاضرة؟')) return;
     
     try {
       // 1. Delete first attempt answer doc
-      const answerRef = doc(db, `userMCQAnswers/${userId}/lectures/${lectureId}`);
+      const answerRef = doc(db, `userMCQAnswers/${group.userId}/lectures/${group.lectureId}`);
       await deleteDoc(answerRef);
 
       // (We could also theoretically adjust stats, but deleting the attempt forces them to restart)
 
-      alert('تم إلغاء النتيجة بنجاح.');
+      // 2. Clear the logs for this incident so it doesn't stay in the dashboard
+      for (const log of group.logs) {
+         await deleteDoc(doc(db, 'antiCheatLogs', log.id));
+      }
+
+      // 3. Send Notification to User
+      const lectureTitle = lecturesMap[group.lectureId] || group.lectureId;
+      await addDoc(collection(db, 'systemNotifications'), {
+        userId: group.userId,
+        type: 'anti_cheat_action',
+        title: 'إلغاء نتيجة المسابقة/الاختبار',
+        body: `تم إلغاء نتيجتك في اختبار محاضرة (${lectureTitle}) بسبب رصد مخالفة لشروط الاختبار (محاولة الخروج أو تصوير الشاشة). نرجو الالتزام في المرات القادمة.`,
+        createdAt: serverTimestamp(),
+        read: false
+      });
+
+      alert('تم إلغاء النتيجة والإرسال إشعار للطالب بنجاح.');
       fetchLogs();
     } catch (e: any) {
       alert('خطأ: ' + e.message);
@@ -94,7 +110,17 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
     try {
       const userRef = doc(db, `users/${userId}`);
       await updateDoc(userRef, { mcqBanned: true });
-      alert('تم حظر الطالب من MCQ.');
+      
+      await addDoc(collection(db, 'systemNotifications'), {
+        userId: userId,
+        type: 'anti_cheat_action',
+        title: 'تعليق وصولك للاختبارات',
+        body: `تم تعليق وصولك للاختبارات (MCQ) بسبب تكرار مخالفة شروط الاختبار أو الغش. يرجى مراجعة إدارة المنصة.`,
+        createdAt: serverTimestamp(),
+        read: false
+      });
+
+      alert('تم إيقاف الطالب عن الاختبارات وإرسال إشعار له.');
     } catch (e: any) {
       alert('خطأ: ' + e.message);
     }
@@ -181,7 +207,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
 
                       <div className="flex flex-wrap gap-2">
                          <button 
-                           onClick={() => handleCancelResult(group.userId, group.lectureId)}
+                           onClick={() => handleCancelResult(group)}
                            className="flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 dark:bg-red-900/20 dark:hover:bg-red-900/40 dark:text-red-400 font-bold text-sm rounded-xl transition-colors"
                          >
                            <Trash2 className="w-4 h-4" />

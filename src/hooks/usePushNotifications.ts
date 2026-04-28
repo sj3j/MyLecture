@@ -36,6 +36,7 @@ export function usePushNotifications(user: UserProfile | null) {
     }
   };
 
+  /* NEEDS_ANDROID_PERMISSION (POST_NOTIFICATIONS) */
   const requestPermission = async () => {
     if (!user || isRequesting) return;
     setIsRequesting(true);

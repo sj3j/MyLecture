@@ -5,7 +5,48 @@ import SubjectBrowser from './SubjectBrowser';
 import WeeklyListScreen from './WeeklyListScreen';
 import RecordsScreen from './RecordsScreen';
 import LeaderboardTab from './LeaderboardTab';
+import LectureCard from './LectureCard';
 import { motion, AnimatePresence } from 'motion/react';
+
+function DownloadsTab({ lectures, lang, user, onNavigateToChat, onEdit, onOpenMCQ }: any) {
+  const [trigger, setTrigger] = useState(0);
+  const isRtl = lang === 'ar';
+
+  const downloadedLectures = lectures
+    .filter((l: Lecture) => Boolean(localStorage.getItem(`pdf_${l.id}`)))
+    .map((l: Lecture) => ({ 
+      lecture: l, 
+      downloadedAt: parseInt(localStorage.getItem(`pdf_${l.id}`) || '0', 10) || 0 
+    }))
+    .sort((a: any, b: any) => b.downloadedAt - a.downloadedAt);
+
+  if (downloadedLectures.length === 0) {
+    return (
+      <div className="text-center py-12 bg-white dark:bg-zinc-800 rounded-3xl border border-slate-200 dark:border-zinc-700 border-dashed">
+        <h3 className="text-slate-500 dark:text-slate-400 font-medium">
+          {isRtl ? 'لا توجد تنزيلات محفوظة' : 'No saved downloads'}
+        </h3>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+      {downloadedLectures.map(({ lecture }: any) => (
+        <LectureCard
+          key={lecture.id}
+          lecture={lecture}
+          lang={lang}
+          user={user}
+          onNavigateToChat={onNavigateToChat}
+          onEdit={onEdit}
+          onOpenMCQ={onOpenMCQ}
+          onRemoveDownload={() => setTrigger(t => t + 1)}
+        />
+      ))}
+    </div>
+  );
+}
 
 type InnerTab = 'lectures' | 'weekly' | 'records' | 'leaderboard' | 'downloads';
 
@@ -129,15 +170,13 @@ export default function HomeScreen({
           />
         )}
         {activeTab === 'downloads' && (
-          <SubjectBrowser
-            lectures={lectures.filter(l => Boolean(localStorage.getItem(`pdf_${l.id}`)))}
-            lang={lang}
-            user={user}
-            searchQuery={searchQuery}
-            isLoading={isLoading}
-            onNavigateToChat={onNavigateToChat}
-            onEdit={onEdit}
-            onOpenMCQ={onOpenMCQ}
+          <DownloadsTab
+             lectures={lectures}
+             lang={lang}
+             user={user}
+             onNavigateToChat={onNavigateToChat}
+             onEdit={onEdit}
+             onOpenMCQ={onOpenMCQ}
           />
         )}
         {activeTab === 'weekly' && (

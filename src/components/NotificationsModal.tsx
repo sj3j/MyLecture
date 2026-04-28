@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { X, Bell, MessageSquare, BookOpen, Clock } from 'lucide-react';
+import { X, Bell, MessageSquare, BookOpen, Clock, ShieldAlert } from 'lucide-react';
 import { Language, TRANSLATIONS, UserProfile, Homework } from '../types';
 
 const formatTimeAgo = (timestamp: number, isRtl: boolean) => {
@@ -30,7 +30,7 @@ interface NotificationsModalProps {
 
 interface NotificationItem {
   id: string;
-  type: 'mention' | 'homework';
+  type: 'mention' | 'homework' | 'system';
   title: string;
   body: string;
   createdAt: any;
@@ -49,67 +49,94 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
         const items: NotificationItem[] = [];
         
         // 1. Fetch Weekly Homeworks (latest 10)
-        const hwQuery = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(10));
-        const hwSnap = await getDocs(hwQuery);
-        
-        hwSnap.forEach(docSnap => {
-          const data = docSnap.data() as Homework;
-          items.push({
-            id: docSnap.id,
-            type: 'homework',
-            title: isRtl ? 'واجب جديد' : 'New Homework',
-            body: isRtl 
-              ? `تم إضافة واجب جديد لمادة ${data.subject === 'organic_chemistry' ? 'الكيمياء العضوية' : data.subject}`
-              : `New homework added for ${data.subject}`,
-            createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
-            icon: BookOpen
-          });
-        });
-
-        // 2. Fetch Chat Mentions (last 200 messages)
-        const chatQuery = query(collection(db, 'chat_messages'), orderBy('timestamp', 'desc'), limit(200));
-        const chatSnap = await getDocs(chatQuery);
-        
-        const normalizeArabic = (text: string) => {
-          if (!text) return '';
-          return text.toLowerCase()
-                     .replace(/[أإآا]/g, 'ا')
-                     .replace(/ة/g, 'ه')
-                     .replace(/ى/g, 'ي');
-        };
-
-        const firstName = user.name ? user.name.split(' ')[0] : '';
-        const originalFirstName = user.originalName ? user.originalName.split(' ')[0] : '';
-        const possibleMentions = [
-          `@${normalizeArabic(user.name)}`, 
-          `@${normalizeArabic(user.originalName)}`, 
-          `@${normalizeArabic(user.email.split('@')[0])}`,
-          `@${normalizeArabic(firstName)}`,
-          `@${normalizeArabic(originalFirstName)}`
-        ].filter(m => m && m.length > 2); // Exclude very short or empty mentions like "@"
-        
-        chatSnap.forEach(docSnap => {
-          const msg = docSnap.data();
-          if (!msg.text) return;
+        try {
+          const hwQuery = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(10));
+          const hwSnap = await getDocs(hwQuery);
           
-          const text = normalizeArabic(msg.text);
-          const isMentioned = possibleMentions.some(m => text.includes(m));
-          const isRepliedTo = msg.replyTo?.senderId === user.uid || 
-                              (msg.replyTo?.senderName && (msg.replyTo.senderName === user.name || msg.replyTo.senderName === user.originalName));
-          
-          if ((isMentioned || isRepliedTo) && msg.senderId !== user.uid && msg.senderEmail !== user.email) {
+          hwSnap.forEach(docSnap => {
+            const data = docSnap.data() as Homework;
             items.push({
               id: docSnap.id,
-              type: 'mention',
-              title: isRepliedTo ? (isRtl ? 'رد جديد' : 'New Reply') : (isRtl ? 'إشارة جديدة' : 'New Mention'),
+              type: 'homework',
+              title: isRtl ? 'واجب جديد' : 'New Homework',
               body: isRtl 
-                ? (isRepliedTo ? `قام ${msg.senderName} بالرد عليك: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"` : `قام ${msg.senderName} بذكرك في المحادثة: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`)
-                : (isRepliedTo ? `${msg.senderName} replied to you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"` : `${msg.senderName} mentioned you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`),
-              createdAt: msg.timestamp?.toMillis ? msg.timestamp.toMillis() : Date.now(),
-              icon: MessageSquare
+                ? `تم إضافة واجب جديد لمادة ${data.subject === 'organic_chemistry' ? 'الكيمياء العضوية' : data.subject}`
+                : `New homework added for ${data.subject}`,
+              createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
+              icon: BookOpen
             });
-          }
-        });
+          });
+        } catch (e) {
+          console.error("Homeworks fetch failed", e);
+        }
+
+        // 2. Fetch Chat Mentions (last 200 messages)
+        try {
+          const chatQuery = query(collection(db, 'chat_messages'), orderBy('timestamp', 'desc'), limit(200));
+          const chatSnap = await getDocs(chatQuery);
+          
+          const normalizeArabic = (text: string) => {
+            if (!text) return '';
+            return text.toLowerCase()
+                       .replace(/[أإآا]/g, 'ا')
+                       .replace(/ة/g, 'ه')
+                       .replace(/ى/g, 'ي');
+          };
+
+          const firstName = user.name ? user.name.split(' ')[0] : '';
+          const originalFirstName = user.originalName ? user.originalName.split(' ')[0] : '';
+          const possibleMentions = [
+            `@${normalizeArabic(user.name)}`, 
+            `@${normalizeArabic(user.originalName)}`, 
+            `@${normalizeArabic(user.email.split('@')[0])}`,
+            `@${normalizeArabic(firstName)}`,
+            `@${normalizeArabic(originalFirstName)}`
+          ].filter(m => m && m.length > 2); // Exclude very short or empty mentions like "@"
+          
+          chatSnap.forEach(docSnap => {
+            const msg = docSnap.data();
+            if (!msg.text) return;
+            
+            const text = normalizeArabic(msg.text);
+            const isMentioned = possibleMentions.some(m => text.includes(m));
+            const isRepliedTo = msg.replyTo?.senderId === user.uid || 
+                                (msg.replyTo?.senderName && (msg.replyTo.senderName === user.name || msg.replyTo.senderName === user.originalName));
+            
+            if ((isMentioned || isRepliedTo) && msg.senderId !== user.uid && msg.senderEmail !== user.email) {
+              items.push({
+                id: docSnap.id,
+                type: 'mention',
+                title: isRepliedTo ? (isRtl ? 'رد جديد' : 'New Reply') : (isRtl ? 'إشارة جديدة' : 'New Mention'),
+                body: isRtl 
+                  ? (isRepliedTo ? `قام ${msg.senderName} بالرد عليك: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"` : `قام ${msg.senderName} بذكرك في المحادثة: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`)
+                  : (isRepliedTo ? `${msg.senderName} replied to you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"` : `${msg.senderName} mentioned you: "${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`),
+                createdAt: msg.timestamp?.toMillis ? msg.timestamp.toMillis() : Date.now(),
+                icon: MessageSquare
+              });
+            }
+          });
+        } catch (e) {
+          console.error("Chat mentions fetch failed", e);
+        }
+
+        // 3. Fetch system notifications
+        try {
+          const sysQuery = query(collection(db, 'systemNotifications'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'), limit(20));
+          const sysSnap = await getDocs(sysQuery);
+          sysSnap.forEach(docSnap => {
+            const data = docSnap.data();
+            items.push({
+              id: docSnap.id,
+              type: 'system',
+              title: data.title || (isRtl ? 'إشعار إداري' : 'System Notice'),
+              body: data.body || '',
+              createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
+              icon: ShieldAlert
+            });
+          });
+        } catch (e) {
+          console.error("System notifications fetch failed", e);
+        }
 
         // Sort combined
         items.sort((a, b) => b.createdAt - a.createdAt);
@@ -159,7 +186,9 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                   item.type === 'mention' 
                     ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
-                    : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
+                    : item.type === 'system'
+                      ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+                      : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
                 }`}>
                   <item.icon className="w-5 h-5" />
                 </div>

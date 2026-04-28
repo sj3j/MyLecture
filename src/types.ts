@@ -61,7 +61,10 @@ export interface UserProfile {
   favorites?: string[];
   studied?: string[];
   streakCount?: number;
+  longestStreak?: number;
+  freezeTokens?: number;
   lastActiveDate?: string;
+  lastStreakDate?: string;
   examCode?: string;
   group?: string;
   notificationPreferences?: {
@@ -94,6 +97,8 @@ export interface Student {
   isActive: boolean;
   createdAt: any;
   currentName?: string; // Appended from users collection
+  streakCount?: number;
+  userUid?: string;
 }
 
 export interface Homework {

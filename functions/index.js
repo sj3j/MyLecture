@@ -102,9 +102,18 @@ exports.sendLectureNotificationV3 = onDocumentCreated({
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
+    const lectureId = event.params.lectureId;
+
+    const notifLockRef = db.doc(`sentNotifications/${lectureId}_sendLectureNotificationV3`);
+    const lockSnap = await notifLockRef.get();
+    if (lockSnap.exists) {
+      console.log('Already sent, skipping');
+      return null;
+    }
+    await notifLockRef.set({ sentAt: admin.firestore.FieldValue.serverTimestamp() });
+
     const lectureData = snap.data();
     const lectureTitle = lectureData.title || 'New Lecture';
-    const lectureId = event.params.lectureId;
 
     console.log('New lecture created:', lectureTitle);
 
@@ -153,6 +162,16 @@ exports.sendAnnouncementNotificationV3 = onDocumentCreated({
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
+    
+    const announcementId = event.params.announcementId;
+    const notifLockRef = db.doc(`sentNotifications/${announcementId}_sendAnnouncementNotificationV3`);
+    const lockSnap = await notifLockRef.get();
+    if (lockSnap.exists) {
+      console.log('Already sent, skipping');
+      return null;
+    }
+    await notifLockRef.set({ sentAt: admin.firestore.FieldValue.serverTimestamp() });
+
     const announcementData = snap.data();
     let content = announcementData.text || announcementData.content || 'إعلان جديد';
     // Truncate content for notification body
@@ -292,6 +311,16 @@ exports.sendHomeworkNotificationV3 = onDocumentCreated({
 }, async (event) => {
     const snap = event.data;
     if (!snap) return;
+
+    const homeworkId = event.params.homeworkId;
+    const notifLockRef = db.doc(`sentNotifications/${homeworkId}_sendHomeworkNotificationV3`);
+    const lockSnap = await notifLockRef.get();
+    if (lockSnap.exists) {
+      console.log('Already sent, skipping');
+      return null;
+    }
+    await notifLockRef.set({ sentAt: admin.firestore.FieldValue.serverTimestamp() });
+
     const homeworkData = snap.data();
     
     // Translate subject to Arabic
@@ -352,6 +381,72 @@ exports.sendHomeworkNotificationV3 = onDocumentCreated({
     console.log('Failed messages:', response.failureCount);
 
     await cleanupTokens(response, tokenDocs);
+
+    return null;
+  });
+
+exports.sendSystemNotificationV3 = onDocumentCreated({
+  document: 'systemNotifications/{notificationId}',
+  database: '(default)'
+}, async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const notificationId = event.params.notificationId;
+    const notifLockRef = db.doc(`sentNotifications/${notificationId}_sendSystemNotificationV3`);
+    const lockSnap = await notifLockRef.get();
+    if (lockSnap.exists) {
+      console.log('Already sent, skipping');
+      return null;
+    }
+    await notifLockRef.set({ sentAt: admin.firestore.FieldValue.serverTimestamp() });
+
+    const data = snap.data();
+    const userId = data.userId;
+    if (!userId) return null;
+
+    console.log(`New system notification for user: ${userId}`);
+
+    // Fetch token for this specific user
+    const tokenDoc = await db.collection('fcm_tokens').doc(userId).get();
+    if (!tokenDoc.exists || !tokenDoc.data().token) {
+      console.log('No valid token found for user.');
+      return null;
+    }
+
+    const payload = {
+      notification: {
+        title: data.title || 'إشعار إداري',
+        body: data.body || '',
+      },
+      data: {
+        url: `/?tab=profile`,
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+    };
+
+    try {
+      const response = await admin.messaging().send({
+        token: tokenDoc.data().token,
+        notification: payload.notification,
+        data: payload.data,
+        webpush: {
+          fcmOptions: {
+            link: `/?tab=profile`
+          }
+        }
+      });
+      console.log('Successfully sent message:', response);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      if (
+        error.code === 'messaging/invalid-registration-token' ||
+        error.code === 'messaging/registration-token-not-registered'
+      ) {
+         await db.collection('fcm_tokens').doc(userId).delete();
+         console.log('Cleaned up invalid token for user', userId);
+      }
+    }
 
     return null;
   });

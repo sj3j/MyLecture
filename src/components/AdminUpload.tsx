@@ -26,7 +26,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [version, setVersion] = useState<'original' | 'translated'>('original');
   const [isWeekly, setIsWeekly] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -44,40 +44,54 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
       setYoutubeUrl(lectureToEdit.youtubeUrl || '');
       setVersion(lectureToEdit.version || 'original');
       setIsWeekly(lectureToEdit.isWeekly || false);
-      setFile(null); // Optional to upload a new file
+      setFiles([]); // Optional to upload a new file
     } else {
       resetForm();
     }
   }, [lectureToEdit, isOpen]);
 
-  const processFile = (selectedFile: File) => {
-    if (selectedFile.type !== 'application/pdf') {
-      setError(isRtl ? 'يرجى اختيار ملف PDF فقط' : 'Please select a PDF file only');
-      return;
-    }
-    if (selectedFile.size > 10 * 1024 * 1024) { // 10MB limit
-      setError(t.maxSize);
-      return;
+  const processFiles = (selectedFiles: FileList | null) => {
+    if (!selectedFiles) return;
+    
+    const validFiles: File[] = [];
+    let hasError = false;
+    
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const selectedFile = selectedFiles[i];
+      if (selectedFile.type !== 'application/pdf') {
+        setError(isRtl ? 'يرجى اختيار ملفات PDF فقط' : 'Please select PDF files only');
+        hasError = true;
+        break;
+      }
+      if (selectedFile.size > 10 * 1024 * 1024) { // 10MB limit
+        setError(t.maxSize);
+        hasError = true;
+        break;
+      }
+      validFiles.push(selectedFile);
     }
     
-    setFile(selectedFile);
-    setError(null);
+    if (!hasError && validFiles.length > 0) {
+      setFiles(prev => [...prev, ...validFiles]);
+      setError(null);
 
-    // Smart title extraction if title is empty
-    if (!title) {
-      const nameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
-      const cleanTitle = nameWithoutExt
-        .replace(/[_-]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      setTitle(cleanTitle);
+      // Smart title extraction if title is empty and only one file
+      if (validFiles.length === 1 && files.length === 0 && !title) {
+        const nameWithoutExt = validFiles[0].name.replace(/\.[^/.]+$/, "");
+        const cleanTitle = nameWithoutExt
+          .replace(/[_-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        setTitle(cleanTitle);
+      } else if (validFiles.length > 1 || files.length > 0) {
+        // If multiple files, clear title as it will use file names for each
+        setTitle('');
+      }
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
+    processFiles(e.target.files);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -93,9 +107,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
-    }
+    processFiles(e.dataTransfer.files);
   };
 
   const resetForm = () => {
@@ -105,7 +117,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     setYoutubeUrl('');
     setVersion('original');
     setIsWeekly(false);
-    setFile(null);
+    setFiles([]);
     setUploadProgress(null);
     setShowSuccess(false);
     setError(null);
@@ -114,84 +126,101 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
-    if (!lectureToEdit && !file && !youtubeUrl) return;
+    if (!lectureToEdit && files.length === 0 && !youtubeUrl) return;
 
     setIsSubmitting(true);
     setError(null);
     setUploadProgress(0);
 
     try {
-      let downloadUrl = lectureToEdit?.pdfUrl || '';
+      if (lectureToEdit || files.length === 0) {
+        // Edit mode OR Youtube only creation mode
+        let downloadUrl = lectureToEdit?.pdfUrl || '';
+        const currentFile = files.length > 0 ? files[0] : null;
 
-      if (file) {
-        // 1. Upload file to Firebase Storage
-        const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-        const storagePath = `lectures/${Date.now()}_${safeFileName}`;
-        console.log('Starting upload to:', storagePath);
+        if (currentFile) {
+          const safeFileName = currentFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+          const storagePath = `lectures/${Date.now()}_${safeFileName}`;
+          const storageRef = ref(storage, storagePath);
+          const uploadTask = uploadBytesResumable(storageRef, currentFile);
+
+          downloadUrl = await new Promise<string>((resolve, reject) => {
+            uploadTask.on('state_changed', 
+              (snapshot) => setUploadProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100), 
+              reject, 
+              async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
+            );
+          });
+        }
+
+        const lectureData: any = {
+          title,
+          category,
+          type,
+          description,
+          youtubeUrl: youtubeUrl || null,
+          pdfUrl: downloadUrl,
+          uploadedBy: auth.currentUser.uid,
+          uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
+          version,
+          isWeekly,
+        };
         
-        const storageRef = ref(storage, storagePath);
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        if (lectureNumber) lectureData.number = parseInt(lectureNumber, 10);
+        else lectureData.number = null; 
 
-        downloadUrl = await new Promise<string>((resolve, reject) => {
-          uploadTask.on('state_changed', 
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log(`Upload progress: ${progress.toFixed(2)}%`);
-              setUploadProgress(progress);
-            }, 
-            (error) => {
-              console.error('Upload error details:', {
-                code: error.code,
-                message: error.message,
-                fileName: file.name,
-                fileSize: file.size,
-                timestamp: new Date().toISOString()
-              });
-              reject(error);
-            }, 
-            async () => {
-              try {
-                console.log('Upload complete, getting download URL...');
-                const url = await getDownloadURL(uploadTask.snapshot.ref);
-                resolve(url);
-              } catch (err) {
-                console.error('Download URL error:', err);
-                reject(err);
-              }
-            }
-          );
-        });
-      }
-
-      // 2. Save metadata to Firestore
-      console.log('Saving metadata to Firestore...');
-      const lectureData: any = {
-        title,
-        category,
-        type,
-        description,
-        youtubeUrl: youtubeUrl || null,
-        pdfUrl: downloadUrl,
-        uploadedBy: auth.currentUser.uid,
-        uploaderName: user?.name || auth.currentUser.displayName || 'Admin',
-        version,
-        isWeekly,
-      };
-      
-      if (lectureNumber) {
-        lectureData.number = parseInt(lectureNumber, 10);
+        if (lectureToEdit) {
+          await updateDoc(doc(db, 'lectures', lectureToEdit.id), lectureData);
+        } else {
+          lectureData.createdAt = serverTimestamp();
+          await addDoc(collection(db, 'lectures'), lectureData);
+        }
       } else {
-        // To remove the number field if it was cleared during edit
-        lectureData.number = null; 
-      }
+        // Multiple files creation mode
+        for (let i = 0; i < files.length; i++) {
+          const currentFile = files[i];
+          const safeFileName = currentFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+          const storagePath = `lectures/${Date.now()}_${safeFileName}`;
+          const storageRef = ref(storage, storagePath);
+          const uploadTask = uploadBytesResumable(storageRef, currentFile);
 
-      if (lectureToEdit) {
-        await updateDoc(doc(db, 'lectures', lectureToEdit.id), lectureData);
-      } else {
-        lectureData.createdAt = serverTimestamp();
-        await addDoc(collection(db, 'lectures'), lectureData);
+          const downloadUrl = await new Promise<string>((resolve, reject) => {
+            uploadTask.on('state_changed', 
+              (snapshot) => {
+                const fileProgress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                const totalProgress = ((i + (fileProgress / 100)) / files.length) * 100;
+                setUploadProgress(totalProgress);
+              }, 
+              reject, 
+              async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
+            );
+          });
+
+          const fileTitle = title ? `${title} ${files.length > 1 ? i + 1 : ''}`.trim() : currentFile.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
+          
+          const lectureData: any = {
+            title: fileTitle,
+            category,
+            type,
+            description,
+            youtubeUrl: youtubeUrl || null,
+            pdfUrl: downloadUrl,
+            uploadedBy: auth.currentUser?.uid,
+            uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
+            version,
+            isWeekly,
+            createdAt: serverTimestamp(),
+          };
+          
+          if (lectureNumber && files.length === 1) {
+            lectureData.number = parseInt(lectureNumber, 10);
+          } else {
+            lectureData.number = null;
+          }
+
+          await addDoc(collection(db, 'lectures'), lectureData);
+        }
       }
-      console.log('Metadata saved successfully');
 
       setShowSuccess(true);
     } catch (err: any) {
@@ -427,7 +456,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                       onDrop={handleDrop}
                       className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
                         isDragging ? 'border-sky-500 dark:border-sky-500 bg-sky-50 dark:bg-sky-900/30 scale-[1.02]' : 
-                        file ? 'border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30' : 
+                        files.length > 0 ? 'border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30' : 
                         'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 hover:border-sky-300 dark:hover:border-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/10'
                       }`}
                     >
@@ -436,18 +465,24 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                         ref={fileInputRef}
                         onChange={handleFileChange}
                         accept=".pdf"
+                        multiple={!lectureToEdit}
                         className="hidden"
                       />
-                      {file ? (
+                      {files.length > 0 ? (
                         <>
                           <CheckCircle2 className="w-8 h-8 text-sky-500 dark:text-sky-400" />
-                          <span className="text-sm font-bold text-sky-700 dark:text-sky-300 truncate max-w-xs">{file.name}</span>
-                          <span className="text-xs text-sky-600 dark:text-sky-500">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                          <span className="text-sm font-bold text-sky-700 dark:text-sky-300 truncate max-w-xs">{files.length === 1 ? files[0].name : isRtl ? `تم تحديد ${files.length} ملفات` : `${files.length} files selected`}</span>
+                          <span className="text-xs text-sky-600 dark:text-sky-500">
+                            {files.length === 1 
+                              ? `${(files[0].size / 1024 / 1024).toFixed(2)} MB` 
+                              : `${(files.reduce((acc, f) => acc + f.size, 0) / 1024 / 1024).toFixed(2)} MB total`
+                            }
+                          </span>
                         </>
                       ) : (
                         <>
                           <FileUp className={`w-8 h-8 ${isDragging ? 'text-sky-500 dark:text-sky-400 animate-bounce' : 'text-slate-400 dark:text-slate-500'}`} />
-                          <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{t.clickToUpload}</span>
+                          <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{t.clickToUpload} {lectureToEdit ? '' : isRtl ? '(يمكنك اختيار عدة ملفات)' : '(Multiple files allowed)'}</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500">{t.dragDrop}</span>
                           <span className="text-[10px] text-slate-300 dark:text-slate-600 uppercase tracking-widest mt-1">{t.maxSize}</span>
                         </>
@@ -481,7 +516,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                   )}
 
                   <button
-                    disabled={isSubmitting || (!lectureToEdit && !file)}
+                    disabled={isSubmitting || (!lectureToEdit && files.length === 0 && !youtubeUrl)}
                     type="submit"
                     className="w-full py-3.5 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-sky-700 dark:hover:bg-sky-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-sky-200 dark:shadow-none"
                   >

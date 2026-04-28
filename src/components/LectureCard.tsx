@@ -399,7 +399,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
                     </div>
                   )}
                   <iframe
-                    src={`${offlineUrl || lecture.pdfUrl}#toolbar=0`}
+                    src={`${lecture.pdfUrl}#toolbar=0`}
                     className="w-full flex-1 border-none bg-slate-50 dark:bg-zinc-800"
                     title={lecture.title}
                   />

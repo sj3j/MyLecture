@@ -4,7 +4,7 @@ import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info } from 'lucide-react';
 import NotificationsModal from './NotificationsModal';
 
 interface ProfileScreenProps {
@@ -24,6 +24,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
   const [error, setError] = useState('');
   const [showManageDownloads, setShowManageDownloads] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  const [showStreakInfo, setShowStreakInfo] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
@@ -164,7 +165,6 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
         name: editName.trim(),
         role: user.role,
         email: user.email,
-        examCode: editExamCode.trim(),
         group: editGroup.trim(),
         ...(photoUrl ? { photoUrl } : {})
       }, { merge: true });
@@ -321,6 +321,38 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             })}
           </div>
         )}
+
+        <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 rounded-2xl p-4 mb-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <Shield className="w-24 h-24 text-orange-500" />
+          </div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+            <h3 className="text-sm font-bold text-orange-800 dark:text-orange-300 flex items-center gap-2">
+              {isRtl ? 'حالة الستريك' : 'Streak Status'}
+            </h3>
+            <button 
+              onClick={() => setShowStreakInfo(true)}
+              className="p-1 rounded-full text-orange-500 bg-orange-100 dark:bg-orange-800/30 hover:bg-orange-200 dark:hover:bg-orange-800/50 transition-colors"
+              title={isRtl ? 'معلومات الستريك' : 'Streak Info'}
+            >
+              <Info className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-3 relative z-10">
+            <div className="bg-white/60 dark:bg-zinc-800/50 p-3 rounded-xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-sm">
+              <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mb-1">🔥 Current</p>
+              <p className="text-xl font-bold text-orange-700 dark:text-orange-300">{user?.streakCount || 0}</p>
+            </div>
+            <div className="bg-white/60 dark:bg-zinc-800/50 p-3 rounded-xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-sm">
+              <p className="text-xs text-amber-600 dark:text-amber-400 font-medium mb-1">🏆 Longest</p>
+              <p className="text-xl font-bold text-amber-700 dark:text-amber-400">{Math.max(user?.longestStreak || 0, user?.streakCount || 0)}</p>
+            </div>
+            <div className="bg-white/60 dark:bg-zinc-800/50 p-3 rounded-xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-sm">
+              <p className="text-xs text-sky-600 dark:text-sky-400 font-medium mb-1 flex items-center justify-center gap-1"><Shield className="w-3 h-3" /> Shields</p>
+              <p className="text-xl font-bold text-sky-700 dark:text-sky-400">{Math.min(user?.freezeTokens ?? 1, 3)}/3</p>
+            </div>
+          </div>
+        </div>
 
         <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700 mb-6">
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المعلومات الأكاديمية' : 'Academic Information'}</h3>
@@ -536,6 +568,53 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           lang={lang}
           onClose={() => setShowNotificationsModal(false)}
         />
+      )}
+
+      {showStreakInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl relative p-6">
+            <button onClick={() => setShowStreakInfo(false)} className="absolute top-4 right-4 p-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors z-10">
+              <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            </button>
+            
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-3xl flex items-center justify-center mx-auto mb-4 transform -rotate-6">
+                <Shield className="w-10 h-10 text-orange-500" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white capitalize">
+                {isRtl ? 'كيف يعمل الستريك؟' : 'How the streak works'}
+              </h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex gap-4 items-start">
+                <div className="p-2 bg-slate-100 dark:bg-zinc-800 rounded-xl shrink-0"><Check className="w-5 h-5 text-emerald-500" /></div>
+                <div>
+                  <h4 className="font-bold text-slate-900 dark:text-white">{isRtl ? 'تتبع نشاطك' : 'Track your activity'}</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{isRtl ? 'كل يوم تفتح فيه التطبيق، يزداد الستريك الخاص بك.' : 'Every day you open the app, your streak increases by one day.'}</p>
+                </div>
+              </div>
+              <div className="flex gap-4 items-start">
+                <div className="p-2 bg-slate-100 dark:bg-zinc-800 rounded-xl shrink-0"><Shield className="w-5 h-5 text-blue-500" /></div>
+                <div>
+                  <h4 className="font-bold text-slate-900 dark:text-white">{isRtl ? 'دروع التجميد (الحد: 3)' : 'Freeze Shields (Max: 3)'}</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{isRtl ? 'بإمكانك امتلاك 3 دروع بحد أقصى. إذا نسيت الدخول للتطبيق، تمتص الدروع الضرر وتنقذ الستريك من الضياع.' : 'You can have up to 3 shields. If you miss a day, the shield will absorb the hit and save your streak from resetting.'}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-8 px-4 py-3 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 rounded-2xl text-sm font-medium text-center">
+              {isRtl ? 'واصل الحفاظ على تألقك ونجاحك اليومي!' : 'Keep up the daily grind to stay on fire!'}
+            </div>
+            
+            <button
+               onClick={() => setShowStreakInfo(false)}
+               className="w-full mt-6 py-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl transition-colors shadow-lg shadow-orange-500/30"
+            >
+              {isRtl ? 'حسناً، فهمت' : 'Got it!'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

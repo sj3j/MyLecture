@@ -84,6 +84,8 @@ service cloud.firestore {
              (!('favorites' in data) || data.favorites is list) &&
              (!('studied' in data) || data.studied is list) &&
              (!('streakCount' in data) || data.streakCount is number) &&
+             (!('longestStreak' in data) || data.longestStreak is number) &&
+             (!('freezeTokens' in data) || data.freezeTokens is number) &&
              (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
@@ -131,10 +133,25 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
                     (request.resource.data.role == 'student' || 
                      (request.resource.data.role in ['admin', 'moderator'] && (isMasterAdmin() || (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower()))))));
-      allow update: if isMasterAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && (
+      allow update: if isMasterAdmin() || (isAdminOrModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['examCode', 'name', 'originalName'])) || (isOwner(userId) && isValidUser(request.resource.data) && (
                       request.resource.data.role == (resource.data.role != null ? resource.data.role : 'student') ||
                       (request.resource.data.role in ['admin', 'moderator'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
-                    ) && (isAdminOrModerator() || !('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', '')));
+                    ) && (isAdminOrModerator() || (!('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', '')))
+                      && (isAdminOrModerator() || (!('examCode' in request.resource.data) || request.resource.data.examCode == resource.data.get('examCode', '')))
+                      && request.resource.data.get('streakCount', 0) == resource.data.get('streakCount', 0)
+                      && request.resource.data.get('freezeTokens', 1) == resource.data.get('freezeTokens', 1)
+                      && request.resource.data.get('longestStreak', 0) == resource.data.get('longestStreak', 0)
+                      && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', ''));
+    }
+
+    match /streak_history/{docId} {
+      allow read: if isAuthenticated() && (isAdminOrModerator() || docId.split('_')[0] == request.auth.uid);
+      allow write: if false; // Only Cloud Functions / Admin SDK
+    }
+
+    match /streak_recoveries/{docId} {
+      allow read: if isAdminOrModerator();
+      allow write: if false; // Only via API
     }
 
     match /degrees/{studentId}/exams/{examId} {
@@ -211,13 +228,19 @@ service cloud.firestore {
 
     match /userMCQAnswers/{userId}/lectures/{document=**} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrModerator());
-      allow write: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdminOrModerator();
     }
 
     match /userMCQStats/{userId} {
       allow read: if hasAccess();
       // Regular user or Admin can write stats
       allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdminOrModerator();
+    }
+
+    match /systemNotifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdminOrModerator());
+      allow write: if isAdminOrModerator();
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid; // Allow user to delete their own notifications if needed
     }
 
     match /adminAlerts/{alertId} {
@@ -237,7 +260,7 @@ service cloud.firestore {
 
     match /userBankAnswers/{userId}/questions/{questionId} {
       allow read: if isAdminOrModerator() || isOwner(userId);
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) || isAdminOrModerator();
     }
     
     match /fcm_tokens/{userId} {

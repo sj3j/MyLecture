@@ -212,6 +212,21 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
     }
   };
 
+  const handleToggleStudied = async (lectureId: string) => {
+    if (!user) return;
+    const isStudied = user.studied?.includes(lectureId);
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      if (isStudied) {
+        await setDoc(userRef, { studied: arrayRemove(lectureId) }, { merge: true });
+      } else {
+        await setDoc(userRef, { studied: arrayUnion(lectureId) }, { merge: true });
+      }
+    } catch (error) {
+      console.error('Error toggling studied:', error);
+    }
+  };
+
   const handleDeleteHomework = async () => {
     if (!homeworkToDelete) return;
     setIsDeleting(true);
@@ -647,16 +662,29 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                   <div className="flex flex-wrap gap-2">
                     {hw.lectures.map((lec, i) => {
                       const actualLecture = allLectures.find(l => l.id === lec.lectureId);
+                      const isStudied = user?.studied?.includes(lec.lectureId) || false;
                       return (
-                        <a
-                          key={`${lec.lectureId}-${i}`}
-                          href={actualLecture?.pdfUrl || '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-[12px] text-sm font-bold text-[#2196F3] dark:text-sky-400 hover:border-sky-300 transition-all shadow-sm"
-                        >
-                          {lec.label}
-                        </a>
+                        <div key={`${lec.lectureId}-${i}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-[12px] shadow-sm">
+                          <button
+                            title={t.studied}
+                            onClick={() => handleToggleStudied(lec.lectureId)}
+                            className={`p-1 rounded-full border transition-colors ${
+                              isStudied 
+                                ? 'bg-[#2196F3] border-[#2196F3] text-white' 
+                                : 'border-slate-300 dark:border-zinc-600 hover:border-[#2196F3]'
+                            }`}
+                          >
+                            <Check className={`w-3.5 h-3.5 ${isStudied ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
+                          </button>
+                          <a
+                            href={actualLecture?.pdfUrl || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-bold text-[#2196F3] dark:text-sky-400 hover:text-sky-600 transition-colors"
+                          >
+                            {lec.label}
+                          </a>
+                        </div>
                       );
                     })}
                   </div>

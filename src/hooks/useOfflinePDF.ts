@@ -15,7 +15,11 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
       const response = await cache.match(pdfUrl);
       if (response) {
         setIsDownloaded(true);
-        if (lectureId) localStorage.setItem(`pdf_${lectureId}`, 'true');
+        if (lectureId) {
+          if (localStorage.getItem(`pdf_${lectureId}`) === 'true' || !localStorage.getItem(`pdf_${lectureId}`)) {
+            localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
+          }
+        }
         // Create a blob URL for offline viewing
         const blob = await response.blob();
         setOfflineUrl(URL.createObjectURL(blob));
@@ -59,6 +63,7 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
       if (total === 0 || !response.body) {
         const cache = await caches.open(CACHE_NAME);
         await cache.put(pdfUrl, response);
+        if (lectureId) localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
         await checkIsDownloaded();
         setIsDownloading(false);
         return;
@@ -84,6 +89,8 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
       
       const cache = await caches.open(CACHE_NAME);
       await cache.put(pdfUrl, cacheResponse);
+      
+      if (lectureId) localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
       
       await checkIsDownloaded();
     } catch (error) {

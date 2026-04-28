@@ -199,6 +199,7 @@ export default function App() {
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
               streakCount: userDoc.data().streakCount || 0,
               lastActiveDate: userDoc.data().lastActiveDate || undefined,
+              lastStreakDate: userDoc.data().lastStreakDate || undefined,
               examCode: studentData?.examCode || userDoc.data().examCode || undefined,
               group: userDoc.data().group || undefined,
               favorites: userDoc.data().favorites || [],
@@ -269,36 +270,31 @@ export default function App() {
 
   // Streak Logic
   useEffect(() => {
-    if (user && user.uid) {
-      const today = new Date().toISOString().split('T')[0];
-      const lastActiveStr = user.lastActiveDate;
-      const lastActiveDay = lastActiveStr?.split('T')[0];
-      
-      if (lastActiveDay !== today) {
-        let newStreak = user.streakCount || 0;
-        
-        if (lastActiveDay) {
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = yesterday.toISOString().split('T')[0];
-          
-          if (lastActiveDay === yesterdayStr) {
-            newStreak += 1;
-          } else {
-            newStreak = 1;
-          }
-        } else {
-          newStreak = 1;
+    // We will just call the API once per mount if user is present
+    if (user?.uid) {
+      const recordActivity = async () => {
+        try {
+           const token = await auth.currentUser?.getIdToken();
+           if (!token) return;
+           const res = await fetch("/api/record-activity", {
+             method: "POST",
+             headers: {
+               "Content-Type": "application/json",
+               "Authorization": `Bearer ${token}`
+             }
+           });
+           const data = await res.json();
+           if (data.success && data.freezeUsed) {
+              console.log('Freeze token used!');
+           }
+        } catch (e) {
+          console.error("Failed to record activity", e);
         }
-        
-        // Update in Firestore
-        updateDoc(doc(db, 'users', user.uid), {
-          lastActiveDate: new Date().toISOString(),
-          streakCount: newStreak
-        }).catch(console.error);
-      }
+      };
+      
+      recordActivity();
     }
-  }, [user?.uid, user?.lastActiveDate]);
+  }, [user?.uid]); // Only call when user uid is available on initial mount
 
   // Announcements Listener for Notifications
   useEffect(() => {
@@ -349,36 +345,38 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  let baseLectures = lectures.filter(lecture => {
-    const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;
-    const matchesType = selectedType === 'all' || lecture.type === selectedType;
-    return matchesCategory && matchesType;
-  });
-
-  if (searchQuery.trim()) {
-    const fuse = new Fuse(baseLectures, {
-      keys: ['title', 'description'],
-      threshold: 0.4,
-      ignoreLocation: true,
+  const filteredLectures = React.useMemo(() => {
+    let base = lectures.filter(lecture => {
+      const matchesCategory = selectedCategory === 'all' || lecture.category === selectedCategory;
+      const matchesType = selectedType === 'all' || lecture.type === selectedType;
+      return matchesCategory && matchesType;
     });
-    baseLectures = fuse.search(searchQuery).map(result => result.item);
-  }
 
-  const filteredLectures = baseLectures.sort((a, b) => {
-    let comparison = 0;
-    if (sortBy === 'title') {
-      comparison = a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en');
-    } else if (sortBy === 'date') {
-      const dateA = a.createdAt?.toMillis?.() || 0;
-      const dateB = b.createdAt?.toMillis?.() || 0;
-      comparison = dateA - dateB;
-    } else if (sortBy === 'number') {
-      const numA = a.number || 0;
-      const numB = b.number || 0;
-      comparison = numA - numB;
+    if (searchQuery.trim()) {
+      const fuse = new Fuse(base, {
+        keys: ['title', 'description'],
+        threshold: 0.4,
+        ignoreLocation: true,
+      });
+      base = fuse.search(searchQuery).map(result => result.item);
     }
-    return sortOrder === 'asc' ? comparison : -comparison;
-  });
+
+    return base.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'title') {
+        comparison = a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en');
+      } else if (sortBy === 'date') {
+        const dateA = a.createdAt?.toMillis?.() || 0;
+        const dateB = b.createdAt?.toMillis?.() || 0;
+        comparison = dateA - dateB;
+      } else if (sortBy === 'number') {
+        const numA = a.number || 0;
+        const numB = b.number || 0;
+        comparison = numA - numB;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [lectures, selectedCategory, selectedType, searchQuery, sortBy, sortOrder, lang]);
 
   const handleNavigateToChat = useCallback(() => setCurrentTab('chat'), []);
   const handleEditLecture = useCallback((l: Lecture) => { setLectureToEdit(l); setShowUpload(true); }, []);
