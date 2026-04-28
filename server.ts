@@ -665,11 +665,11 @@ async function startServer() {
 
   // --- Streak System Backend ---
   
-  const getEgyptDateAndHour = () => {
-    // using Intl.DateTimeFormat to reliably get hour and date in Africa/Cairo
+  const getIraqDateAndHour = () => {
+    // using Intl.DateTimeFormat to reliably get hour and date in Asia/Baghdad
     const now = new Date();
-    // get time in Egypt, guaranteeing 0-23 hours
-    const str = now.toLocaleString("en-GB", { timeZone: "Africa/Cairo", hourCycle: "h23" });
+    // get time in Iraq, guaranteeing 0-23 hours
+    const str = now.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", hourCycle: "h23" });
     // form: '28/04/2026, 15:30:00'
     const [datePart, timePart] = str.split(', ');
     const [day, month, year] = datePart.split('/');
@@ -684,7 +684,7 @@ async function startServer() {
   };
 
   const getEffectiveDateString = () => {
-    const { year, month, day, hour } = getEgyptDateAndHour();
+    const { year, month, day, hour } = getIraqDateAndHour();
     // GRACE PERIOD: 00:00 to 01:59AM will be counted as previous day
     // We get the actual date
     let effectiveDate = new Date(`${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00Z`);
