@@ -683,13 +683,13 @@ async function startServer() {
     };
   };
 
-  const getEffectiveDateString = () => {
+  const getEffectiveDateString = (gracePeriodHours: number = 2) => {
     const { year, month, day, hour } = getIraqDateAndHour();
-    // GRACE PERIOD: 00:00 to 01:59AM will be counted as previous day
+    // GRACE PERIOD: 00:00 to <gracePeriodHours>:59AM will be counted as previous day
     // We get the actual date
     let effectiveDate = new Date(`${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00Z`);
     
-    if (hour >= 0 && hour < 2) {
+    if (hour >= 0 && hour < gracePeriodHours) {
       effectiveDate.setDate(effectiveDate.getDate() - 1);
     }
     
@@ -713,11 +713,14 @@ async function startServer() {
       const db = admin.firestore();
       const userRef = db.collection('users').doc(user.uid);
       
-      const effectiveDate = getEffectiveDateString();
-      const historyId = `${user.uid}_${effectiveDate}`;
-      const historyRef = db.collection('streak_history').doc(historyId);
-      
       await db.runTransaction(async (t) => {
+        const appSettingsDoc = await t.get(db.collection('app_settings').doc('streak'));
+        const gracePeriodHours = appSettingsDoc.exists ? (appSettingsDoc.data()?.gracePeriodHours ?? 2) : 2;
+        
+        const effectiveDate = getEffectiveDateString(gracePeriodHours);
+        const historyId = `${user.uid}_${effectiveDate}`;
+        const historyRef = db.collection('streak_history').doc(historyId);
+        
         const userDoc = await t.get(userRef);
         const historyDoc = await t.get(historyRef);
         
@@ -850,7 +853,26 @@ async function startServer() {
         });
       });
       
-      // Attempt to notify user directly (optional if token exists)
+      try {
+        const updatedUser = await userRef.get();
+        const fcmToken = updatedUser.data()?.fcmToken;
+        if (fcmToken) {
+          const message = {
+            notification: {
+              title: "🔥 تم استرجاع الستريك!",
+              body: "قام الإداري باسترجاع الستريك الخاص بك بنجاح. استمر في التألق!"
+            },
+            data: {
+              type: "streak_recovery"
+            },
+            token: fcmToken
+          };
+          await admin.messaging().send(message);
+        }
+      } catch (notifyErr) {
+        console.error("Failed to send streak recovery notification", notifyErr);
+      }
+
       res.json({ success: true });
     } catch (e) {
       console.error("Streak recovery error:", e);

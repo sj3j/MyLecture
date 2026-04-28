@@ -27,6 +27,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
   const [version, setVersion] = useState<'original' | 'translated'>('original');
   const [isWeekly, setIsWeekly] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [fileConfigs, setFileConfigs] = useState<any[]>([]);
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -45,13 +47,47 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
       setVersion(lectureToEdit.version || 'original');
       setIsWeekly(lectureToEdit.isWeekly || false);
       setFiles([]); // Optional to upload a new file
+      setFileConfigs([]);
+      setCurrentFileIndex(0);
     } else {
       resetForm();
     }
   }, [lectureToEdit, isOpen]);
 
+  const loadConfig = (index: number, configs: any[]) => {
+    if (!configs || !configs[index]) return;
+    const c = configs[index];
+    setTitle(c.title);
+    setLectureNumber(c.lectureNumber);
+    setCategory(c.category);
+    setType(c.type);
+    setDescription(c.description);
+    setYoutubeUrl(c.youtubeUrl);
+    setVersion(c.version);
+    setIsWeekly(c.isWeekly);
+  };
+
+  const saveCurrentConfig = (configs: any[]) => {
+    if (configs.length === 0) return configs;
+    const newConfigs = [...configs];
+    newConfigs[currentFileIndex] = {
+      title,
+      lectureNumber,
+      category,
+      type,
+      description,
+      youtubeUrl,
+      version,
+      isWeekly
+    };
+    return newConfigs;
+  };
+
   const processFiles = (selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
+    
+    // Save current config before advancing
+    let currentConfigs = saveCurrentConfig(fileConfigs);
     
     const validFiles: File[] = [];
     let hasError = false;
@@ -72,20 +108,29 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     }
     
     if (!hasError && validFiles.length > 0) {
+      const newConfigs = validFiles.map((f, i) => {
+        const nameWithoutExt = f.name.replace(/\.[^/.]+$/, "");
+        const cleanTitle = nameWithoutExt.replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
+        return {
+          title: cleanTitle,
+          lectureNumber: '',
+          category: category,
+          type: type,
+          description: '',
+          youtubeUrl: '',
+          version: 'original',
+          isWeekly: false
+        };
+      });
+      
+      const updatedConfigs = [...currentConfigs, ...newConfigs];
+      
       setFiles(prev => [...prev, ...validFiles]);
+      setFileConfigs(updatedConfigs);
       setError(null);
 
-      // Smart title extraction if title is empty and only one file
-      if (validFiles.length === 1 && files.length === 0 && !title) {
-        const nameWithoutExt = validFiles[0].name.replace(/\.[^/.]+$/, "");
-        const cleanTitle = nameWithoutExt
-          .replace(/[_-]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        setTitle(cleanTitle);
-      } else if (validFiles.length > 1 || files.length > 0) {
-        // If multiple files, clear title as it will use file names for each
-        setTitle('');
+      if (files.length === 0) {
+         loadConfig(0, updatedConfigs);
       }
     }
   };
@@ -118,6 +163,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     setVersion('original');
     setIsWeekly(false);
     setFiles([]);
+    setFileConfigs([]);
+    setCurrentFileIndex(0);
     setUploadProgress(null);
     setShowSuccess(false);
     setError(null);
@@ -148,7 +195,14 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
             uploadTask.on('state_changed', 
               (snapshot) => setUploadProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100), 
               reject, 
-              async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
+              async () => {
+                try {
+                  const url = await getDownloadURL(uploadTask.snapshot.ref);
+                  resolve(url);
+                } catch (e) {
+                  reject(e);
+                }
+              }
             );
           });
         }
@@ -177,8 +231,12 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
         }
       } else {
         // Multiple files creation mode
+        const finalConfigs = saveCurrentConfig(fileConfigs);
+        
         for (let i = 0; i < files.length; i++) {
           const currentFile = files[i];
+          const config = finalConfigs[i];
+          
           const safeFileName = currentFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
           const storagePath = `lectures/${Date.now()}_${safeFileName}`;
           const storageRef = ref(storage, storagePath);
@@ -196,24 +254,22 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
             );
           });
 
-          const fileTitle = title ? `${title} ${files.length > 1 ? i + 1 : ''}`.trim() : currentFile.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
-          
           const lectureData: any = {
-            title: fileTitle,
-            category,
-            type,
-            description,
-            youtubeUrl: youtubeUrl || null,
+            title: config.title,
+            category: config.category,
+            type: config.type,
+            description: config.description,
+            youtubeUrl: config.youtubeUrl || null,
             pdfUrl: downloadUrl,
             uploadedBy: auth.currentUser?.uid,
             uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
-            version,
-            isWeekly,
+            version: config.version,
+            isWeekly: config.isWeekly,
             createdAt: serverTimestamp(),
           };
           
-          if (lectureNumber && files.length === 1) {
-            lectureData.number = parseInt(lectureNumber, 10);
+          if (config.lectureNumber) {
+            lectureData.number = parseInt(config.lectureNumber, 10);
           } else {
             lectureData.number = null;
           }
@@ -515,9 +571,56 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                     </div>
                   )}
 
+                  {files.length > 1 && !isSubmitting && (
+                    <div className="flex items-center justify-between pb-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = saveCurrentConfig(fileConfigs);
+                          setFileConfigs(updated);
+                          const nextIdx = currentFileIndex - 1;
+                          setCurrentFileIndex(nextIdx);
+                          loadConfig(nextIdx, updated);
+                        }}
+                        disabled={currentFileIndex === 0}
+                        className="px-4 py-2 text-sm font-bold bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl disabled:opacity-50"
+                      >
+                        {isRtl ? 'السابق' : 'Previous'}
+                      </button>
+                      <span className="text-sm font-bold text-slate-500 dark:text-slate-400">
+                        {currentFileIndex + 1} / {files.length}
+                        <br />
+                        <span className="text-xs font-normal">
+                          {files[currentFileIndex]?.name}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = saveCurrentConfig(fileConfigs);
+                          setFileConfigs(updated);
+                          const nextIdx = currentFileIndex + 1;
+                          setCurrentFileIndex(nextIdx);
+                          loadConfig(nextIdx, updated);
+                        }}
+                        disabled={currentFileIndex === files.length - 1}
+                        className="px-4 py-2 text-sm font-bold bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl disabled:opacity-50"
+                      >
+                        {isRtl ? 'التالي' : 'Next'}
+                      </button>
+                    </div>
+                  )}
+
                   <button
                     disabled={isSubmitting || (!lectureToEdit && files.length === 0 && !youtubeUrl)}
-                    type="submit"
+                    type="button"
+                    onClick={(e) => {
+                       // Force saving the current config state before submission
+                       if (files.length > 1) {
+                         setFileConfigs(saveCurrentConfig(fileConfigs));
+                       }
+                       handleSubmit(e);
+                    }}
                     className="w-full py-3.5 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-xl font-bold hover:bg-sky-700 dark:hover:bg-sky-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-sky-200 dark:shadow-none"
                   >
                     {isSubmitting ? (
@@ -528,7 +631,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                     ) : (
                       <>
                         <Upload className="w-5 h-5" />
-                        {lectureToEdit ? t.saveChanges : t.publishLecture}
+                        {lectureToEdit ? t.saveChanges : (files.length > 1 ? (isRtl ? `رفع الكل (${files.length})` : `Upload All (${files.length})`) : t.publishLecture)}
                       </>
                     )}
                   </button>
