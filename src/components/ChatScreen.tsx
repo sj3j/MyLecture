@@ -184,27 +184,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     return () => clearInterval(interval);
   }, []);
 
-  // Load Settings
-  const loadSettings = async () => {
-    try {
-      const settingsSnap = await getDoc(doc(db, 'chat_settings', CHAT_DOC_ID));
-      if (settingsSnap.exists()) {
-        setSettings(settingsSnap.data() as ChatSettings);
-      } else if (isAdminOrModerator) {
-        // Initialize if not exists
-        const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 30, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
-        try {
-          await setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings, { merge: true });
-        } catch (e) {
-          console.error('Failed to init settings', e);
-        }
-        setSettings(defaultSettings);
-      }
-    } catch (e) {
-      console.error('Failed to load settings', e);
-    }
-  };
-
   // Typing State Tracking & Sync
   useEffect(() => {
     if (!user || (!newMessage.trim() && !mentionSearch)) {
@@ -255,12 +234,22 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     return () => unsub();
   }, [user?.uid]);
 
-  // Poll Settings every 15 seconds
+  // Real-time Settings Listener
   useEffect(() => {
-    loadSettings();
-    const interval = setInterval(loadSettings, 15000);
-    return () => clearInterval(interval);
-  }, []);
+    const unsub = onSnapshot(doc(db, 'chat_settings', CHAT_DOC_ID), (docSnap) => {
+      if (docSnap.exists()) {
+        setSettings(docSnap.data() as ChatSettings);
+      } else if (isAdminOrModerator) {
+        // Initialize if not exists
+        const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 30, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
+        setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings, { merge: true }).catch(() => {});
+        setSettings(defaultSettings);
+      }
+    }, (e) => {
+      console.error('Settings listener error:', e);
+    });
+    return () => unsub();
+  }, [isAdminOrModerator]);
 
   // Listen for Live Messages (Replacing Polling)
   useEffect(() => {
@@ -279,7 +268,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
             const msg: ChatMessage = {
               id: change.doc.id,
               text: data.text || '',
-              senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'Unknown'),
+              senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'مستخدم محذوف'),
               senderEmail: data.senderEmail || '',
               senderId: data.senderId || '',
               senderAvatar: data.senderAvatar || '',
@@ -288,7 +277,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               replyTo: data.replyTo || null,
               reactions: data.reactions || { like: [], heart: [], thanks: [] },
               isAnonymous: data.isAnonymous || false,
-              isPending: change.doc.hasPendingWrites,
+              isPending: change.doc.metadata.hasPendingWrites,
               originalSenderName: data.originalSenderName || '',
               fileUrl: data.fileUrl || undefined,
               fileName: data.fileName || undefined,
@@ -383,7 +372,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!newMessage.trim() && !attachmentFile && !embeddedItem) || !settings.isChatOpen || cooldownRemaining > 0 || !user || isUploadingAttachment) return;
+    if ((!newMessage.trim() && !attachmentFile && !embeddedItem) || !settings.isChatOpen || cooldownRemaining > 0 || !user || isUploadingAttachment || isSending) return;
     if (!isAdminOrModerator) {
       if (cooldownRemaining > 0) return;
       if (attachmentFile && settings.allowAttachments === false) {
@@ -402,6 +391,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
     setIsSending(true);
     setIsUploadingAttachment(!!attachmentFile);
+
+    const docRef = doc(collection(db, 'chat_messages'));
 
     try {
       if (attachmentFile) {
@@ -449,8 +440,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       if (embedData) {
          payload.embeddedItem = embedData;
       }
-
-      const docRef = doc(collection(db, 'chat_messages'));
 
       if (isAnon) {
          setIsAnonymous(false);
@@ -552,7 +541,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         oldMessages.push({
           id: doc.id,
           text: data.text || '',
-          senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'Unknown'),
+          senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'مستخدم محذوف'),
           senderEmail: data.senderEmail || '',
           senderId: data.senderId || '',
           senderAvatar: data.senderAvatar || '',
@@ -631,7 +620,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
           oldMsgs.push({
             id: docSnap.id,
             text: data.text || '',
-            senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'Unknown'),
+            senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'مستخدم محذوف'),
             senderEmail: data.senderEmail || '',
             senderId: data.senderId || '',
             senderAvatar: data.senderAvatar || '',
@@ -710,6 +699,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     const isOwner = msg && user && (msg.senderId === user.uid || (msg.senderEmail && msg.senderEmail === user.email));
     
     if (!isAdminOrModerator && !isOwner) return;
+    
+    // Using simple browser confirm (can be styled better natively or with a modal later, but solves the task)
+    if (!window.confirm(isRtl ? 'هل تريد حذف هذه الرسالة؟' : 'Delete this message?')) return;
     
     try {
       await deleteDoc(doc(db, 'chat_messages', id));
@@ -1068,18 +1060,43 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
           messages.map((msg, index) => {
             const isMe = getIsMe(msg);
             const msgDate = new Date(msg.createdAt);
-            const timeStr = msgDate.toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+            
+            // Format time logic
+            const formatChatTime = (timestamp: number) => {
+              const now = new Date();
+              const date = new Date(timestamp);
+              const diffMs = now.getTime() - timestamp;
+              const diffMins = Math.floor(diffMs / 60000);
+              
+              if (diffMins < 1) return isRtl ? "الآن" : "Now";
+              if (diffMins === 1) return isRtl ? "منذ دقيقة" : "1 min ago";
+              if (diffMins === 2) return isRtl ? "منذ دقيقتين" : "2 mins ago";
+              if (diffMins > 2 && diffMins <= 10) return isRtl ? `منذ ${diffMins} دقائق` : `${diffMins} mins ago`;
+              
+              return date.toLocaleTimeString(isRtl ? 'ar-IQ' : 'en-US', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit' });
+            };
+            const timeStr = formatChatTime(msg.createdAt);
             
             // Should display name? (If previous message is not from same user or it's > 5 mins difference)
             const prevMsg = index > 0 ? messages[index - 1] : null;
-            const diffMins = prevMsg ? (msg.createdAt - prevMsg.createdAt) / 60000 : 999;
+            
+            const isDifferentDay = !prevMsg || new Date(prevMsg.createdAt).toLocaleDateString('en-US', { timeZone: 'Asia/Baghdad' }) !== new Date(msg.createdAt).toLocaleDateString('en-US', { timeZone: 'Asia/Baghdad' });
+
+            const diffMinsHeader = prevMsg ? (msg.createdAt - prevMsg.createdAt) / 60000 : 999;
             const isAnonGroupChange = prevMsg ? (!!prevMsg.isAnonymous !== !!msg.isAnonymous) : false;
-            const showHeader = (!isMe || msg.isAnonymous) && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMins > 5 || isAnonGroupChange);
+            const showHeader = (!isMe || msg.isAnonymous) && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMinsHeader > 5 || isAnonGroupChange);
 
             return (
-              <div 
-                id={`msg-${msg.id}`} 
-                key={msg.id} 
+              <React.Fragment key={msg.id}>
+                {isDifferentDay && (
+                  <div className="flex justify-center my-4">
+                    <span className="px-3 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 text-xs font-bold rounded-full">
+                      {new Intl.DateTimeFormat(isRtl ? 'ar-IQ' : 'en-US', { timeZone: 'Asia/Baghdad', month: 'short', day: 'numeric', weekday: 'short' }).format(msgDate)}
+                    </span>
+                  </div>
+                )}
+                <div 
+                  id={`msg-${msg.id}`} 
                 data-message-id={msg.id}
                 data-sender-id={msg.senderId}
                 className={`message-bubble-container flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}
@@ -1260,7 +1277,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                alert(`Original Sender Email: ${msg.senderEmail}`);
+                                alert(`Original Identity: ${msg.senderEmail || msg.senderId || 'Unknown'}`);
                                 setShowReactionPickerFor(null);
                               }}
                               title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
@@ -1310,7 +1327,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
                         {isMasterAdmin && msg.isAnonymous && (
                           <button
-                            onClick={() => alert(`Original Sender Email: ${msg.senderEmail}`)}
+                            onClick={() => alert(`Original Identity: ${msg.senderEmail || msg.senderId || 'Unknown'}`)}
                             title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
                             className="p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110"
                           >
@@ -1322,6 +1339,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                   </div>
                 </div>
               </div>
+              </React.Fragment>
             );
           })
         )}
