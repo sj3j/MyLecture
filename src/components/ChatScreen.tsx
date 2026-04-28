@@ -496,9 +496,11 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       // Perform setDoc
       await setDoc(docRef, payload);
 
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to send message', e);
-      setAlertMessage(t.errorUnknown);
+      setAlertMessage(e instanceof Error ? e.message : String(e));
+      // Revert optimistic UI
+      setMessages(prev => prev.filter(m => m.id !== docRef.id));
       // Failsafe state cleanup just in case sync errors occurred before setDoc
       setIsSending(false);
       setIsUploadingAttachment(false);
