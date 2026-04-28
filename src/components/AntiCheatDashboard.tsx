@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy, addDoc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { X, ShieldAlert, Trash2, Ban, UserX, AlertTriangle, Eye, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS, Language } from '../types';
@@ -16,6 +16,33 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
   const [errorMsg, setErrorMsg] = useState('');
   const [lecturesMap, setLecturesMap] = useState<Record<string, string>>({});
   const [usersMap, setUsersMap] = useState<Record<string, string>>({});
+
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'confirm' | 'alert';
+    onConfirm?: () => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string, onConfirm: () => void) => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'confirm',
+      onConfirm
+    });
+  };
+
+  const showAlert = (title: string, message: string) => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'alert'
+    });
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -72,71 +99,169 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
   }, [isOpen]);
 
   const handleCancelResult = async (group: any) => {
-    if (!window.confirm('هل أنت متأكد من إلغاء نتيجة هذا الطالب لهذه المحاضرة؟')) return;
-    
-    try {
-      // 1. Delete first attempt answer doc
-      const answerRef = doc(db, `userMCQAnswers/${group.userId}/lectures/${group.lectureId}`);
-      await deleteDoc(answerRef);
+    confirmAction('تأكيد الإلغاء', 'هل أنت متأكد من إلغاء نتيجة هذا الطالب لهذه المحاضرة؟ ومعاقبته بدرجة الصفر؟', async () => {
+      try {
+        // 1. Delete first attempt answer doc and adjust stats
+        try {
+          const answerRef = doc(db, `userMCQAnswers/${group.userId}/lectures/${group.lectureId}`);
+          
+          const ansDocSnap = await getDoc(answerRef);
+          
+          if (ansDocSnap.exists() && ansDocSnap.data().hasCompletedFirstAttempt) {
+               const ansData = ansDocSnap.data();
+               const correctCount = ansData.firstAttemptCorrect || 0;
+               const totalCount = ansData.firstAttemptTotal || 0;
+               
+               const statsRef = doc(db, `userMCQStats/${group.userId}`);
+               const statsDoc = await getDoc(statsRef);
+               
+               await updateDoc(answerRef, {
+                 firstAttemptCorrect: 0,
+                 firstAttemptScore: 0,
+                 isCancelledByAdmin: true,
+                 lockedAnswers: {}
+               });
+               
+               if (statsDoc.exists()) {
+                 const existing = statsDoc.data();
+                 const newTotalCorrect = Math.max(0, (existing.totalFirstAttemptCorrect || 0) - correctCount);
+                 const newTotalAnswered = existing.totalFirstAttemptAnswered || 0; // Keep answered to penalize accuracy
+                 const newLecturesAttempted = existing.lecturesAttempted || 0;
+                 
+                 await updateDoc(statsRef, {
+                   totalFirstAttemptCorrect: newTotalCorrect,
+                   totalFirstAttemptAnswered: newTotalAnswered,
+                   lecturesAttempted: newLecturesAttempted,
+                   mcqLeaderboardScore: newTotalCorrect * 10,
+                   accuracy: newTotalAnswered > 0 ? (newTotalCorrect / newTotalAnswered) * 100 : 0
+                 });
+               }
+          } else {
+               // If they haven't finished, force complete it with zero to penalize
+               const statsRef = doc(db, `userMCQStats/${group.userId}`);
+               const statsDoc = await getDoc(statsRef);
+               
+               await updateDoc(answerRef, {
+                 hasCompletedFirstAttempt: true,
+                 firstAttemptCorrect: 0, 
+                 firstAttemptScore: 0,
+                 firstAttemptTotal: 20,
+                 isCancelledByAdmin: true,
+                 lockedAnswers: {}
+               }).catch(async () => {
+                   // Document might not exist, use setDoc instead
+                  await setDoc(answerRef, {
+                     hasCompletedFirstAttempt: true,
+                     firstAttemptCorrect: 0, 
+                     firstAttemptScore: 0,
+                     firstAttemptTotal: 20,
+                     isCancelledByAdmin: true,
+                     lockedAnswers: {}
+                  });
+               });
+               
+               if (statsDoc.exists()) {
+                 const existing = statsDoc.data();
+                 const newTotalCorrect = existing.totalFirstAttemptCorrect || 0;
+                 const newTotalAnswered = (existing.totalFirstAttemptAnswered || 0) + 20;
+                 const newLecturesAttempted = (existing.lecturesAttempted || 0) + 1;
+                 
+                 await updateDoc(statsRef, {
+                   totalFirstAttemptCorrect: newTotalCorrect,
+                   totalFirstAttemptAnswered: newTotalAnswered,
+                   lecturesAttempted: newLecturesAttempted,
+                   mcqLeaderboardScore: newTotalCorrect * 10,
+                   accuracy: newTotalAnswered > 0 ? (newTotalCorrect / newTotalAnswered) * 100 : 0
+                 });
+               } else {
+                 await setDoc(statsRef, {
+                   totalFirstAttemptCorrect: 0,
+                   totalFirstAttemptAnswered: 20,
+                   lecturesAttempted: 1,
+                   mcqLeaderboardScore: 0,
+                   accuracy: 0
+                 });
+               }
+          }
+        } catch (err: any) {
+          console.error("Delete answer error:", err);
+          throw new Error("فشل مسح إجابة الطالب: " + err.message);
+        }
 
-      // (We could also theoretically adjust stats, but deleting the attempt forces them to restart)
+        // 2. Clear the logs for this incident so it doesn't stay in the dashboard
+        try {
+          for (const log of group.logs) {
+             await deleteDoc(doc(db, 'antiCheatLogs', log.id));
+          }
+        } catch (err: any) {
+          console.error("Delete logs error:", err);
+          throw new Error("فشل مسح سجلات الغش: " + err.message);
+        }
 
-      // 2. Clear the logs for this incident so it doesn't stay in the dashboard
-      for (const log of group.logs) {
-         await deleteDoc(doc(db, 'antiCheatLogs', log.id));
+        // 3. Send Notification to User
+        try {
+          const lectureTitle = lecturesMap[group.lectureId] || group.lectureId;
+          await addDoc(collection(db, 'systemNotifications'), {
+            userId: group.userId,
+            type: 'anti_cheat_action',
+            title: 'إلغاء نتيجة المسابقة/الاختبار',
+            body: `تم إلغاء نتيجتك في اختبار محاضرة (${lectureTitle}) بسبب رصد مخالفة لشروط الاختبار (محاولة الخروج أو تصوير الشاشة). نرجو الالتزام في المرات القادمة.`,
+            createdAt: serverTimestamp(),
+            read: false
+          });
+        } catch (err: any) {
+          console.error("Send notification error:", err);
+          throw new Error("فشل إرسال الإشعار: " + err.message);
+        }
+
+        setDialogConfig(null);
+        showAlert('نجاح', 'تم إلغاء النتيجة والإرسال إشعار للطالب بنجاح.');
+        fetchLogs();
+      } catch (e: any) {
+        console.error('Cancel result error:', e);
+        setDialogConfig(null);
+        showAlert('خطأ', e.message);
       }
-
-      // 3. Send Notification to User
-      const lectureTitle = lecturesMap[group.lectureId] || group.lectureId;
-      await addDoc(collection(db, 'systemNotifications'), {
-        userId: group.userId,
-        type: 'anti_cheat_action',
-        title: 'إلغاء نتيجة المسابقة/الاختبار',
-        body: `تم إلغاء نتيجتك في اختبار محاضرة (${lectureTitle}) بسبب رصد مخالفة لشروط الاختبار (محاولة الخروج أو تصوير الشاشة). نرجو الالتزام في المرات القادمة.`,
-        createdAt: serverTimestamp(),
-        read: false
-      });
-
-      alert('تم إلغاء النتيجة والإرسال إشعار للطالب بنجاح.');
-      fetchLogs();
-    } catch (e: any) {
-      alert('خطأ: ' + e.message);
-    }
+    });
   };
 
   const handleBanMCQ = async (userId: string) => {
-    if (!window.confirm('هل أنت متأكد من تعليق وصول الطالب للاختبارات؟')) return;
-    
-    try {
-      const userRef = doc(db, `users/${userId}`);
-      await updateDoc(userRef, { mcqBanned: true });
-      
-      await addDoc(collection(db, 'systemNotifications'), {
-        userId: userId,
-        type: 'anti_cheat_action',
-        title: 'تعليق وصولك للاختبارات',
-        body: `تم تعليق وصولك للاختبارات (MCQ) بسبب تكرار مخالفة شروط الاختبار أو الغش. يرجى مراجعة إدارة المنصة.`,
-        createdAt: serverTimestamp(),
-        read: false
-      });
+    confirmAction('تأكيد الحظر', 'هل أنت متأكد من تعليق وصول الطالب للاختبارات؟', async () => {
+      try {
+        const userRef = doc(db, `users/${userId}`);
+        await updateDoc(userRef, { mcqBanned: true });
+        
+        await addDoc(collection(db, 'systemNotifications'), {
+          userId: userId,
+          type: 'anti_cheat_action',
+          title: 'تعليق وصولك للاختبارات',
+          body: `تم تعليق وصولك للاختبارات (MCQ) بسبب تكرار مخالفة شروط الاختبار أو الغش. يرجى مراجعة إدارة المنصة.`,
+          createdAt: serverTimestamp(),
+          read: false
+        });
 
-      alert('تم إيقاف الطالب عن الاختبارات وإرسال إشعار له.');
-    } catch (e: any) {
-      alert('خطأ: ' + e.message);
-    }
+        setDialogConfig(null);
+        showAlert('نجاح', 'تم إيقاف الطالب عن الاختبارات وإرسال إشعار له.');
+      } catch (e: any) {
+        setDialogConfig(null);
+        showAlert('خطأ', 'خطأ: ' + e.message);
+      }
+    });
   };
 
   const handleIgnore = async (logGroup: any) => {
-    if (!window.confirm('هل أنت متأكد من تجاهل هذه التنبيهات؟')) return;
-    
-    try {
-      for (const log of logGroup.logs) {
-         await deleteDoc(doc(db, 'antiCheatLogs', log.id));
+    confirmAction('تجاهل', 'هل أنت متأكد من تجاهل هذه التنبيهات؟', async () => {
+      try {
+        for (const log of logGroup.logs) {
+           await deleteDoc(doc(db, 'antiCheatLogs', log.id));
+        }
+        setDialogConfig(null);
+        fetchLogs();
+      } catch (e: any) {
+        setDialogConfig(null);
+        showAlert('خطأ', 'خطأ: ' + e.message);
       }
-      fetchLogs();
-    } catch (e: any) {
-      alert('خطأ: ' + e.message);
-    }
+    });
   };
 
   if (!isOpen) return null;
@@ -235,6 +360,42 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
           )}
         </div>
       </div>
+
+      {dialogConfig && dialogConfig.isOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-5">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{dialogConfig.title}</h3>
+              <p className="text-slate-600 dark:text-slate-400 font-medium">{dialogConfig.message}</p>
+            </div>
+            <div className="flex bg-gray-50 dark:bg-zinc-800/50 p-4 justify-end gap-2 border-t border-gray-100 dark:border-zinc-800">
+               {dialogConfig.type === 'confirm' ? (
+                 <>
+                   <button 
+                     onClick={() => setDialogConfig(null)}
+                     className="px-4 py-2 font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                   >
+                     إلغاء
+                   </button>
+                   <button 
+                     onClick={dialogConfig.onConfirm}
+                     className="px-4 py-2 font-bold bg-sky-600 text-white rounded-xl hover:bg-sky-700 transition-colors"
+                   >
+                     تأكيد
+                   </button>
+                 </>
+               ) : (
+                 <button 
+                   onClick={() => setDialogConfig(null)}
+                   className="px-6 py-2 font-bold bg-sky-600 text-white rounded-xl hover:bg-sky-700 transition-colors"
+                 >
+                   حسناً
+                 </button>
+               )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

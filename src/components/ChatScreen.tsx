@@ -571,6 +571,101 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     }
   };
 
+  const handleViewPinnedMessage = async (targetId: string) => {
+    let el = document.getElementById(`msg-${targetId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500'), 2500);
+      return;
+    }
+
+    if (!hasMore || messages.length === 0) {
+      setAlertMessage(isRtl ? 'تعذر العثور على الرسالة.' : 'Message could not be found.');
+      return;
+    }
+
+    // Auto-load previous messages
+    setIsLoadingMore(true);
+    try {
+      const { getDoc, query, collection, orderBy, where, limit, getDocs } = await import('firebase/firestore');
+      const targetDoc = await getDoc(doc(db, 'chat_messages', targetId));
+      
+      if (!targetDoc.exists()) {
+        setAlertMessage(isRtl ? 'الرسالة محذوفة.' : 'Message deleted.');
+        return;
+      }
+
+      const targetTimestamp = targetDoc.data().timestamp;
+      if (!targetTimestamp) return;
+
+      const oldestLoaded = messages[0];
+      if (oldestLoaded && oldestLoaded.timestamp > targetTimestamp) {
+        const q = query(
+          collection(db, 'chat_messages'),
+          orderBy('timestamp', 'desc'),
+          where('timestamp', '<', oldestLoaded.timestamp),
+          where('timestamp', '>=', targetTimestamp),
+          limit(150)
+        );
+
+        const snap = await getDocs(q);
+        const oldMsgs: ChatMessage[] = [];
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          oldMsgs.push({
+            id: docSnap.id,
+            text: data.text || '',
+            senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'Unknown'),
+            senderEmail: data.senderEmail || '',
+            senderId: data.senderId || '',
+            senderAvatar: data.senderAvatar || '',
+            timestamp: data.timestamp,
+            createdAt: data.timestamp?.toMillis() || Date.now(),
+            replyTo: data.replyTo || null,
+            reactions: data.reactions || { like: [], heart: [], thanks: [] },
+            isAnonymous: data.isAnonymous || false,
+            originalSenderName: data.originalSenderName || '',
+            originalSenderExamCode: data.originalSenderExamCode || '',
+            fileUrl: data.fileUrl || undefined,
+            fileName: data.fileName || undefined,
+            fileType: data.fileType || undefined,
+            embeddedItem: data.embeddedItem || undefined
+          });
+        });
+
+        if (oldMsgs.length > 0) {
+          setMessages(prev => {
+            const uniqueOld = oldMsgs.reverse().filter(nm => !prev.some(pm => pm.id === nm.id));
+            return [...uniqueOld, ...prev];
+          });
+        }
+
+        setTimeout(() => {
+          const afterEl = document.getElementById(`msg-${targetId}`);
+          if (afterEl) {
+            afterEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            afterEl.classList.add('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500');
+            setTimeout(() => {
+              afterEl.classList.remove('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500');
+            }, 2500);
+          } else {
+            setAlertMessage(isRtl ? 'الرسالة أقدم من الحد الأقصى للتحميل التلقائي.' : 'Message is older than the auto-load limit.');
+          }
+        }, 500); // give React more time to mount the new elements
+
+      } else {
+         setAlertMessage(isRtl ? 'تعذر العثور على الرسالة في النطاق الزمني.' : 'Could not find message in time range.');
+      }
+
+    } catch (e) {
+      console.error('Jump error', e);
+      setAlertMessage(isRtl ? 'حدث خطأ أثناء تحميل الرسالة.' : 'Error loading message.');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   // Admin Actions
   const toggleChatStatus = async () => {
     try {
@@ -814,10 +909,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         {settings.pinnedMessage && (
           <div 
             className="bg-white/95 backdrop-blur dark:bg-zinc-900/95 border-b border-slate-200 dark:border-zinc-800 p-2 sm:px-4 cursor-pointer flex items-center gap-2"
-            onClick={() => {
-              const el = document.getElementById(`msg-${settings.pinnedMessage!.id}`);
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }}
+            onClick={() => handleViewPinnedMessage(settings.pinnedMessage!.id)}
           >
             <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0">
               📌

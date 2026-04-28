@@ -11,6 +11,20 @@ interface AdminManagementProps {
   lang: Language;
 }
 
+interface AdminRole {
+  id: string;
+  email: string;
+  role?: 'admin' | 'moderator';
+  permissions?: {
+    manageLectures?: boolean;
+    manageAnnouncements?: boolean;
+    manageRecords?: boolean;
+    manageChat?: boolean;
+    manageHomeworks?: boolean;
+    manageStudents?: boolean;
+  };
+}
+
 export default function AdminManagement({ isOpen, onClose, lang }: AdminManagementProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -25,11 +39,21 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     manageHomeworks: true,
     manageStudents: true,
   });
-  const [admins, setAdmins] = useState<{ id: string; email: string; role?: string }[]>([]);
+  const [admins, setAdmins] = useState<AdminRole[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRole, setEditRole] = useState<'admin' | 'moderator'>('admin');
+  const [editPermissions, setEditPermissions] = useState({
+    manageLectures: true,
+    manageAnnouncements: true,
+    manageRecords: true,
+    manageChat: true,
+    manageHomeworks: true,
+    manageStudents: true,
+  });
 
   const fetchAdmins = async () => {
     setIsLoading(true);
@@ -39,7 +63,15 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       const adminList = snapshot.docs.map(doc => ({
         id: doc.id,
         email: doc.id,
-        role: doc.data().role || 'admin'
+        role: doc.data().role as 'admin' | 'moderator' || 'admin',
+        permissions: doc.data().permissions || {
+          manageLectures: true,
+          manageAnnouncements: true,
+          manageRecords: true,
+          manageChat: true,
+          manageHomeworks: true,
+          manageStudents: true,
+        }
       }));
       setAdmins(adminList);
     } catch (err) {
@@ -82,6 +114,35 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       setError(isRtl ? 'فشل إضافة المسؤول' : 'Failed to add admin');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveEdit = async (id: string, email: string) => {
+    try {
+      await setDoc(doc(db, 'allowed_admins', id), {
+        email: email,
+        role: editRole,
+        permissions: editPermissions,
+      }, { merge: true });
+      
+      // Update users collection if doc exists
+      const q = query(collection(db, 'users'), where('email', '==', email));
+      const userSnap = await getDocs(q);
+      if (!userSnap.empty) {
+         try {
+            await setDoc(doc(db, 'users', userSnap.docs[0].id), {
+               role: editRole,
+               permissions: editPermissions
+            }, { merge: true });
+         } catch (e) {
+            console.error(e);
+         }
+      }
+
+      setEditingId(null);
+      fetchAdmins();
+    } catch (err) {
+      console.error('Error saving admin:', err);
     }
   };
 
@@ -196,40 +257,115 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                 ) : (
                   <div className="space-y-2">
                     {admins.map((admin) => (
-                      <div key={admin.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${admin.role === 'moderator' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}`}>
-                            {admin.email[0].toUpperCase()}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${admin.role === 'moderator' ? 'text-amber-600 dark:text-amber-400' : 'text-sky-600 dark:text-sky-400'}`}>
-                              {admin.role || 'admin'}
-                            </span>
-                          </div>
-                        </div>
-                        {deletingId === admin.id ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleDeleteAdmin(admin.id)}
-                              className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
+                      <div key={admin.id} className="flex flex-col p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700">
+                        {editingId === admin.id ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between pointer-events-none">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
+                            </div>
+                            
+                            <select
+                              value={editRole}
+                              onChange={(e) => setEditRole(e.target.value as 'admin' | 'moderator')}
+                              className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none transition-all text-sm"
                             >
-                              {isRtl ? 'تأكيد' : 'Confirm'}
-                            </button>
-                            <button
-                              onClick={() => setDeletingId(null)}
-                              className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-lg transition-colors"
-                            >
-                              {isRtl ? 'إلغاء' : 'Cancel'}
-                            </button>
+                              <option value="admin">Admin (Full Access)</option>
+                              <option value="moderator">Moderator (Content Only)</option>
+                            </select>
+
+                            <div className="bg-white dark:bg-zinc-900 p-3 rounded-lg border border-slate-200 dark:border-zinc-700 flex flex-col gap-2">
+                              <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{isRtl ? 'الصلاحيات' : 'Permissions'}</h4>
+                              {[
+                                { id: 'manageLectures', labelEn: 'Manage Lectures', labelAr: 'إدارة المحاضرات' },
+                                { id: 'manageAnnouncements', labelEn: 'Manage Announcements', labelAr: 'إدارة التبليغات' },
+                                { id: 'manageRecords', labelEn: 'Manage Records', labelAr: 'إدارة التسجيلات' },
+                                { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
+                                { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
+                                { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
+                              ].map(perm => (
+                                <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={editPermissions[perm.id as keyof typeof editPermissions]}
+                                    onChange={(e) => setEditPermissions({...editPermissions, [perm.id]: e.target.checked})}
+                                    className="w-4 h-4 text-sky-600 rounded border-slate-300 focus:ring-sky-500"
+                                  />
+                                  <span className="text-sm text-slate-700 dark:text-slate-300">{isRtl ? perm.labelAr : perm.labelEn}</span>
+                                </label>
+                              ))}
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleSaveEdit(admin.id, admin.email)}
+                                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors"
+                              >
+                                {isRtl ? 'حفظ' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-bold transition-colors"
+                              >
+                                {isRtl ? 'إلغاء' : 'Cancel'}
+                              </button>
+                            </div>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setDeletingId(admin.id)}
-                            className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${admin.role === 'moderator' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}`}>
+                                {admin.email[0].toUpperCase()}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${admin.role === 'moderator' ? 'text-amber-600 dark:text-amber-400' : 'text-sky-600 dark:text-sky-400'}`}>
+                                  {admin.role || 'admin'}
+                                </span>
+                              </div>
+                            </div>
+                            {deletingId === admin.id ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleDeleteAdmin(admin.id)}
+                                  className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
+                                >
+                                  {isRtl ? 'تأكيد' : 'Confirm'}
+                                </button>
+                                <button
+                                  onClick={() => setDeletingId(null)}
+                                  className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-lg transition-colors"
+                                >
+                                  {isRtl ? 'إلغاء' : 'Cancel'}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setEditingId(admin.id);
+                                    setEditRole(admin.role || 'admin');
+                                    setEditPermissions(admin.permissions || {
+                                      manageLectures: true,
+                                      manageAnnouncements: true,
+                                      manageRecords: true,
+                                      manageChat: true,
+                                      manageHomeworks: true,
+                                      manageStudents: true,
+                                    });
+                                  }}
+                                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-all"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+                                </button>
+                                <button
+                                  onClick={() => setDeletingId(admin.id)}
+                                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}
