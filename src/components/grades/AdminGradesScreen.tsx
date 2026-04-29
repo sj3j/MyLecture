@@ -32,6 +32,7 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
   const [isMatching, setIsMatching] = useState(false);
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [matchedResults, setMatchedResults] = useState<MatchedResult[]>([]);
+  const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [confirmingBatchId, setConfirmingBatchId] = useState<string | null>(null);
@@ -215,6 +216,16 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
 
   const selectedStudentIds = new Set(matchedResults.map(r => r.matchedUserId).filter(Boolean));
 
+  const sortedMatchedResults = [...matchedResults].sort((a, b) => {
+    if (sortUnmatchedFirst) {
+      const aMatched = !!a.matchedUserId;
+      const bMatched = !!b.matchedUserId;
+      if (aMatched === bMatched) return 0;
+      return aMatched ? 1 : -1;
+    }
+    return 0;
+  });
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -332,9 +343,20 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
                <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-zinc-800 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                  <div>
                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">مراجعة كشف: {examName}</h2>
-                   <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1">
-                     تم العثور على {matchedResults.length} صف. المطابق: {matchedResults.filter(r => r.matchedUserId).length}
-                   </p>
+                   <div className="flex items-center gap-4 mt-1">
+                     <p className="text-sm text-gray-500 dark:text-zinc-400">
+                       تم العثور على {matchedResults.length} صف. المطابق: {matchedResults.filter(r => r.matchedUserId).length}
+                     </p>
+                     <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                       <input 
+                         type="checkbox" 
+                         checked={sortUnmatchedFirst} 
+                         onChange={(e) => setSortUnmatchedFirst(e.target.checked)}
+                         className="rounded text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                       />
+                       <span className="text-gray-600 dark:text-gray-300 font-bold">فرز "غير مطابق" أولاً</span>
+                     </label>
+                   </div>
                  </div>
                  <div className="flex gap-2 w-full sm:w-auto">
                    <button
@@ -373,7 +395,7 @@ export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreen
                      </tr>
                    </thead>
                    <tbody>
-                     {matchedResults.map((result) => (
+                     {sortedMatchedResults.map((result) => (
                        <tr key={result.rowId} className="border-b border-gray-50 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
                          <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                            {result.rowId.startsWith('manual_') ? (

@@ -14,6 +14,15 @@ interface StudentManagementProps {
   user: UserProfile | null;
 }
 
+interface ExamCodeMatch {
+  rowId: string;
+  csvName: string;
+  csvExamCode: string;
+  matchedStudentId: string | null;
+  matchedStudentName: string | null;
+  matchScore: number;
+}
+
 export default function StudentManagement({ isOpen, onClose, lang, user }: StudentManagementProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -41,6 +50,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [showHistoryModalFor, setShowHistoryModalFor] = useState<Student | null>(null);
   const [freezeAmount, setFreezeAmount] = useState<number>(0);
   const [recoveryReason, setRecoveryReason] = useState('');
+  const [matchedExamCodes, setMatchedExamCodes] = useState<ExamCodeMatch[]>([]);
+  const [examCodesCsvName, setExamCodesCsvName] = useState<string>('');
+  const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
   
   const handleGrantFreeze = async (userUid: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -281,19 +293,24 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       const text = await file.text();
       const rows = text.split('\n').filter(row => row.trim() !== '');
       
-      if (rows.length <= 1) {
+      if (rows.length === 0) {
+        throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
+      }
+
+      // Skip header row if it exists
+      const startIndex = rows[0].toLowerCase().includes('name') ? 1 : 0;
+      
+      if (rows.length <= startIndex) {
         throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
       }
 
       const batch = writeBatch(db);
       let count = 0;
 
-      // Skip header row if it exists
-      const startIndex = rows[0].toLowerCase().includes('name') ? 1 : 0;
-
       for (let i = startIndex; i < rows.length; i++) {
-        const [csvName, csvEmail, csvPassword, csvExamCode] = rows[i].split(',').map(s => s.trim());
-        if (csvName && csvEmail && csvPassword && csvExamCode) {
+        const [csvName, csvEmail, csvPassword, ...rest] = rows[i].split(',').map(s => s?.trim() || '');
+        const csvExamCode = rest.length > 0 ? rest.join(',').trim() : ''; // handle optional and commas
+        if (csvName && csvEmail && csvPassword) {
           const emailLower = csvEmail.toLowerCase();
           const hashedPassword = await hashPassword(csvPassword);
           
@@ -322,12 +339,131 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   };
 
+  const handleExamCodeCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const text = await file.text();
+      const rows = text.split('\n').filter(row => row.trim() !== '');
+      
+      if (rows.length === 0) {
+        throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
+      }
+
+      // Skip header row if it exists
+      const startIndex = rows[0].toLowerCase().includes('name') ? 1 : 0;
+      
+      if (rows.length <= startIndex) {
+        throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
+      }
+
+      const Fuse = (await import('fuse.js')).default;
+      const fuse = new Fuse(students, {
+        keys: ['name', 'currentName'],
+        includeScore: true,
+        threshold: 0.4
+      });
+
+      const matches: ExamCodeMatch[] = [];
+
+      for (let i = startIndex; i < rows.length; i++) {
+        const cols = rows[i].split(',').map(s => s?.trim() || '');
+        const csvName = cols[0];
+        const csvExamCode = cols.slice(1).join(',').trim(); // in case examCode has commas
+
+        if (csvName && csvExamCode) {
+          const results = fuse.search(csvName);
+          let matchedStudentId = null;
+          let matchedStudentName = null;
+          let matchScore = 0;
+
+          if (results.length > 0) {
+            const bestMatch = results[0];
+            const rawScore = bestMatch.score !== undefined ? bestMatch.score : 1;
+            matchScore = Math.max(0, 1 - rawScore);
+            const matchedStudent = bestMatch.item as Student;
+            
+            if (matchScore > 0.6) {
+              matchedStudentId = matchedStudent.id;
+              matchedStudentName = matchedStudent.name;
+            }
+          }
+
+          matches.push({
+            rowId: `row_${i}_${Date.now()}`,
+            csvName,
+            csvExamCode,
+            matchedStudentId,
+            matchedStudentName,
+            matchScore
+          });
+        }
+      }
+
+      setMatchedExamCodes(matches);
+      setExamCodesCsvName(file.name);
+    } catch (err: any) {
+      console.error('Error uploading exam codes CSV:', err);
+      setError(err.message || (isRtl ? 'فشل استيراد أكواد الامتحانات' : 'Failed to import exam codes'));
+    } finally {
+      setIsLoading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleConfirmExamCodes = async () => {
+    if (!matchedExamCodes.length) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const batch = writeBatch(db);
+      let count = 0;
+      for (const match of matchedExamCodes) {
+        if (match.matchedStudentId) {
+          const studentRef = doc(db, 'students', match.matchedStudentId);
+          batch.update(studentRef, { examCode: match.csvExamCode });
+          count++;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+        setSuccess(isRtl ? `تم الحفظ: استيراد ${count} كود بنجاح` : `Saved: Successfully imported ${count} codes`);
+        fetchStudents();
+      } else {
+        setError(isRtl ? 'لم يتم العثور على أية مطابقات للحفظ' : 'No matches found to save');
+      }
+      setMatchedExamCodes([]);
+    } catch (err: any) {
+      console.error('Error saving exam codes:', err);
+      setError(err.message || (isRtl ? 'فشل حفظ الأكواد' : 'Failed to save exam codes'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const filteredStudents = students.filter(student => 
     student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    student.examCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (student.examCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (student.currentName && student.currentName.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const sortedExamCodes = [...matchedExamCodes].sort((a, b) => {
+    if (sortUnmatchedFirst) {
+      const aMatched = !!a.matchedStudentId;
+      const bMatched = !!b.matchedStudentId;
+      if (aMatched === bMatched) return 0;
+      return aMatched ? 1 : -1;
+    }
+    return 0;
+  });
+
+  const selectedStudentIds = new Set(matchedExamCodes.map(r => r.matchedStudentId).filter(Boolean));
 
   return (
     <AnimatePresence>
@@ -357,6 +493,102 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               </button>
             </div>
 
+            {matchedExamCodes.length > 0 ? (
+              <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                      {isRtl ? `مراجعة كشف أكواد الامتحانات: ${examCodesCsvName}` : `Review Exam Codes CSV: ${examCodesCsvName}`}
+                    </h2>
+                    <div className="flex items-center gap-4 mt-1">
+                      <p className="text-sm text-slate-500 dark:text-zinc-400">
+                        {isRtl ? `تم العثور على ${matchedExamCodes.length} صف. المطابق: ${matchedExamCodes.filter(r => r.matchedStudentId).length}` : `Found ${matchedExamCodes.length} rows. Matched: ${matchedExamCodes.filter(r => r.matchedStudentId).length}`}
+                      </p>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={sortUnmatchedFirst} 
+                          onChange={(e) => setSortUnmatchedFirst(e.target.checked)}
+                          className="rounded text-sky-500 focus:ring-sky-500 cursor-pointer"
+                        />
+                        <span className="text-slate-600 dark:text-slate-300 font-bold">{isRtl ? 'فرز "غير مطابق" أولاً' : 'Sort Unmatched First'}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={() => setMatchedExamCodes([])}
+                      disabled={isSubmitting}
+                      className="flex-1 sm:flex-none px-4 py-2 border border-slate-300 dark:border-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 font-bold transition-colors"
+                    >
+                      {isRtl ? 'إلغاء' : 'Cancel'}
+                    </button>
+                    <button 
+                      onClick={handleConfirmExamCodes}
+                      disabled={isSubmitting}
+                      className="flex-1 sm:flex-none px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                      {isRtl ? 'اعتماد وحفظ' : 'Confirm and Save'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto bg-slate-50 dark:bg-zinc-800/50 rounded-2xl border border-slate-200 dark:border-zinc-700">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-100 dark:bg-zinc-800 sticky top-0 z-10">
+                      <tr>
+                        <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300 w-1/4">{isRtl ? 'الاسم في الكشف' : 'Name in CSV'}</th>
+                        <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300 w-1/4">{isRtl ? 'كود الامتحان الجديد' : 'New Exam Code'}</th>
+                        <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300 w-1/2">{isRtl ? 'المطابقة مع النظام' : 'System Match'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedExamCodes.map((result) => (
+                        <tr key={result.rowId} className="border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
+                          <td className="p-3">
+                            <div className="font-bold text-slate-900 dark:text-white">📄 {result.csvName}</div>
+                          </td>
+                          <td className="p-3 font-mono font-bold text-sky-600 dark:text-sky-400">
+                            {result.csvExamCode}
+                          </td>
+                          <td className="p-3">
+                            <select
+                               value={result.matchedStudentId || ''}
+                               onChange={(e) => {
+                                 const selectedId = e.target.value || null;
+                                 setMatchedExamCodes(prev => prev.map(r => r.rowId === result.rowId ? { 
+                                   ...r, 
+                                   matchedStudentId: selectedId, 
+                                   matchScore: selectedId ? 1.0 : 0 
+                                 } : r));
+                               }}
+                               className={`w-full p-2 border-slate-300 dark:border-zinc-700 rounded-lg text-sm bg-white dark:bg-zinc-900 dark:text-white focus:ring-sky-500 focus:border-sky-500
+                                 ${result.matchedStudentId && result.matchScore > 0.8 ? 'border-emerald-500 ring-1 ring-emerald-500' : 
+                                   result.matchedStudentId ? 'border-yellow-400 ring-1 ring-yellow-400' : 'border-red-400 ring-1 ring-red-400'}
+                               `}
+                            >
+                              <option value="">{isRtl ? 'غير متطابق (لن يتم الحفظ)' : 'No Match (will not save)'}</option>
+                              {students.filter(s => !selectedStudentIds.has(s.id) || s.id === result.matchedStudentId).map(s => {
+                                const showAlias = s.currentName && s.currentName !== s.name;
+                                return (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name} {showAlias ? `(الاسم بحسابه: ${s.currentName})` : ''} - {s.email}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            {result.matchedStudentId && result.matchScore < 1 && (
+                              <div className="mt-1 text-[10px] text-yellow-600 dark:text-yellow-500">{isRtl ? 'تمت مطابقة تقريبية' : 'Fuzzy Match'}</div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
             <div className="p-6 overflow-y-auto flex-1 flex flex-col md:flex-row gap-8">
               {/* Add/Edit Student Form */}
               <div className="w-full md:w-1/3 space-y-6">
@@ -549,9 +781,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       />
                     <input
-                      required
                       type="text"
-                      placeholder={isRtl ? 'كود الامتحان' : 'Exam Code'}
+                      placeholder={isRtl ? 'كود الامتحان (اختياري)' : 'Exam Code (Optional)'}
                       value={examCode}
                       onChange={(e) => setExamCode(e.target.value)}
                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
@@ -568,23 +799,44 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                 </form>
                 )}
 
-                <div className="pt-6 border-t border-slate-200 dark:border-zinc-800">
-                  <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4">
-                    {isRtl ? 'استيراد من CSV' : 'Import from CSV'}
-                  </h3>
-                  <label className="w-full py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-zinc-700">
-                    <Upload className="w-5 h-5" />
-                    {isRtl ? 'اختر ملف CSV' : 'Choose CSV File'}
-                    <input
-                      type="file"
-                      accept=".csv"
-                      className="hidden"
-                      onChange={handleCsvUpload}
-                    />
-                  </label>
-                  <p className="text-xs text-slate-500 mt-2 text-center">
-                    {isRtl ? 'الأعمدة: name, email, password, examCode' : 'Columns: name, email, password, examCode'}
-                  </p>
+                <div className="pt-6 border-t border-slate-200 dark:border-zinc-800 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                      {isRtl ? 'استيراد من CSV' : 'Import from CSV'}
+                    </h3>
+                    <label className="w-full py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-zinc-700">
+                      <Upload className="w-5 h-5" />
+                      {isRtl ? 'اختر ملف CSV للطلاب' : 'Choose Students CSV File'}
+                      <input
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={handleCsvUpload}
+                      />
+                    </label>
+                    <p className="text-xs text-slate-500 mt-2 text-center">
+                      {isRtl ? 'الأعمدة: name, email, password, examCode (اختياري)' : 'Columns: name, email, password, examCode (optional)'}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200/50 dark:border-zinc-800/50">
+                    <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                      {isRtl ? 'استيراد أكواد الامتحانات (بواسطة الاسم)' : 'Import Exam Codes (By Name)'}
+                    </h3>
+                    <label className="w-full py-2.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer border border-indigo-200 dark:border-indigo-800/50">
+                      <Upload className="w-5 h-5" />
+                      {isRtl ? 'اختر ملف CSV للأكواد' : 'Choose Exam Codes CSV'}
+                      <input
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={handleExamCodeCsvUpload}
+                      />
+                    </label>
+                    <p className="text-xs text-slate-500 mt-2 text-center">
+                      {isRtl ? 'الأعمدة: name, examCode' : 'Columns: name, examCode'}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -738,6 +990,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                 </div>
               </div>
             </div>
+            )}
           </motion.div>
         </div>
       )}

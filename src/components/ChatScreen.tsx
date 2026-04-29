@@ -473,9 +473,11 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
       // Instantly start cooldown for students
       if (!isAdminOrModerator) {
-        const cooldown = settings.messageCooldown || 30;
+        const cooldown = settings.messageCooldown !== undefined ? settings.messageCooldown : 30;
         setCooldownRemaining(cooldown);
-        localStorage.setItem(`chat_cooldown_${user.uid}`, Date.now().toString());
+        if (cooldown > 0) {
+          localStorage.setItem(`chat_cooldown_${user.uid}`, Date.now().toString());
+        }
       }
 
       // Release UI early so it doesn't spin
