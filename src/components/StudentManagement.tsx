@@ -366,31 +366,75 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       const fuse = new Fuse(students, {
         keys: ['name', 'currentName'],
         includeScore: true,
-        threshold: 0.4
+        threshold: 0.2 // Stricter threshold
       });
 
       const matches: ExamCodeMatch[] = [];
+      const assignedIds = new Set<string>();
 
       for (let i = startIndex; i < rows.length; i++) {
-        const cols = rows[i].split(',').map(s => s?.trim() || '');
-        const csvName = cols[0];
-        const csvExamCode = cols.slice(1).join(',').trim(); // in case examCode has commas
+        let cols = rows[i].split(',');
+        if (cols.length === 1 && rows[i].includes('\t')) {
+          cols = rows[i].split('\t');
+        }
+        
+        cols = cols.map(s => s?.trim() || '');
+        
+        let csvName = cols[0];
+        let csvExamCode = cols.slice(1).join(',').trim();
+
+        // Auto-detect swapped columns: if first col is numbers/short code, and second is a longer string
+        if (/^\d+$/.test(csvName) && !/^\d+$/.test(csvExamCode) && csvExamCode.length > csvName.length) {
+           const temp = csvName;
+           csvName = csvExamCode;
+           csvExamCode = temp;
+        }
 
         if (csvName && csvExamCode) {
-          const results = fuse.search(csvName);
+          // Normalize string to help exact matching
+          const normalize = (str: string) => {
+            if (!str) return '';
+            return str.replace(/[\u064B-\u065F\u0670\u200C\u200D]/g, '')
+                      .replace(/[أإآء]/g, 'ا')
+                      .replace(/ة/g, 'ه')
+                      .replace(/ى/g, 'ي')
+                      .replace(/ي/g, 'ي') // just to be safe
+                      .replace(/\s+/g, ' ')
+                      .trim().toLowerCase();
+          };
+          const normalizedCsvName = normalize(csvName);
+          
           let matchedStudentId = null;
           let matchedStudentName = null;
           let matchScore = 0;
 
-          if (results.length > 0) {
-            const bestMatch = results[0];
-            const rawScore = bestMatch.score !== undefined ? bestMatch.score : 1;
-            matchScore = Math.max(0, 1 - rawScore);
-            const matchedStudent = bestMatch.item as Student;
-            
-            if (matchScore > 0.6) {
-              matchedStudentId = matchedStudent.id;
-              matchedStudentName = matchedStudent.name;
+          // 1. Try Exact match first
+          const exactMatch = students.find(s => 
+             normalize(s.name) === normalizedCsvName || 
+             (s.currentName && normalize(s.currentName) === normalizedCsvName)
+          );
+
+          if (exactMatch && !assignedIds.has(exactMatch.id)) {
+            matchedStudentId = exactMatch.id;
+            matchedStudentName = exactMatch.name;
+            matchScore = 1;
+            assignedIds.add(exactMatch.id);
+          } else {
+            // 2. Try Fuzzy Match
+            const results = fuse.search(csvName);
+            for (const bestMatch of results) {
+              const rawScore = bestMatch.score !== undefined ? bestMatch.score : 1;
+              const currentScore = Math.max(0, 1 - rawScore);
+              const matchedStudent = bestMatch.item as Student;
+              
+              // Demand a very high match score to avoid distributing to the wrong person
+              if (currentScore > 0.85 && !assignedIds.has(matchedStudent.id)) {
+                matchedStudentId = matchedStudent.id;
+                matchedStudentName = matchedStudent.name;
+                matchScore = currentScore;
+                assignedIds.add(matchedStudent.id);
+                break; // Stop looking if we found a valid available match
+              }
             }
           }
 

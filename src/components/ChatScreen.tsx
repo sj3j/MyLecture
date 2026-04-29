@@ -61,6 +61,279 @@ interface ChatScreenProps {
   setCurrentTab?: (tab: string) => void;
 }
 
+const MessageBubble = React.memo(({
+  msg, isMe, showHeader, timeStr, isRtl, 
+  user, isMasterAdmin, isAdminOrModerator, 
+  revealedMessages, showReactionPickerFor, setShowReactionPickerFor,
+  handleReaction, setReplyingTo, setMessageToDelete, setRevealedMessages,
+  setCurrentTab, CHAT_DOC_ID, renderMessageText
+}: any) => {
+  return (
+    <div 
+      id={`msg-${msg.id}`} 
+      data-message-id={msg.id}
+      data-sender-id={msg.senderId}
+      className={`message-bubble-container flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}
+    >
+      <div className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+        
+        {/* Avatar */}
+        {showHeader && !isMe && (
+          <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border ${msg.isAnonymous ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-zinc-800' : 'bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-zinc-800'}`}>
+            {msg.isAnonymous ? (
+              '?'
+            ) : (
+              msg.senderAvatar?.startsWith('http') ? (
+                <img src={msg.senderAvatar} alt={msg.senderName} loading="lazy" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
+              )
+            )}
+          </div>
+        )}
+        {!showHeader && !isMe && <div className="w-8 flex-shrink-0" />}
+
+        {/* Bubble */}
+        <div className={`group relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+          {showHeader && (
+            <span className={`text-xs font-bold ${isMe ? 'mr-1 rtl:mr-0 rtl:ml-1 text-right' : 'ml-1 rtl:ml-0 rtl:mr-1'} mb-1 ${msg.isAnonymous ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`}>
+              {msg.isAnonymous && isMe ? (isRtl ? 'أنت (مجهول)' : 'You (Anonymous)') : msg.senderName} 
+              {msg.senderEmail === 'almdrydyl335@gmail.com' && !msg.isAnonymous && <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">Admin</span>}
+            </span>
+          )}
+
+          <div 
+            className={`relative px-4 py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
+              isMe 
+                ? (msg.isAnonymous ? 'bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' : 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm') 
+                : (msg.isAnonymous ? 'bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50' : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700')
+            }`}
+            onClick={() => {
+              setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
+            }}
+          >
+            {revealedMessages.has(msg.id) && isMasterAdmin && msg.isAnonymous && (
+              <div className="absolute -top-6 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-700 min-w-max" style={{[isRtl ? 'right' : 'left']: '0'}}>
+                {msg.senderEmail || msg.senderId || 'Unknown'} (Email)
+              </div>
+            )}
+            
+            {msg.replyTo && (
+              <div 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const el = document.getElementById(`msg-${msg.replyTo!.messageId}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      el.classList.add('bg-sky-100', 'dark:bg-sky-900/40');
+                      setTimeout(() => el.classList.remove('bg-sky-100', 'dark:bg-sky-900/40'), 2000);
+                    }
+                  }}
+                  className={`mb-1.5 p-2 rounded-lg text-xs border-l-2 rtl:border-l-0 rtl:border-r-2 cursor-pointer hover:opacity-80 transition-opacity ${isMe ? 'bg-sky-700/50 border-sky-300' : 'bg-slate-100 dark:bg-zinc-700/50 border-sky-500'}`}
+              >
+                <div className="font-bold mb-0.5 opacity-90">{msg.replyTo.senderName}</div>
+                <div className="opacity-80 truncate" dir="auto">{msg.replyTo.text}</div>
+              </div>
+            )}
+            
+            {msg.fileUrl && (
+              <div className="mb-2">
+                {msg.fileType === 'image' ? (
+                  <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                    <img src={msg.fileUrl} alt="attachment" loading="lazy" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
+                  </a>
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); forceDownload(msg.fileUrl!, msg.fileName || 'Attachment'); }} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white hover:bg-sky-700/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800/80'} transition-colors text-left`}>
+                    <Paperclip className="w-5 h-5" />
+                    <span className="text-sm font-medium truncate max-w-[200px]">{msg.fileName || 'Attachment'}</span>
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {msg.embeddedItem && (
+                <div 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (setCurrentTab) {
+                      if (msg.embeddedItem!.type === 'lecture') setCurrentTab('lectures');
+                      else if (msg.embeddedItem!.type === 'record') setCurrentTab('records');
+                      else if (msg.embeddedItem!.type === 'announcement') setCurrentTab('announcements');
+                    }
+                  }} 
+                  className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 cursor-pointer hover:opacity-90 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}
+                >
+                  <div className="flex items-center gap-1.5 opacity-80 text-[10px] uppercase font-bold tracking-wider">
+                    {msg.embeddedItem.type === 'lecture' && <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">Lecture</span>}
+                    {msg.embeddedItem.type === 'record' && <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">Record</span>}
+                    {msg.embeddedItem.type === 'announcement' && <span className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded">Announcement</span>}
+                  </div>
+                  <div className="font-bold hover:underline line-clamp-2 text-sm">
+                    {msg.embeddedItem.title}
+                  </div>
+                  {msg.embeddedItem.subtitle && <span className="text-xs opacity-70 truncate">{msg.embeddedItem.subtitle}</span>}
+                </div>
+            )}
+
+            <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{renderMessageText(msg.text)}</p>
+            
+            <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
+              {msg.isPending && (
+                  <Clock className="w-2.5 h-2.5 opacity-80" />
+              )}
+              <span className="text-[10px] font-medium">{timeStr}</span>
+            </div>
+          </div>
+
+          {/* Reactions Display */}
+          {msg.reactions && (msg.reactions.like?.length > 0 || msg.reactions.heart?.length > 0 || msg.reactions.thanks?.length > 0) && (
+            <div className={`flex flex-wrap gap-1 mt-1 z-10 ${isMe ? 'justify-end' : 'justify-start'}`}>
+              {msg.reactions.like?.length > 0 && (
+                <button title={msg.reactions.like.join(', ')} onClick={() => handleReaction(msg.id, 'like', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.like.includes(user?.email || '') ? 'bg-sky-50 dark:bg-sky-900 border-sky-200 text-sky-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
+                  👍 {msg.reactions.like.length}
+                </button>
+              )}
+              {msg.reactions.heart?.length > 0 && (
+                <button title={msg.reactions.heart.join(', ')} onClick={() => handleReaction(msg.id, 'heart', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.heart.includes(user?.email || '') ? 'bg-rose-50 dark:bg-rose-900 border-rose-200 text-rose-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
+                  ❤️ {msg.reactions.heart.length}
+                </button>
+              )}
+              {msg.reactions.thanks?.length > 0 && (
+                <button title={msg.reactions.thanks.join(', ')} onClick={() => handleReaction(msg.id, 'thanks', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.thanks.includes(user?.email || '') ? 'bg-emerald-50 dark:bg-emerald-900 border-emerald-200 text-emerald-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
+                  🙏 {msg.reactions.thanks.length}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Reaction / Action Picker */}
+          <AnimatePresence>
+            {showReactionPickerFor === msg.id && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                className={`absolute -top-16 z-[100] bg-white dark:bg-zinc-800 shadow-2xl rounded-2xl px-3 py-2 flex items-center gap-2 border border-slate-200 dark:border-zinc-700 whitespace-nowrap ${isMe ? (isRtl ? 'left-0' : 'right-0') : (isRtl ? 'right-0' : 'left-0')}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-1.5 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l">
+                  <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">👍</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
+                </div>
+                
+                <div className="flex items-center gap-1 px-2 text-xs font-bold text-slate-500 dark:text-slate-400 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l" title={isRtl ? 'المشاهدات' : 'Views'}>
+                  <Eye className="w-4 h-4" />
+                  <span>{(msg.reactions?.viewers || msg.viewers) ? (msg.reactions?.viewers || msg.viewers)!.length : 0}</span>
+                </div>
+
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50), senderId: msg.senderId }); setShowReactionPickerFor(null); }} 
+                  className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                  {isRtl ? 'رد' : 'Reply'}
+                </button>
+
+                {(isAdminOrModerator || isMe) && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMessageToDelete(msg.id);
+                      setShowReactionPickerFor(null);
+                    }}
+                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 rounded-full transition-colors"
+                    title={isRtl ? 'حذف' : 'Delete'}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+
+                {isMasterAdmin && msg.isAnonymous && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRevealedMessages((prev: any) => {
+                        const next = new Set(prev);
+                        if (next.has(msg.id)) next.delete(msg.id);
+                        else next.add(msg.id);
+                        return next;
+                      });
+                      setShowReactionPickerFor(null);
+                    }}
+                    title={isRtl ? 'كشف/إخفاء الهوية' : 'Toggle Reveal Identity'}
+                    className={`p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-500 rounded-full transition-colors ${revealedMessages.has(msg.id) ? 'bg-amber-100 dark:bg-amber-900/50' : ''}`}
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                )}
+
+                <button onClick={(e) => { e.stopPropagation(); setShowReactionPickerFor(null); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 group">
+                  <X className="w-4 h-4 group-hover:text-red-500 transition-colors"/>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Desktop Hover Actions (Optional, kept but integrated with tap logic above) */}
+          {(isAdminOrModerator || isMe) && (
+            <div className={`absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 hidden sm:flex ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
+              <button 
+                onClick={() => {
+                  setMessageToDelete(msg.id);
+                }}
+                className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
+                title={isRtl ? 'حذف الرسالة' : 'Delete'}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+
+              {isAdminOrModerator && (
+                <button 
+                  onClick={() => {
+                    updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), {
+                      pinnedMessage: {
+                        id: msg.id,
+                        text: msg.text,
+                        senderName: msg.senderName
+                      }
+                    });
+                  }}
+                  className="p-1.5 bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-400 rounded-full shadow-sm hover:scale-110"
+                  title={isRtl ? 'تثبيت الرسالة' : 'Pin Message'}
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+                </button>
+              )}
+
+              {isMasterAdmin && msg.isAnonymous && (
+                <button
+                  onClick={() => {
+                    setRevealedMessages((prev: any) => {
+                      const next = new Set(prev);
+                      if (next.has(msg.id)) next.delete(msg.id);
+                      else next.add(msg.id);
+                      return next;
+                    });
+                  }}
+                  title={isRtl ? 'كشف/إخفاء الهوية' : 'Toggle Reveal Identity'}
+                  className={`p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110 ${revealedMessages.has(msg.id) ? 'ring-2 ring-amber-400' : ''}`}
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -109,9 +382,14 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const [isTyping, setIsTyping] = useState(false);
   const [activeTypers, setActiveTypers] = useState<string[]>([]);
   
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [revealedMessages, setRevealedMessages] = useState<Set<string>>(new Set());
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Track last visible document for pagination
   const [lastVisibleMessageId, setLastVisibleMessageId] = useState<string | null>(null);
@@ -255,7 +533,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     const q = query(
       collection(db, 'chat_messages'),
       orderBy('timestamp', 'desc'),
-      limit(25)
+      limit(50)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -318,6 +596,12 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
         if (isNearBottom) {
           setTimeout(() => scrollToBottom(), 100);
+          setUnreadCount(0);
+        } else {
+          // Check if there are real added messages from other people
+          if (snapshot.docChanges().some(c => c.type === 'added' && c.doc.data().senderId !== user?.uid)) {
+            setUnreadCount(prev => prev + 1);
+          }
         }
       }
     }, (e) => {
@@ -370,7 +654,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!newMessage.trim() && !attachmentFile && !embeddedItem) || !settings.isChatOpen || cooldownRemaining > 0 || !user || isUploadingAttachment || isSending) return;
+    if (isSending) return;
+    if ((!newMessage.trim() && !attachmentFile && !embeddedItem) || (!settings.isChatOpen && !isAdminOrModerator) || (cooldownRemaining > 0 && !isAdminOrModerator) || !user || isUploadingAttachment || isSending) return;
     if (!isAdminOrModerator) {
       if (cooldownRemaining > 0) return;
       if (attachmentFile && settings.allowAttachments === false) {
@@ -405,6 +690,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       }
 
       setNewMessage('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
       setReplyingTo(null);
       setAttachmentFile(null);
       setAttachmentType(null);
@@ -468,6 +756,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         }];
       });
       setTimeout(() => scrollToBottom(), 100);
+      setUnreadCount(0);
 
       // Instantly start cooldown for students
       if (!isAdminOrModerator) {
@@ -507,7 +796,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         collection(db, 'chat_messages'),
         orderBy('timestamp', 'desc'),
         where('timestamp', '<', oldestMessage.timestamp),
-        limit(20)
+        limit(50)
       );
       
       let snapshot;
@@ -684,9 +973,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     
     if (!isAdminOrModerator && !isOwner) return;
     
-    // Using simple browser confirm (can be styled better natively or with a modal later, but solves the task)
-    if (!window.confirm(isRtl ? 'هل تريد حذف هذه الرسالة؟' : 'Delete this message?')) return;
-    
     try {
       await deleteDoc(doc(db, 'chat_messages', id));
       setMessages(prev => prev.filter(m => m.id !== id));
@@ -825,7 +1111,9 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   }, [messages, user, db]);
 
   return (
-    <div className="flex flex-col fixed top-[64px] bottom-[88px] sm:bottom-[96px] left-0 right-0 z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="flex flex-col z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950" 
+         dir={isRtl ? 'rtl' : 'ltr'} 
+         style={{ height: '100dvh', paddingTop: '64px', paddingBottom: '96px', position: 'fixed', top: 0, left: 0, right: 0, margin: '0 auto' }}>
       {/* Header and Pinned Message */}
       <div className="flex-none z-40 flex flex-col shadow-sm">
         <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex justify-between items-center">
@@ -986,7 +1274,15 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       {/* Messages Area */}
       <div 
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-zinc-950 scroll-smooth"
+        onScroll={(e) => {
+          const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+          const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+          setIsAtBottom(atBottom);
+          if (atBottom) {
+            setUnreadCount(0);
+          }
+        }}
+        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-zinc-950 scroll-smooth overscroll-contain"
       >
         {hasMore && !isLoading && (
           <div className="flex justify-center mb-4">
@@ -1048,250 +1344,26 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                     </span>
                   </div>
                 )}
-                <div 
-                  id={`msg-${msg.id}`} 
-                data-message-id={msg.id}
-                data-sender-id={msg.senderId}
-                className={`message-bubble-container flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                  
-                  {/* Avatar */}
-                  {showHeader && !isMe && (
-                    <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border ${msg.isAnonymous ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-zinc-800' : 'bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-zinc-800'}`}>
-                      {msg.isAnonymous ? (
-                        '?'
-                      ) : (
-                        msg.senderAvatar?.startsWith('http') ? (
-                          <img src={msg.senderAvatar} alt={msg.senderName} loading="lazy" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
-                        )
-                      )}
-                    </div>
-                  )}
-                  {!showHeader && !isMe && <div className="w-8 flex-shrink-0" />}
-
-                  {/* Bubble */}
-                  <div className={`group relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    {showHeader && (
-                      <span className={`text-xs font-bold ${isMe ? 'mr-1 rtl:mr-0 rtl:ml-1 text-right' : 'ml-1 rtl:ml-0 rtl:mr-1'} mb-1 ${msg.isAnonymous ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {msg.isAnonymous && isMe ? (isRtl ? 'أنت (مجهول)' : 'You (Anonymous)') : msg.senderName} 
-                        {msg.senderEmail === 'almdrydyl335@gmail.com' && !msg.isAnonymous && <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">Admin</span>}
-                      </span>
-                    )}
-
-                    <div 
-                      className={`relative px-4 py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
-                        isMe 
-                          ? (msg.isAnonymous ? 'bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' : 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm') 
-                          : (msg.isAnonymous ? 'bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50' : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700')
-                      }`}
-                      onClick={() => {
-                        setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
-                      }}
-                    >
-                      {msg.replyTo && (
-                        <div 
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             const el = document.getElementById(`msg-${msg.replyTo!.messageId}`);
-                             if (el) {
-                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                el.classList.add('bg-sky-100', 'dark:bg-sky-900/40');
-                                setTimeout(() => el.classList.remove('bg-sky-100', 'dark:bg-sky-900/40'), 2000);
-                             }
-                           }}
-                           className={`mb-1.5 p-2 rounded-lg text-xs border-l-2 rtl:border-l-0 rtl:border-r-2 cursor-pointer hover:opacity-80 transition-opacity ${isMe ? 'bg-sky-700/50 border-sky-300' : 'bg-slate-100 dark:bg-zinc-700/50 border-sky-500'}`}
-                        >
-                          <div className="font-bold mb-0.5 opacity-90">{msg.replyTo.senderName}</div>
-                          <div className="opacity-80 truncate" dir="auto">{msg.replyTo.text}</div>
-                        </div>
-                      )}
-                      
-                      {msg.fileUrl && (
-                        <div className="mb-2">
-                          {msg.fileType === 'image' ? (
-                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                              <img src={msg.fileUrl} alt="attachment" loading="lazy" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
-                            </a>
-                          ) : (
-                            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); forceDownload(msg.fileUrl!, msg.fileName || 'Attachment'); }} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white hover:bg-sky-700/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800/80'} transition-colors text-left`}>
-                              <Paperclip className="w-5 h-5" />
-                              <span className="text-sm font-medium truncate max-w-[200px]">{msg.fileName || 'Attachment'}</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      
-                      {msg.embeddedItem && (
-                         <div 
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             if (setCurrentTab) {
-                               if (msg.embeddedItem!.type === 'lecture') setCurrentTab('lectures');
-                               else if (msg.embeddedItem!.type === 'record') setCurrentTab('records');
-                               else if (msg.embeddedItem!.type === 'announcement') setCurrentTab('announcements');
-                             }
-                           }} 
-                           className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 cursor-pointer hover:opacity-90 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}
-                         >
-                           <div className="flex items-center gap-1.5 opacity-80 text-[10px] uppercase font-bold tracking-wider">
-                              {msg.embeddedItem.type === 'lecture' && <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">Lecture</span>}
-                              {msg.embeddedItem.type === 'record' && <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">Record</span>}
-                              {msg.embeddedItem.type === 'announcement' && <span className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded">Announcement</span>}
-                           </div>
-                           <div className="font-bold hover:underline line-clamp-2 text-sm">
-                             {msg.embeddedItem.title}
-                           </div>
-                           {msg.embeddedItem.subtitle && <span className="text-xs opacity-70 truncate">{msg.embeddedItem.subtitle}</span>}
-                         </div>
-                      )}
-
-                      <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{renderMessageText(msg.text)}</p>
-                      
-                      <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
-                        {msg.isPending && (
-                           <Clock className="w-2.5 h-2.5 opacity-80" />
-                        )}
-                        <span className="text-[10px] font-medium">{timeStr}</span>
-                      </div>
-                    </div>
-
-                    {/* Reactions Display */}
-                    {msg.reactions && (msg.reactions.like?.length > 0 || msg.reactions.heart?.length > 0 || msg.reactions.thanks?.length > 0) && (
-                      <div className={`flex flex-wrap gap-1 mt-1 z-10 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                        {msg.reactions.like?.length > 0 && (
-                          <button title={msg.reactions.like.join(', ')} onClick={() => handleReaction(msg.id, 'like', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.like.includes(user?.email || '') ? 'bg-sky-50 dark:bg-sky-900 border-sky-200 text-sky-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
-                            👍 {msg.reactions.like.length}
-                          </button>
-                        )}
-                        {msg.reactions.heart?.length > 0 && (
-                          <button title={msg.reactions.heart.join(', ')} onClick={() => handleReaction(msg.id, 'heart', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.heart.includes(user?.email || '') ? 'bg-rose-50 dark:bg-rose-900 border-rose-200 text-rose-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
-                            ❤️ {msg.reactions.heart.length}
-                          </button>
-                        )}
-                        {msg.reactions.thanks?.length > 0 && (
-                          <button title={msg.reactions.thanks.join(', ')} onClick={() => handleReaction(msg.id, 'thanks', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.thanks.includes(user?.email || '') ? 'bg-emerald-50 dark:bg-emerald-900 border-emerald-200 text-emerald-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
-                            🙏 {msg.reactions.thanks.length}
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Reaction / Action Picker */}
-                    <AnimatePresence>
-                      {showReactionPickerFor === msg.id && (
-                        <motion.div 
-                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                          className={`absolute -top-16 z-[100] bg-white dark:bg-zinc-800 shadow-2xl rounded-2xl px-3 py-2 flex items-center gap-2 border border-slate-200 dark:border-zinc-700 whitespace-nowrap ${isMe ? (isRtl ? 'left-0' : 'right-0') : (isRtl ? 'right-0' : 'left-0')}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-center gap-1.5 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l">
-                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">👍</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
-                          </div>
-                          
-                          <div className="flex items-center gap-1 px-2 text-xs font-bold text-slate-500 dark:text-slate-400 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l" title={isRtl ? 'المشاهدات' : 'Views'}>
-                            <Eye className="w-4 h-4" />
-                            <span>{(msg.reactions?.viewers || msg.viewers) ? (msg.reactions?.viewers || msg.viewers)!.length : 0}</span>
-                          </div>
-
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50), senderId: msg.senderId }); setShowReactionPickerFor(null); }} 
-                            className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
-                          >
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-                            {isRtl ? 'رد' : 'Reply'}
-                          </button>
-
-                          {(isAdminOrModerator || isMe) && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMessageToDelete(msg.id);
-                                setShowReactionPickerFor(null);
-                              }}
-                              className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 rounded-full transition-colors"
-                              title={isRtl ? 'حذف' : 'Delete'}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {isMasterAdmin && msg.isAnonymous && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                alert(`Original Identity: ${msg.senderEmail || msg.senderId || 'Unknown'}`);
-                                setShowReactionPickerFor(null);
-                              }}
-                              title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
-                              className="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-500 rounded-full transition-colors"
-                            >
-                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                          )}
-
-                          <button onClick={(e) => { e.stopPropagation(); setShowReactionPickerFor(null); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 group">
-                            <X className="w-4 h-4 group-hover:text-red-500 transition-colors"/>
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Desktop Hover Actions (Optional, kept but integrated with tap logic above) */}
-                    {(isAdminOrModerator || isMe) && (
-                      <div className={`absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 hidden sm:flex ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
-                        <button 
-                          onClick={() => {
-                            setMessageToDelete(msg.id);
-                          }}
-                          className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
-                          title={isRtl ? 'حذف الرسالة' : 'Delete'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        {isAdminOrModerator && (
-                          <button 
-                            onClick={() => {
-                              updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), {
-                                pinnedMessage: {
-                                  id: msg.id,
-                                  text: msg.text,
-                                  senderName: msg.senderName
-                                }
-                              });
-                            }}
-                            className="p-1.5 bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-400 rounded-full shadow-sm hover:scale-110"
-                            title={isRtl ? 'تثبيت الرسالة' : 'Pin Message'}
-                          >
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-                          </button>
-                        )}
-
-                        {isMasterAdmin && msg.isAnonymous && (
-                          <button
-                            onClick={() => alert(`Original Identity: ${msg.senderEmail || msg.senderId || 'Unknown'}`)}
-                            title={isRtl ? 'كشف الهوية' : 'Reveal Identity'}
-                            className="p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110"
-                          >
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                <MessageBubble 
+                  msg={msg}
+                  isMe={isMe}
+                  showHeader={showHeader}
+                  timeStr={timeStr}
+                  isRtl={isRtl}
+                  user={user}
+                  isMasterAdmin={isMasterAdmin}
+                  isAdminOrModerator={isAdminOrModerator}
+                  revealedMessages={revealedMessages}
+                  showReactionPickerFor={showReactionPickerFor}
+                  setShowReactionPickerFor={setShowReactionPickerFor}
+                  handleReaction={handleReaction}
+                  setReplyingTo={setReplyingTo}
+                  setMessageToDelete={setMessageToDelete}
+                  setRevealedMessages={setRevealedMessages}
+                  setCurrentTab={setCurrentTab}
+                  CHAT_DOC_ID={CHAT_DOC_ID}
+                  renderMessageText={renderMessageText}
+                />
               </React.Fragment>
             );
           })
@@ -1299,8 +1371,28 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         <div ref={messagesEndRef} className="h-px" />
       </div>
 
+      <AnimatePresence>
+        {!isAtBottom && unreadCount > 0 && (
+          <motion.button
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+            onClick={() => {
+               scrollToBottom();
+               setUnreadCount(0);
+            }}
+            className="absolute bottom-[90px] sm:bottom-[100px] right-4 bg-sky-600 text-white rounded-full p-2.5 shadow-lg flex items-center justify-center gap-1.5 z-40 hover:bg-sky-500 transition-colors"
+          >
+            <div className="flex items-center gap-1 px-1 text-sm font-bold">
+               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+               {unreadCount} {isRtl ? 'رسالة جديدة' : 'New'}
+            </div>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Input Area */}
-      <div className="flex-none p-2 sm:p-4 pb-2 sm:pb-4 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/50 dark:border-zinc-800/50">
+      <div className="flex-none p-2 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-4 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/50 dark:border-zinc-800/50 relative z-40">
         <div className="pointer-events-auto w-full mx-auto max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-2 sm:p-4 shadow-xl dark:shadow-[0_-5px_20px_rgba(0,0,0,0.3)]">
           {!settings.isChatOpen && !isAdminOrModerator ? (
           <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
@@ -1463,8 +1555,14 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                 )}
               </div>
               <textarea
+                ref={textareaRef}
                 value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
+                onChange={(e) => {
+                  setNewMessage(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                }}
+                maxLength={1000}
                 placeholder={isRtl ? 'رسالتك...' : 'Message...'}
                 className="flex-1 bg-slate-100 dark:bg-zinc-800 border border-transparent focus:border-sky-300 dark:focus:border-sky-700 rounded-2xl px-4 py-3 min-h-[44px] max-h-32 outline-none resize-none text-[15px] text-slate-900 dark:text-stone-100 transition-colors"
                 dir="auto"
@@ -1483,13 +1581,19 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               ) : (
                 <button
                   type="submit"
-                  disabled={isSending || (!newMessage.trim() && !attachmentFile && !embeddedItem)}
+                  disabled={isSending || (!newMessage.trim() && !attachmentFile && !embeddedItem) || (!settings.isChatOpen && !isAdminOrModerator)}
                   className="w-11 h-11 bg-sky-600 hover:bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-zinc-700 transition-colors shrink-0 shadow-sm"
                 >
                   {isSending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className={`w-5 h-5 ${isRtl ? 'rotate-180 transform -ml-1' : 'ml-1'}`} />}
                 </button>
               )}
             </form>
+            {/* Character limit counter */}
+            {newMessage.length > 800 && (
+              <div className="absolute -bottom-5 right-2 text-[10px] text-slate-500 font-bold">
+                {newMessage.length} / 1000
+              </div>
+            )}
           </div>
         )}
       </div>

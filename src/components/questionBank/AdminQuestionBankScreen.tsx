@@ -6,6 +6,7 @@ import { TRANSLATIONS, Language } from '../../types';
 import { BankQuestion } from '../../types/questionBank.types';
 import { getAllBankQuestionsForAdmin, softDeleteBankQuestion } from '../../services/questionBankService';
 import AddBankQuestionModal from './AddBankQuestionModal';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 interface AdminQuestionBankScreenProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [questionToDelete, setQuestionToDelete] = useState<string | null>(null);
 
   const tags = ['الكل', 'وزاري', 'سنين_سابقة', 'سؤال_الدكتور', 'مهم', 'متوقع'];
 
@@ -40,7 +42,6 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
   }, [isOpen]);
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("حذف السؤال؟")) return;
     try {
       await softDeleteBankQuestion(id);
       fetchQuestions();
@@ -140,7 +141,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
                   <span>الصعوبة: {q.difficulty} • محاولات: {q.attemptCount}</span>
                   <div className="flex gap-2">
                     <button className="text-sky-600 hover:underline">تعديل</button>
-                    <button onClick={() => handleDelete(q.id)} className="text-red-600 hover:underline">حذف</button>
+                    <button onClick={() => setQuestionToDelete(q.id)} className="text-red-600 hover:underline">حذف</button>
                   </div>
                 </div>
               </div>
@@ -153,6 +154,16 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
         isOpen={isAddOpen} 
         onClose={() => setIsAddOpen(false)} 
         onAdded={fetchQuestions} 
+      />
+      
+      <ConfirmModal
+        isOpen={!!questionToDelete}
+        onClose={() => setQuestionToDelete(null)}
+        onConfirm={() => {
+          if (questionToDelete) handleDelete(questionToDelete);
+        }}
+        title="حذف السؤال"
+        message="هل أنت متأكد من حذف هذا السؤال من البنك؟"
       />
     </div>
   );

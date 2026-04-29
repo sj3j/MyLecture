@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Check, X, ArrowRight, Play, CheckCircle } from 'lucide-react';
 import { BankQuestion } from '../../types/questionBank.types';
 import { saveUserBankAnswer } from '../../services/questionBankService';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 interface Props {
   questions: BankQuestion[];
@@ -16,17 +17,14 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
   const [answers, setAnswers] = useState<Record<string, string>>({}); 
   const [isFinished, setIsFinished] = useState(false);
   const [score, setScore] = useState(0);
+  const [showConfirmFinish, setShowConfirmFinish] = useState(false);
 
   const handleAnswer = async (q: BankQuestion, choiceText: string) => {
     if (isFinished) return;
     setAnswers(prev => ({ ...prev, [q.id]: choiceText }));
   };
 
-  const handleFinish = async () => {
-    if (Object.keys(answers).length < questions.length) {
-      if (!window.confirm("هناك أسئلة لم تقم بالإجابة عليها، هل تفضل إنهاء الاختبار؟")) return;
-    }
-
+  const executeFinish = async () => {
     let correct = 0;
     for (const q of questions) {
        const userAns = answers[q.id];
@@ -38,6 +36,14 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
     }
     setScore(correct);
     setIsFinished(true);
+  };
+
+  const handleFinish = async () => {
+    if (Object.keys(answers).length < questions.length) {
+      setShowConfirmFinish(true);
+      return;
+    }
+    await executeFinish();
   };
 
   return (
@@ -149,6 +155,17 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
           </button>
         </div>
       )}
+      
+      <ConfirmModal
+        isOpen={showConfirmFinish}
+        onClose={() => setShowConfirmFinish(false)}
+        onConfirm={executeFinish}
+        title="إنهاء الاختبار"
+        message="هناك أسئلة لم تقم بالإجابة عليها، هل أنت متأكد من رغبتك في إنهاء الاختبار الآن؟"
+        confirmText="نعم، إنهاء الاختبار"
+        cancelText="العودة للاختبار"
+        isDestructive={false}
+      />
     </motion.div>
   );
 }
