@@ -47,7 +47,6 @@ interface ChatSettings {
   isChatOpen: boolean;
   messageCooldown: number;
   closedMessage: string;
-  latestBundleUrl?: string;
   allowAttachments?: boolean;
   pinnedMessage?: {
     id: string;
@@ -88,7 +87,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const [onlineStudentsCount, setOnlineStudentsCount] = useState<number>(1);
   const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
-  const [isBundling, setIsBundling] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
@@ -500,22 +498,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
   const handleLoadMore = async () => {
     setIsLoadingMore(true);
-    
-    // Feature Extension: Bundle Loader
-    // We try to load a bundle first if there are old messages
-    if (settings.latestBundleUrl) {
-      try {
-        const res = await fetch(settings.latestBundleUrl);
-        if (res.ok) {
-          const bundleData = await res.arrayBuffer();
-          const { loadBundle } = await import('firebase/firestore');
-          await loadBundle(db, bundleData);
-          console.log('Bundle loaded securely from Cloud Storage');
-        }
-      } catch (e) {
-        console.log('No bundle available or failed to load. Falling back to live query.', e);
-      }
-    }
 
     try {
       if (messages.length === 0) return;
@@ -742,28 +724,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       setAlertMessage(isRtl ? 'حدث خطأ أثناء حذف الرسائل' : 'Error clearing messages');
     } finally {
       setIsClearing(false);
-    }
-  };
-
-  const bundleOldMessages = async () => {
-    if (!isAdminOrModerator) return;
-    setIsBundling(true);
-    try {
-      const res = await fetch('/api/admin/create-chat-bundle', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${await (await import('../lib/firebase')).auth.currentUser?.getIdToken() || ''}`
-        }
-      });
-      if (res.ok) {
-        setAlertMessage(isRtl ? 'تم تجميع الرسائل بنجاح وايقاف القراءات للرسائل القديمة.' : 'Messages successfully bundled. Old message reads optimized.');
-      } else {
-        setAlertMessage(isRtl ? 'حدث خطأ أثناء التجميع.' : 'Error bundling messages.');
-      }
-    } catch (e) {
-      console.error('Bundling failed', e);
-    } finally {
-      setIsBundling(false);
     }
   };
 
@@ -1016,15 +976,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                 >
                   <Trash2 className="w-4 h-4" />
                   {isRtl ? 'مسح كل الرسائل' : 'Clear All'}
-                </button>
-                <button
-                  onClick={bundleOldMessages}
-                  disabled={isBundling}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400 rounded-xl text-xs font-bold hover:bg-indigo-100 disabled:opacity-50"
-                  title="Optimize database reads by serving old messages as static files"
-                >
-                  {isBundling ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
-                  {isRtl ? 'تجميع (Optimize)' : 'Bundle (Optimize)'}
                 </button>
               </div>
             </div>

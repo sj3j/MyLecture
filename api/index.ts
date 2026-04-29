@@ -123,77 +123,7 @@ app.get("/api/get-upload-url", verifyAuth, verifyAdmin, async (req, res) => {
   }
 });
 
-// Bundle chat messages
-app.post("/api/admin/create-chat-bundle", verifyAuth, verifyAdmin, async (req, res) => {
-  try {
-    const db = admin.firestore();
-    const bundle = db.bundle('chat-bundle');
-    const yesterday = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
-    
-    const oldMessagesQuery = db.collection('chat_messages')
-                               .where('timestamp', '<=', yesterday)
-                               .orderBy('timestamp', 'desc');
-
-    const querySnapshot = await oldMessagesQuery.get();
-    
-    if (querySnapshot.empty) {
-      return res.status(200).json({ message: 'No old messages to bundle' });
-    }
-
-    bundle.add('chat-bundle-query', querySnapshot);
-    const bundleBuffer = await bundle.build();
-
-    let publicUrl = '';
-    
-    if (s3Client && process.env.R2_BUCKET_NAME) {
-      const objectKey = 'bundles/chat-bundle.bundle';
-      const command = new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: objectKey,
-        ContentType: 'application/octet-stream',
-        Body: bundleBuffer
-      });
-      await s3Client.send(command);
-      const publicUrlBase = process.env.R2_PUBLIC_URL || "";
-      publicUrl = publicUrlBase.endsWith('/') 
-        ? `${publicUrlBase}${objectKey}` 
-        : `${publicUrlBase}/${objectKey}`;
-    } else {
-      const bucketName = process.env.FIREBASE_STORAGE_BUCKET || (process.env.FIREBASE_PROJECT_ID + '.appspot.com');
-      const bucket = admin.storage().bucket(bucketName);
-      const file = bucket.file('bundles/chat-bundle.bundle');
-      
-      await file.save(bundleBuffer, {
-        metadata: {
-          contentType: 'application/octet-stream',
-          cacheControl: 'public, max-age=3600'
-        }
-      });
-  
-      try {
-        await file.makePublic();
-        publicUrl = file.publicUrl();
-      } catch (e) {
-        console.warn('Could not make file public. Generating signed URL instead.', e);
-        const urls = await file.getSignedUrl({
-          action: 'read',
-          expires: '01-01-2099'
-        });
-        publicUrl = urls[0];
-      }
-    }
-
-    await db.collection('chat_settings').doc('config').set({
-      latestBundleUrl: publicUrl,
-      bundleCreatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    res.status(200).json({ message: 'Bundle created successfully', url: publicUrl });
-  } catch (err) {
-    console.error('Bundle error:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
+// Bundle chat messages removed
 
 // Send FCM Notification
 app.post("/api/notify", verifyAuth, verifyAdmin, async (req, res) => {

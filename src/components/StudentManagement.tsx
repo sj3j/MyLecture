@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload } from 'lucide-react';
+import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
@@ -446,6 +446,26 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   };
 
+  const handleDownloadNeverSignedIn = () => {
+    const neverSignedIn = students.filter(s => !s.userUid);
+    if (neverSignedIn.length === 0) {
+      alert(isRtl ? 'لا يوجد طلاب لم يسجلوا الدخول' : 'No students who never signed in');
+      return;
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + (isRtl ? "الاسم,البريد الإلكتروني,الكود,الحالة\n" : "Name,Email,Code,Status\n")
+      + neverSignedIn.map(s => `"${s.name}","${s.email}","${s.examCode || ''}","${s.isActive ? (isRtl ? 'مفعل' : 'Active') : (isRtl ? 'معطل' : 'Inactive')}"`).join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `never_signed_in_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const filteredStudents = students.filter(student => 
     student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -847,7 +867,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                     <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
                       {isRtl ? 'قائمة الطلاب' : 'Student List'} ({students.length})
                     </h3>
-                    <div className="relative flex-1 max-w-sm">
+                    <div className="relative flex-1 max-w-sm flex items-center gap-2">
                       <input
                         type="text"
                         placeholder={isRtl ? 'البحث بالاسم، الإيميل، أو الكود...' : 'Search by name, email, or code...'}
@@ -855,6 +875,13 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full px-4 py-2 bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700/50 text-slate-900 dark:text-zinc-100 rounded-xl focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all text-sm"
                       />
+                      <button
+                        onClick={handleDownloadNeverSignedIn}
+                        title={isRtl ? 'تحميل قائمة الطلاب الذين لم يسجلوا الدخول' : 'Download students who never signed in'}
+                        className="p-2 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-900/30 rounded-xl transition-colors border border-slate-200 dark:border-zinc-700/50"
+                      >
+                        <Download className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
                   {isMasterAdmin && students.length > 0 && (
@@ -904,6 +931,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'الاسم' : 'Name'}</th>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'البريد' : 'Email'}</th>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'الكود' : 'Code'}</th>
+                          <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300 text-center">{isRtl ? 'تسجيل الدخول' : 'Signed In'}</th>
                           {user?.isMasterAdmin && (
                             <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300 text-center">{isRtl ? 'الستريك' : 'Streak'}</th>
                           )}
@@ -924,6 +952,17 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                             </td>
                             <td className="p-3 text-sm text-slate-500 dark:text-slate-400">{student.email}</td>
                             <td className="p-3 text-sm font-mono text-slate-500 dark:text-slate-400">{student.examCode}</td>
+                            <td className="p-3 text-center">
+                              {student.userUid ? (
+                                <span className="inline-flex py-1 px-2 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                  {isRtl ? 'نعم' : 'Yes'}
+                                </span>
+                              ) : (
+                                <span className="inline-flex py-1 px-2 text-[10px] font-bold rounded-full bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
+                                  {isRtl ? 'لا' : 'No'}
+                                </span>
+                              )}
+                            </td>
                             {user?.isMasterAdmin && (
                               <td className="p-3 text-center text-sm font-bold text-orange-600">{student.streakCount !== undefined ? student.streakCount : '-'}</td>
                             )}
