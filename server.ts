@@ -730,6 +730,9 @@ async function startServer() {
         
         // If already recorded today, just update lastActiveAt
         if (historyDoc.exists) {
+          if (historyDoc.data()?.freezeUsed === true) {
+             t.update(historyRef, { freezeUsed: false });
+          }
           t.update(userRef, { lastActiveAt: admin.firestore.FieldValue.serverTimestamp() });
           return;
         }
@@ -739,7 +742,6 @@ async function startServer() {
         let longestStreak = data.longestStreak || 0;
         let freezeTokens = data.freezeTokens ?? 1; // Default 1
         const lastActiveDate = data.lastActiveDate; // format 'YYYY-MM-DD'
-        let usedFreeze = false;
         
         let processedLastDate = lastActiveDate;
         if (processedLastDate && processedLastDate.includes("T")) {
@@ -754,22 +756,30 @@ async function startServer() {
           if (daysDiff === 1) {
             streakCount += 1;
           } else if (daysDiff > 1) {
-            // Gap found! Let's check freeze tokens.
-            // We need to use exactly arrays of missing gap days but for simplicity, 
-            // if we missed precisely 1 day and have a freeze token we can spend it.
-            // If we missed >1 day, or have no tokens, streak is broken.
-            // The prompt says: "If a student misses a day AND has freeze tokens > 0: Automatically use 1 freeze token... Streak is NOT reset"
-            
-            // To be robust: the freeze only covers ONE missed day. If they missed 2 days, they would need 2 freeze tokens? The prompt says "misses a day ... use 1 freeze token".
-            // Let's implement: they missed N days. We need N freeze tokens to cover it.
             const missedDays = daysDiff - 1;
             
             if (freezeTokens >= missedDays) {
               freezeTokens -= missedDays;
               streakCount += 1; // It continues from before + effectively covers gap
-              usedFreeze = true;
               
-              // We could log missed days as freeze used, but we skip for brevity
+              // Log missed days as frozen
+              let d = new Date(`${processedLastDate}T12:00:00Z`);
+              for (let i = 0; i < missedDays; i++) {
+                d.setDate(d.getDate() + 1);
+                const gapY = d.getUTCFullYear();
+                const gapM = d.getUTCMonth() + 1;
+                const gapD = d.getUTCDate();
+                const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
+                
+                const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDateStr}`);
+                t.set(gapHistoryRef, {
+                  userId: user.uid,
+                  date: gapDateStr,
+                  wasActive: true,
+                  freezeUsed: true,
+                  timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+              }
             } else {
               streakCount = 1; // Streak broken
             }
@@ -790,7 +800,7 @@ async function startServer() {
           userId: user.uid,
           date: effectiveDate,
           wasActive: true,
-          freezeUsed: usedFreeze,
+          freezeUsed: false,
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
       });
@@ -800,6 +810,41 @@ async function startServer() {
     } catch (error) {
       console.error("Error recording activity:", error);
       res.status(500).json({ error: "Failed to record activity" });
+    }
+  });
+
+  app.get("/api/streak-history/:uid", verifyAuth, async (req, res) => {
+    try {
+      const authUser = (req as any).user;
+      const targetUid = req.params.uid;
+      
+      const db = admin.firestore();
+      
+      // Admins and moderators can view anyone's streak history. Users can only view their own.
+      if (authUser.uid !== targetUid) {
+         const userDoc = await db.collection('users').doc(authUser.uid).get();
+         const role = userDoc.data()?.role;
+         if (role !== 'admin' && role !== 'moderator') {
+            return res.status(403).json({ error: 'Forbidden' });
+         }
+      }
+
+      const snapshot = await db.collection('streak_history')
+        .where('userId', '==', targetUid)
+        .get();
+        
+      const history = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          timestamp: data.timestamp?.toDate() ? data.timestamp.toDate().toISOString() : new Date().toISOString()
+        };
+      });
+      
+      res.json({ history });
+    } catch (error) {
+      console.error("Error fetching streak history:", error);
+      res.status(500).json({ error: "Failed to fetch streak history" });
     }
   });
 

@@ -1,3 +1,5 @@
+rules_version = '2';
+
 // ===============================================================
 // Assumed Data Model
 // ===============================================================
@@ -145,7 +147,7 @@ service cloud.firestore {
     }
 
     match /streak_history/{docId} {
-      allow read: if isAuthenticated() && (isAdminOrModerator() || docId.split('_')[0] == request.auth.uid);
+      allow read: if isAuthenticated() && (isAdminOrModerator() || resource.data.userId == request.auth.uid);
       allow write: if false; // Only Cloud Functions / Admin SDK
     }
 

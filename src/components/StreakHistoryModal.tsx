@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { auth } from '../lib/firebase';
 import { X, Calendar as CalendarIcon, Download, Loader2 } from 'lucide-react';
 import { Language, TRANSLATIONS, Student } from '../types';
 import TrueCalendarGrid from './TrueCalendarGrid';
@@ -35,22 +34,27 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang }: S
   const fetchHistory = async () => {
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, 'streak_history'),
-        where('userId', '==', student.userUid)
-      );
-      const snap = await getDocs(q);
-      const data: ActivityDay[] = snap.docs.map(doc => {
-        const docData = doc.data();
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch(`/api/streak-history/${student.userUid}`, {
+          headers: {
+              'Authorization': `Bearer ${token}`
+          }
+      });
+      
+      if (!res.ok) throw new Error("Failed to fetch streak history");
+      
+      const { history: data } = await res.json();
+      
+      const formattedHistory: ActivityDay[] = data.map((docData: any) => {
         return {
           date: docData.date,
           wasActive: docData.wasActive,
           freezeUsed: docData.freezeUsed,
-          timestamp: docData.timestamp?.toDate() || new Date(docData.date)
+          timestamp: docData.timestamp ? new Date(docData.timestamp) : new Date(docData.date)
         };
-      }).sort((a, b) => b.date.localeCompare(a.date)); // Descending dates
+      }).sort((a: any, b: any) => b.date.localeCompare(a.date)); // Descending dates
       
-      setHistory(data);
+      setHistory(formattedHistory);
     } catch (err) {
       console.error("Streak history fetch error ignored due to missing rules:", err);
       // Fallback to empty history since firestore rules deploy failed

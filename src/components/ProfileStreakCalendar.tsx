@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { auth } from '../lib/firebase';
 import { Loader2 } from 'lucide-react';
 import TrueCalendarGrid from './TrueCalendarGrid';
 
@@ -18,13 +17,18 @@ export default function ProfileStreakCalendar({ userUid, isRtl }: ProfileStreakC
       if (!userUid) return;
       setIsLoading(true);
       try {
-        const q = query(
-          collection(db, 'streak_history'),
-          where('userId', '==', userUid)
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.map(doc => doc.data());
-        setHistory(data);
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`/api/streak-history/${userUid}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            setHistory(data.history || []);
+        } else {
+            console.error("Failed to fetch streak history");
+        }
       } catch (err) {
         console.error(err);
       } finally {
