@@ -54,6 +54,12 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang, isM
     setIsLoading(true);
     try {
       const targetUid = student.userUid || student.uid;
+      if (!targetUid) {
+        setHistory([]);
+        setIsLoading(false);
+        return;
+      }
+      
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
 
