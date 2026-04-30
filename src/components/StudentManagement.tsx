@@ -213,6 +213,42 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   };
 
+  const handleGrantGlobalFreeze = async () => {
+    if (!window.confirm(isRtl ? 'هل أنت متأكد من منح 3 دروع تجميد لجميع الطلاب؟' : 'Are you sure you want to grant 3 freeze shields to all students?')) return;
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/admin/grant-freeze-global", {
+        method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setSuccess(isRtl ? `تم منح الدروع بنجاح لـ ${data.count} طالب` : `Granted shields to ${data.count} students`);
+    } catch (e) {
+      setError(isRtl ? 'فشل المنح العالمي' : 'Failed global grant');
+    }
+  };
+
+  const handleTimeFreeze = async () => {
+    if (!window.confirm(isRtl ? 'هل تريد استعادة جميع الستريكات المفقودة مؤخراً؟ هذا التغيير سيجعل نشاط الطلاب كأنه استمر حتى الأمس.' : 'Are you sure you want to freeze time? This will update the last active date to yesterday for all students who missed days recently, preventing streak loss.')) return;
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/admin/time-freeze", {
+        method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setSuccess(isRtl ? `تم تجميد الوقت وحماية ستريك ${data.count} طالب` : `Time frozen! Protected streaks for ${data.count} students`);
+    } catch (e) {
+      setError(isRtl ? 'فشل إعادة ضبط الوقت' : 'Failed to freeze time');
+    }
+  };
+
   const handleDeleteAllStudents = async () => {
     try {
       const snapshot = await getDocs(collection(db, 'students'));
@@ -928,31 +964,51 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       </button>
                     </div>
                   </div>
-                  {isMasterAdmin && students.length > 0 && (
-                    <div className="relative">
-                      {isDeletingAll ? (
-                        <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700">
-                          <button
-                            onClick={handleDeleteAllStudents}
-                            className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-md transition-colors"
-                          >
-                            {isRtl ? 'تأكيد الحذف' : 'Confirm Delete'}
-                          </button>
-                          <button
-                            onClick={() => setIsDeletingAll(false)}
-                            className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-md transition-colors"
-                          >
-                            {isRtl ? 'إلغاء' : 'Cancel'}
-                          </button>
+                  {isMasterAdmin && (
+                    <div className="flex flex-wrap items-center gap-2 mb-2 md:mb-0">
+                      <button
+                        onClick={handleGrantGlobalFreeze}
+                        className="px-3 py-1.5 text-xs font-bold bg-sky-50 text-sky-600 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-400 rounded-lg transition-colors flex items-center gap-1"
+                        title={isRtl ? 'منح 3 دروع تجميد لجميع الطلاب' : 'Grant 3 freeze shields to all students'}
+                      >
+                        🛡️ {isRtl ? 'منح دروع (الكل)' : 'Grant Shields (All)'}
+                      </button>
+                      
+                      <button
+                        onClick={handleTimeFreeze}
+                        className="px-3 py-1.5 text-xs font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 rounded-lg transition-colors flex items-center gap-1"
+                        title={isRtl ? 'تجميد الوقت لمنع فقدان الستريك للجميع' : 'Freeze time to prevent streak loss globally'}
+                      >
+                        ⏳ {isRtl ? 'تجميد الوقت' : 'Freeze Time'}
+                      </button>
+                      
+                      {students.length > 0 && (
+                        <div className="relative">
+                          {isDeletingAll ? (
+                            <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700">
+                              <button
+                                onClick={handleDeleteAllStudents}
+                                className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-md transition-colors"
+                              >
+                                {isRtl ? 'تأكيد الحذف' : 'Confirm Delete'}
+                              </button>
+                              <button
+                                onClick={() => setIsDeletingAll(false)}
+                                className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-md transition-colors"
+                              >
+                                {isRtl ? 'إلغاء' : 'Cancel'}
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setIsDeletingAll(true)}
+                              className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 rounded-lg transition-colors flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              {isRtl ? 'حذف جميع الطلاب' : 'Delete All Students'}
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => setIsDeletingAll(true)}
-                          className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 rounded-lg transition-colors flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          {isRtl ? 'حذف جميع الطلاب' : 'Delete All Students'}
-                        </button>
                       )}
                     </div>
                   )}

@@ -848,6 +848,98 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/time-freeze", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const appSettingsDoc = await db.collection('app_settings').doc('streak').get();
+      const gracePeriodHours = appSettingsDoc.exists ? (appSettingsDoc.data()?.gracePeriodHours ?? 2) : 2;
+      const effectiveDate = getEffectiveDateString(gracePeriodHours);
+      
+      const d = new Date(`${effectiveDate}T12:00:00Z`);
+      d.setDate(d.getDate() - 1);
+      const yMonth = d.getUTCMonth() + 1;
+      const yDay = d.getUTCDate();
+      const yesterdayStr = `${d.getUTCFullYear()}-${yMonth.toString().padStart(2, '0')}-${yDay.toString().padStart(2, '0')}`;
+
+      const usersRef = db.collection('users');
+      const snapshot = await usersRef.get();
+      
+      const batches = [];
+      let currentBatch = db.batch();
+      let countInBatch = 0;
+      let totalUpdated = 0;
+      
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.streakCount > 0) {
+          let processedLastDate = data.lastActiveDate;
+          if (processedLastDate && typeof processedLastDate === 'string' && processedLastDate.includes("T")) {
+            processedLastDate = processedLastDate.split("T")[0];
+          }
+          
+          if (!processedLastDate || processedLastDate < yesterdayStr) {
+            currentBatch.update(doc.ref, { lastActiveDate: yesterdayStr });
+            countInBatch++;
+            totalUpdated++;
+            
+            if (countInBatch >= 400) {
+              batches.push(currentBatch.commit());
+              currentBatch = db.batch();
+              countInBatch = 0;
+            }
+          }
+        }
+      });
+      
+      if (countInBatch > 0) {
+        batches.push(currentBatch.commit());
+      }
+      
+      await Promise.all(batches);
+      
+      res.json({ success: true, count: totalUpdated });
+    } catch (e) {
+      console.error("Error freezing time", e);
+      res.status(500).json({ error: "Error freezing time" });
+    }
+  });
+
+  app.post("/api/admin/grant-freeze-global", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const usersRef = db.collection('users');
+      const snapshot = await usersRef.get();
+      
+      const batches = [];
+      let currentBatch = db.batch();
+      let count = 0;
+      let countInBatch = 0;
+      
+      snapshot.forEach(doc => {
+        currentBatch.update(doc.ref, { freezeTokens: 3 });
+        count++;
+        countInBatch++;
+        
+        if (countInBatch >= 400) {
+          batches.push(currentBatch.commit());
+          currentBatch = db.batch();
+          countInBatch = 0;
+        }
+      });
+      
+      if (countInBatch > 0) {
+        batches.push(currentBatch.commit());
+      }
+      
+      await Promise.all(batches);
+      
+      res.json({ success: true, count });
+    } catch (e) {
+      console.error("Error granting global freeze tokens", e);
+      res.status(500).json({ error: "Error granting global freeze tokens" });
+    }
+  });
+
   app.post("/api/admin/grant-freeze", verifyAuth, verifyAdmin, async (req, res) => {
     try {
       const { userUid, amount } = req.body;
