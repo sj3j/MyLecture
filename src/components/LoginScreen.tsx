@@ -132,16 +132,35 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       const userRef = doc(db, 'users', result.user.uid);
       const userSnap = await getDoc(userRef);
       
+      let userRole = 'student';
+      let studentData: any = {};
+      
+      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+      const isMasterAdmin = adminEmails.includes(emailLower);
+      
+      if (isMasterAdmin) {
+        userRole = 'admin';
+      } else {
+        const allowedDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
+        if (allowedDoc.exists()) {
+          userRole = allowedDoc.data().role || 'admin';
+        } else {
+          const studentDoc = await getDoc(doc(db, 'students', emailLower));
+          if (studentDoc.exists()) {
+            studentData = studentDoc.data() || {};
+            userRole = studentData.role || 'student';
+          }
+        }
+      }
+      
       if (!userSnap.exists()) {
-        const studentDoc = await getDoc(doc(db, 'students', emailLower));
-        const studentData = studentDoc.data() || {};
-        const initialName = studentData.name || 'Student';
+        const initialName = studentData.name || (userRole === 'admin' ? 'Admin' : userRole === 'moderator' ? 'Moderator' : 'Student');
         
         await setDoc(userRef, {
           name: initialName,
           originalName: initialName,
           email: emailLower,
-          role: studentData.role || 'student',
+          role: userRole,
           examCode: studentData.examCode || '',
           createdAt: serverTimestamp(),
           favorites: [],
@@ -149,6 +168,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           completedWeeklyTasks: [],
           notificationPreferences: { lectures: true, announcements: true }
         });
+      } else {
+        const currentRole = userSnap.data().role;
+        if (currentRole !== userRole && (userRole === 'admin' || userRole === 'moderator')) {
+          await setDoc(userRef, { role: userRole }, { merge: true });
+        }
       }
 
     } catch (err: any) {

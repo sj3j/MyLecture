@@ -134,7 +134,8 @@ export default function App() {
                 name: data.role === 'moderator' ? 'Moderator' : 'Admin',
                 email: emailLower,
                 isActive: true,
-                role: data.role || 'admin'
+                role: data.role || 'admin',
+                permissions: data.permissions
               };
             } else {
               // Check students collection
@@ -191,6 +192,15 @@ export default function App() {
               ? userDoc.data().name 
               : (studentData?.name && studentData.name !== 'Admin' && studentData.name !== 'Moderator' ? studentData.name : (userDoc.data().name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student')));
 
+            const masterAdminPermissions = isMasterAdmin ? {
+              manageLectures: true,
+              manageAnnouncements: true,
+              manageRecords: true,
+              manageChat: true,
+              manageHomeworks: true,
+              manageStudents: true
+            } : undefined;
+
             setUser({
               uid: firebaseUser.uid,
               name: resolvedName,
@@ -208,11 +218,20 @@ export default function App() {
               completedWeeklyTasks: userDoc.data().completedWeeklyTasks || [],
               notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
               memberSince: studentData?.createdAt || userDoc.data().createdAt,
-              permissions: userDoc.data().permissions,
+              permissions: masterAdminPermissions || studentData?.permissions || userDoc.data().permissions,
               hideNameOnLeaderboard: userDoc.data().hideNameOnLeaderboard,
               hidePhotoOnLeaderboard: userDoc.data().hidePhotoOnLeaderboard
             });
           } else {
+            const masterAdminPermissions = isMasterAdmin ? {
+              manageLectures: true,
+              manageAnnouncements: true,
+              manageRecords: true,
+              manageChat: true,
+              manageHomeworks: true,
+              manageStudents: true
+            } : undefined;
+
             setUser({
               uid: firebaseUser.uid,
               name: studentData?.name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
@@ -226,7 +245,7 @@ export default function App() {
               completedWeeklyTasks: [],
               notificationPreferences: { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
               memberSince: studentData?.createdAt,
-              permissions: undefined,
+              permissions: masterAdminPermissions || studentData?.permissions,
               hideNameOnLeaderboard: false,
               hidePhotoOnLeaderboard: false
             });
@@ -235,6 +254,15 @@ export default function App() {
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
           // Fallback if permission denied
+          const masterAdminPermissions = isMasterAdmin ? {
+            manageLectures: true,
+            manageAnnouncements: true,
+            manageRecords: true,
+            manageChat: true,
+            manageHomeworks: true,
+            manageStudents: true
+          } : undefined;
+
           setUser({
             uid: firebaseUser.uid,
             name: studentData?.name || firebaseUser.displayName || (isMasterAdmin ? 'Master Admin' : 'Student'),
@@ -248,7 +276,7 @@ export default function App() {
             completedWeeklyTasks: [],
             notificationPreferences: { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
             memberSince: studentData?.createdAt,
-            permissions: undefined,
+            permissions: masterAdminPermissions || studentData?.permissions,
             hideNameOnLeaderboard: false,
             hidePhotoOnLeaderboard: false
           });
