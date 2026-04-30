@@ -4,7 +4,7 @@ import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info, Flame, Trophy, CalendarIcon } from 'lucide-react';
 import NotificationsModal from './NotificationsModal';
 import StreakHistoryModal from './StreakHistoryModal';
 
@@ -323,34 +323,69 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           </div>
         )}
 
-        <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 rounded-2xl p-4 mb-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Shield className="w-24 h-24 text-orange-500" />
+        <div className="bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-900/20 dark:to-amber-900/10 border border-orange-200 dark:border-orange-800/50 rounded-3xl p-5 mb-6 relative overflow-hidden shadow-sm">
+          <div className="absolute -top-12 -right-12 p-4 opacity-5 dark:opacity-10 pointer-events-none">
+            <Flame className="w-48 h-48 text-orange-600" />
           </div>
-          <div className="flex items-center justify-between mb-4 relative z-10">
-            <h3 className="text-sm font-bold text-orange-800 dark:text-orange-300 flex items-center gap-2">
-              {isRtl ? 'حالة الستريك' : 'Streak Status'}
-            </h3>
+          
+          <div className="flex items-center justify-between mb-5 relative z-10">
+            <div className="flex items-center gap-2">
+              <div className="bg-orange-500 text-white p-1.5 rounded-xl shadow-sm">
+                <Flame className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-black text-orange-900 dark:text-orange-100 tracking-tight">
+                {isRtl ? 'حالة الستريك' : 'Streak Status'}
+              </h3>
+            </div>
+            
             <button 
               onClick={() => setShowStreakInfo(true)}
-              className="p-1 rounded-full text-orange-500 bg-orange-100 dark:bg-orange-800/30 hover:bg-orange-200 dark:hover:bg-orange-800/50 transition-colors"
-              title={isRtl ? 'معلومات الستريك' : 'Streak Info'}
+              className="px-3 py-1.5 flex items-center gap-1.5 rounded-xl text-sm font-bold text-orange-700 dark:text-orange-300 bg-white/60 dark:bg-orange-950/40 hover:bg-white dark:hover:bg-orange-900/60 border border-orange-200 dark:border-orange-800/50 shadow-sm transition-all"
+              title={isRtl ? 'سجل الأيام' : 'Daily Log'}
             >
-              <Info className="w-4 h-4" />
+              <CalendarIcon className="w-4 h-4" />
+              {isRtl ? 'السجل' : 'Log'}
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-3 relative z-10">
-            <div className="bg-white/60 dark:bg-zinc-800/50 p-3 rounded-xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-sm">
-              <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mb-1">🔥 Current</p>
-              <p className="text-xl font-bold text-orange-700 dark:text-orange-300">{user?.streakCount || 0}</p>
+
+          <div className="grid grid-cols-3 gap-3 md:gap-4 relative z-10">
+            {/* Current Streak */}
+            <div className="bg-white/80 dark:bg-zinc-900/80 p-4 rounded-2xl border border-orange-100 dark:border-orange-800/30 text-center backdrop-blur-md shadow-sm transform hover:scale-105 transition-transform">
+              <div className="w-10 h-10 mx-auto bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mb-2 shadow-inner">
+                <Flame className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <p className="text-[11px] uppercase tracking-wider text-orange-600/80 dark:text-orange-400/80 font-black mb-0.5">
+                {isRtl ? 'الحالي' : 'Current'}
+              </p>
+              <p className="text-2xl font-black text-orange-700 dark:text-orange-300">
+                {user?.streakCount || 0}
+              </p>
             </div>
-            <div className="bg-white/60 dark:bg-zinc-800/50 p-3 rounded-xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-sm">
-              <p className="text-xs text-amber-600 dark:text-amber-400 font-medium mb-1">🏆 Longest</p>
-              <p className="text-xl font-bold text-amber-700 dark:text-amber-400">{Math.max(user?.longestStreak || 0, user?.streakCount || 0)}</p>
+
+            {/* Longest Streak */}
+            <div className="bg-white/80 dark:bg-zinc-900/80 p-4 rounded-2xl border border-amber-100 dark:border-amber-800/30 text-center backdrop-blur-md shadow-sm transform hover:scale-105 transition-transform">
+              <div className="w-10 h-10 mx-auto bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-2 shadow-inner">
+                <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <p className="text-[11px] uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80 font-black mb-0.5">
+                {isRtl ? 'الأطول' : 'Longest'}
+              </p>
+              <p className="text-2xl font-black text-amber-700 dark:text-amber-300">
+                {Math.max(user?.longestStreak || 0, user?.streakCount || 0)}
+              </p>
             </div>
-            <div className="bg-white/60 dark:bg-zinc-800/50 p-3 rounded-xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-sm">
-              <p className="text-xs text-sky-600 dark:text-sky-400 font-medium mb-1 flex items-center justify-center gap-1"><Shield className="w-3 h-3" /> Shields</p>
-              <p className="text-xl font-bold text-sky-700 dark:text-sky-400">{Math.min(user?.freezeTokens ?? 1, 3)}/3</p>
+
+            {/* Shields */}
+            <div className="bg-white/80 dark:bg-zinc-900/80 p-4 rounded-2xl border border-sky-100 dark:border-sky-800/30 text-center backdrop-blur-md shadow-sm transform hover:scale-105 transition-transform">
+              <div className="w-10 h-10 mx-auto bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center mb-2 shadow-inner">
+                <Shield className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+              </div>
+              <p className="text-[11px] uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80 font-black mb-0.5">
+                {isRtl ? 'الدروع' : 'Shields'}
+              </p>
+              <p className="text-2xl font-black text-sky-700 dark:text-sky-300">
+                {Math.min(user?.freezeTokens ?? 1, 3)}/3
+              </p>
             </div>
           </div>
         </div>

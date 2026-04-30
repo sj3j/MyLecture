@@ -39,7 +39,7 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang, isM
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOpen && (student.userUid || student.uid)) {
+    if (isOpen && (student.userUid || student.uid || student.id)) {
       fetchHistory();
       // Reset admin states
       setFreezeAmount(0);
@@ -48,13 +48,13 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang, isM
       setError(null);
       setSuccess(null);
     }
-  }, [isOpen, student.userUid, student.uid, student.streakCount]);
+  }, [isOpen, student.userUid, student.uid, student.id, student.streakCount]);
   
   const fetchHistory = async () => {
     setIsLoading(true);
     try {
-      const targetUid = student.userUid || student.uid;
-      if (!targetUid) {
+      const targetUid = student.userUid || student.uid || student.id;
+      if (!targetUid || targetUid.trim() === '') {
         setHistory([]);
         setIsLoading(false);
         return;
@@ -92,7 +92,7 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang, isM
 
   const handleGrantFreeze = async (e: React.MouseEvent) => {
     e.preventDefault();
-    const targetUid = student.userUid || student.uid;
+    const targetUid = student.userUid || student.uid || student.id;
     if (!targetUid || freezeAmount <= 0) return;
     
     setError(null);
@@ -120,7 +120,7 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang, isM
 
   const handleStreakRecovery = async (e: React.MouseEvent) => {
     e.preventDefault();
-    const targetUid = student.userUid || student.uid;
+    const targetUid = student.userUid || student.uid || student.id;
     if (!targetUid || editStreakCount === '' || !recoveryReason) {
       setError(isRtl ? 'يرجى إدخال الستريك الجديد والسبب' : 'Please enter new streak and reason');
       return;

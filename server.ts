@@ -1058,6 +1058,11 @@ async function startServer() {
     }
   });
 
+  // API Catch-all
+  app.use("/api", (req, res) => {
+    res.status(404).json({ error: "API route not found: " + req.method + " " + req.url });
+  });
+
   // --- Vite Middleware for Development / Static Serving for Production ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1072,6 +1077,12 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Global error handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Unhandled Error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download } from 'lucide-react';
+import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, Flame, CalendarIcon } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
@@ -665,21 +665,47 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       />
                       {editingStudent.userUid && (
-                        <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl space-y-4 border border-orange-100 dark:border-orange-800/30">
-                          <h4 className="font-bold text-orange-800 dark:text-orange-300">
-                            {isRtl ? 'معلومات الستريك' : 'Streak Information'}
-                          </h4>
+                        <div className="p-5 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/10 dark:to-amber-900/10 rounded-2xl space-y-5 border border-orange-200 dark:border-orange-800/40 relative overflow-hidden shadow-sm">
+                          <div className="absolute -top-8 -right-8 opacity-5 pointer-events-none">
+                            <Flame className="w-32 h-32 text-orange-500" />
+                          </div>
+                          
+                          <div className="flex items-center gap-2 relative z-10 w-full mb-2">
+                            <div className="bg-orange-500 text-white p-1.5 rounded-lg shadow-sm">
+                              <Flame className="w-4 h-4" />
+                            </div>
+                            <h4 className="font-bold text-orange-900 dark:text-orange-200 tracking-tight">
+                              {isRtl ? 'معلومات الستريك' : 'Streak Information'}
+                            </h4>
+                          </div>
                           
                           <div className="flex items-center justify-between border-b border-orange-200 dark:border-orange-800/30 pb-4 relative z-10">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
                               {isRtl ? 'سجل الستريك' : 'Streak History Log'}
                             </label>
                             <button
                               onClick={(e) => { e.preventDefault(); setShowHistoryModalFor(editingStudent); }}
-                              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl cursor-pointer"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-xl hover:bg-orange-200 dark:hover:bg-orange-800/50 transition-colors shadow-sm font-bold text-sm"
                             >
+                              <CalendarIcon className="w-4 h-4" />
                               {isRtl ? 'عرض السجل' : 'View History'}
                             </button>
+                          </div>
+                          
+                          <div className="space-y-2 pt-2 relative z-10">
+                            <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                              {isRtl ? 'تعديل عدد أيام الستريك' : 'Edit Streak Count'}
+                            </label>
+                            <div className="relative">
+                              <Flame className="absolute top-1/2 -translate-y-1/2 left-3 w-5 h-5 text-orange-500 opacity-70" />
+                              <input
+                                type="number"
+                                placeholder="0"
+                                value={editStreakCount}
+                                onChange={(e) => setEditStreakCount(e.target.value ? parseInt(e.target.value) : '')}
+                                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-orange-200 dark:border-orange-800/30 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-sm font-bold"
+                              />
+                            </div>
                           </div>
                         </div>
                       )}
