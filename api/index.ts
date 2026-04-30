@@ -123,7 +123,77 @@ app.get("/api/get-upload-url", verifyAuth, verifyAdmin, async (req, res) => {
   }
 });
 
-// Bundle chat messages removed
+// Bundle chat messages
+app.post("/api/admin/create-chat-bundle", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const bundle = db.bundle('chat-bundle');
+    const yesterday = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+    
+    const oldMessagesQuery = db.collection('chat_messages')
+                               .where('timestamp', '<=', yesterday)
+                               .orderBy('timestamp', 'desc');
+
+    const querySnapshot = await oldMessagesQuery.get();
+    
+    if (querySnapshot.empty) {
+      return res.status(200).json({ message: 'No old messages to bundle' });
+    }
+
+    bundle.add('chat-bundle-query', querySnapshot);
+    const bundleBuffer = await bundle.build();
+
+    let publicUrl = '';
+    
+    if (s3Client && process.env.R2_BUCKET_NAME) {
+      const objectKey = 'bundles/chat-bundle.bundle';
+      const command = new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: objectKey,
+        ContentType: 'application/octet-stream',
+        Body: bundleBuffer
+      });
+      await s3Client.send(command);
+      const publicUrlBase = process.env.R2_PUBLIC_URL || "";
+      publicUrl = publicUrlBase.endsWith('/') 
+        ? `${publicUrlBase}${objectKey}` 
+        : `${publicUrlBase}/${objectKey}`;
+    } else {
+      const bucketName = process.env.FIREBASE_STORAGE_BUCKET || (process.env.FIREBASE_PROJECT_ID + '.appspot.com');
+      const bucket = admin.storage().bucket(bucketName);
+      const file = bucket.file('bundles/chat-bundle.bundle');
+      
+      await file.save(bundleBuffer, {
+        metadata: {
+          contentType: 'application/octet-stream',
+          cacheControl: 'public, max-age=3600'
+        }
+      });
+  
+      try {
+        await file.makePublic();
+        publicUrl = file.publicUrl();
+      } catch (e) {
+        console.warn('Could not make file public (possibly uniform bucket access). Generating signed URL instead.', e);
+        const urls = await file.getSignedUrl({
+          action: 'read',
+          expires: '01-01-2099'
+        });
+        publicUrl = urls[0];
+      }
+    }
+
+    await db.collection('chat_settings').doc('config').set({
+      latestBundleUrl: publicUrl,
+      bundleCreatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    res.status(200).json({ message: 'Bundle created successfully', url: publicUrl });
+  } catch (err) {
+    console.error('Bundle error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 // Send FCM Notification
 app.post("/api/notify", verifyAuth, verifyAdmin, async (req, res) => {
@@ -457,6 +527,272 @@ app.post("/api/check-whitelist", async (req, res) => {
     res.json({ exists: true, data: safeData });
   } catch (error) {
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// --- Streak System Backend ---
+
+const getIraqDateAndHour = () => {
+  const now = new Date();
+  const str = now.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", hourCycle: "h23" });
+  const [datePart, timePart] = str.split(', ');
+  const [day, month, year] = datePart.split('/');
+  const [hour] = timePart.split(':');
+  
+  return {
+    year: parseInt(year),
+    month: parseInt(month),
+    day: parseInt(day),
+    hour: parseInt(hour)
+  };
+};
+
+const getEffectiveDateString = (gracePeriodHours: number = 2) => {
+  const { year, month, day, hour } = getIraqDateAndHour();
+  let effectiveDate = new Date(`${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00Z`);
+  
+  if (hour >= 0 && hour < gracePeriodHours) {
+    effectiveDate.setDate(effectiveDate.getDate() - 1);
+  }
+  
+  const ey = effectiveDate.getUTCFullYear();
+  const em = effectiveDate.getUTCMonth() + 1;
+  const ed = effectiveDate.getUTCDate();
+  
+  return `${ey}-${em.toString().padStart(2, '0')}-${ed.toString().padStart(2, '0')}`;
+};
+
+const calcDaysDifference = (date1Str: string, date2Str: string) => {
+  const d1 = new Date(`${date1Str}T12:00:00Z`);
+  const d2 = new Date(`${date2Str}T12:00:00Z`);
+  const diff = Math.abs(d1.getTime() - d2.getTime());
+  return Math.round(diff / (1000 * 60 * 60 * 24));
+};
+
+app.post("/api/record-activity", verifyAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(user.uid);
+    
+    await db.runTransaction(async (t) => {
+      const appSettingsDoc = await t.get(db.collection('app_settings').doc('streak'));
+      const gracePeriodHours = appSettingsDoc.exists ? (appSettingsDoc.data()?.gracePeriodHours ?? 2) : 2;
+      
+      const effectiveDate = getEffectiveDateString(gracePeriodHours);
+      const historyId = `${user.uid}_${effectiveDate}`;
+      const historyRef = db.collection('streak_history').doc(historyId);
+      
+      const userDoc = await t.get(userRef);
+      const historyDoc = await t.get(historyRef);
+      
+      if (!userDoc.exists) {
+        throw new Error("User not found");
+      }
+      
+      if (historyDoc.exists) {
+        if (historyDoc.data()?.freezeUsed === true) {
+           t.update(historyRef, { freezeUsed: false });
+        }
+        t.update(userRef, { lastActiveAt: admin.firestore.FieldValue.serverTimestamp() });
+        return;
+      }
+
+      const data = userDoc.data()!;
+      let streakCount = data.streakCount || 0;
+      let longestStreak = data.longestStreak || 0;
+      let freezeTokens = data.freezeTokens ?? 1;
+      const lastActiveDate = data.lastActiveDate;
+      
+      let processedLastDate = lastActiveDate;
+      if (processedLastDate && processedLastDate.includes("T")) {
+        processedLastDate = processedLastDate.split("T")[0];
+      }
+
+      if (!processedLastDate) {
+        streakCount = 1;
+      } else {
+        const daysDiff = calcDaysDifference(effectiveDate, processedLastDate);
+        
+        if (daysDiff === 1) {
+          streakCount += 1;
+        } else if (daysDiff > 1) {
+          const missedDays = daysDiff - 1;
+          
+          if (freezeTokens >= missedDays) {
+            freezeTokens -= missedDays;
+            streakCount += 1;
+            
+            let d = new Date(`${processedLastDate}T12:00:00Z`);
+            for (let i = 0; i < missedDays; i++) {
+              d.setDate(d.getDate() + 1);
+              const gapY = d.getUTCFullYear();
+              const gapM = d.getUTCMonth() + 1;
+              const gapD = d.getUTCDate();
+              const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
+              
+              const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDateStr}`);
+              t.set(gapHistoryRef, {
+                userId: user.uid,
+                date: gapDateStr,
+                wasActive: true,
+                freezeUsed: true,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+              });
+            }
+          } else {
+            streakCount = 1;
+          }
+        }
+      }
+      
+      longestStreak = Math.max(longestStreak, streakCount);
+      
+      t.update(userRef, {
+        streakCount,
+        longestStreak,
+        freezeTokens,
+        lastActiveDate: effectiveDate,
+        lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      t.set(historyRef, {
+        userId: user.uid,
+        date: effectiveDate,
+        wasActive: true,
+        freezeUsed: false,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    
+    const updatedUser = await userRef.get();
+    res.json({ success: true, streakCount: updatedUser.data()?.streakCount, freezeUsed: updatedUser.data()?.freezeTokens < (updatedUser.data()?.freezeTokens ?? 1) });
+  } catch (error) {
+    console.error("Error recording activity:", error);
+    res.status(500).json({ error: "Failed to record activity" });
+  }
+});
+
+app.get("/api/streak-history/:uid", verifyAuth, async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const targetUid = req.params.uid;
+    const db = admin.firestore();
+    
+    if (authUser.uid !== targetUid) {
+       const userDoc = await db.collection('users').doc(authUser.uid).get();
+       const role = userDoc.data()?.role;
+       if (role !== 'admin' && role !== 'moderator') {
+          return res.status(403).json({ error: 'Forbidden' });
+       }
+    }
+
+    const snapshot = await db.collection('streak_history')
+      .where('userId', '==', targetUid)
+      .get();
+      
+    const history = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        ...data,
+        timestamp: data.timestamp?.toDate() ? data.timestamp.toDate().toISOString() : new Date().toISOString()
+      };
+    });
+    
+    res.json({ history });
+  } catch (error) {
+    console.error("Error fetching streak history:", error);
+    res.status(500).json({ error: "Failed to fetch streak history" });
+  }
+});
+
+app.post("/api/admin/grant-freeze", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { userUid, amount } = req.body;
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userUid);
+    
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
+      if (!doc.exists) throw new Error("Not found");
+      const currentTokens = doc.data()?.freezeTokens ?? 1;
+      const newTokens = Math.min(currentTokens + amount, 3);
+      t.update(userRef, { freezeTokens: newTokens });
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Error granting freeze token" });
+  }
+});
+
+app.post("/api/admin/streak-recovery", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { userUid, studentEmail, newStreak, reason } = req.body;
+    const db = admin.firestore();
+    const adminUser = (req as any).user;
+    const userRef = db.collection('users').doc(userUid);
+    
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
+      if (!doc.exists) throw new Error("Not found");
+      const oldStreak = doc.data()?.streakCount || 0;
+      
+      t.update(userRef, {
+        streakCount: newStreak,
+        longestStreak: Math.max(doc.data()?.longestStreak || 0, newStreak)
+      });
+      
+      const recoveryRef = db.collection('streak_recoveries').doc();
+      t.set(recoveryRef, {
+        studentEmail,
+        userId: userUid,
+        oldStreak,
+        newStreak,
+        reason,
+        recoveredBy: adminUser.email,
+        recoveredAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Error recovering streak" });
+  }
+});
+
+app.post("/api/cron/streak-warnings", async (req, res) => {
+  if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET && process.env.CRON_SECRET) {
+    return res.status(403).send("Forbidden");
+  }
+  
+  try {
+    const db = admin.firestore();
+    const effectiveDate = getEffectiveDateString();
+    
+    const usersSnap = await db.collection('users').where('fcmToken', '!=', null).get();
+    
+    const tokens: string[] = [];
+    usersSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.lastActiveDate !== effectiveDate && data.fcmToken) {
+        tokens.push(data.fcmToken);
+      }
+    });
+    
+    if (tokens.length > 0) {
+      const message = {
+        notification: {
+          title: "لا تنسَ نشاطك اليومي 🔥",
+          body: "ستريكك في خطر! افتح التطبيق الآن لتحافظ عليه.",
+        },
+        tokens: tokens,
+      };
+      await admin.messaging().sendEachForMulticast(message);
+    }
+    
+    res.json({ success: true, notifiedCount: tokens.length });
+  } catch (e) {
+    console.error("Cron streak warnings error", e);
+    res.status(500).json({ error: "Error sending warnings" });
   }
 });
 
