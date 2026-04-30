@@ -666,22 +666,24 @@ async function startServer() {
   // --- Streak System Backend ---
   
   const getIraqDateAndHour = () => {
+    // using Intl.DateTimeFormat to reliably get hour and date in Asia/Baghdad
     const now = new Date();
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Baghdad",
-      year: "numeric", month: "numeric", day: "numeric",
-      hour: "numeric", hourCycle: "h23"
-    }).formatToParts(now);
-
-    const year = parseInt(parts.find(p => p.type === 'year')?.value || '0');
-    const month = parseInt(parts.find(p => p.type === 'month')?.value || '0');
-    const day = parseInt(parts.find(p => p.type === 'day')?.value || '0');
-    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    // get time in Iraq, guaranteeing 0-23 hours
+    const str = now.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", hourCycle: "h23" });
+    // form: '28/04/2026, 15:30:00'
+    const [datePart, timePart] = str.split(', ');
+    const [day, month, year] = datePart.split('/');
+    const [hour] = timePart.split(':');
     
-    return { year, month, day, hour };
+    return {
+      year: parseInt(year),
+      month: parseInt(month),
+      day: parseInt(day),
+      hour: parseInt(hour)
+    };
   };
 
-  const getEffectiveDateString = (gracePeriodHours: number = 2, offsetDays: number = 0) => {
+  const getEffectiveDateString = (gracePeriodHours: number = 2) => {
     const { year, month, day, hour } = getIraqDateAndHour();
     // GRACE PERIOD: 00:00 to <gracePeriodHours>:59AM will be counted as previous day
     // We get the actual date
@@ -689,10 +691,6 @@ async function startServer() {
     
     if (hour >= 0 && hour < gracePeriodHours) {
       effectiveDate.setDate(effectiveDate.getDate() - 1);
-    }
-
-    if (offsetDays) {
-      effectiveDate.setDate(effectiveDate.getDate() + offsetDays);
     }
     
     const ey = effectiveDate.getUTCFullYear();
@@ -718,9 +716,8 @@ async function startServer() {
       await db.runTransaction(async (t) => {
         const appSettingsDoc = await t.get(db.collection('app_settings').doc('streak'));
         const gracePeriodHours = appSettingsDoc.exists ? (appSettingsDoc.data()?.gracePeriodHours ?? 2) : 2;
-        const simulatedDaysOffset = appSettingsDoc.exists ? (appSettingsDoc.data()?.simulatedDaysOffset ?? 0) : 0;
         
-        const effectiveDate = getEffectiveDateString(gracePeriodHours, simulatedDaysOffset);
+        const effectiveDate = getEffectiveDateString(gracePeriodHours);
         const historyId = `${user.uid}_${effectiveDate}`;
         const historyRef = db.collection('streak_history').doc(historyId);
         
@@ -826,137 +823,6 @@ async function startServer() {
     }
   });
 
-  app.get("/api/streak-history/:uid", verifyAuth, async (req, res) => {
-    try {
-      const callerUid = (req as any).user.uid;
-      const targetUid = req.params.uid;
-      
-      const db = admin.firestore();
-      
-      let isAdmin = false;
-      if (callerUid !== targetUid) {
-        const userDoc = await db.collection('users').doc(callerUid).get();
-        if (userDoc.exists && ['admin', 'moderator', 'master_admin'].includes(userDoc.data()?.role)) {
-          isAdmin = true;
-        } else {
-          const allowedAdminDoc = await db.collection('allowed_admins').doc(callerUid).get();
-          if (allowedAdminDoc.exists && ['admin', 'moderator'].includes(allowedAdminDoc.data()?.role)) {
-            isAdmin = true;
-          }
-        }
-        
-        if (!isAdmin) {
-          return res.status(403).json({ error: 'Forbidden: Only admins can view other users history' });
-        }
-      }
-      
-      const snap = await db.collection('streak_history').where('userId', '==', targetUid).get();
-      const history = snap.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          date: data.date,
-          wasActive: data.wasActive,
-          freezeUsed: data.freezeUsed,
-          timestamp: data.timestamp?.toMillis?.() || Date.now(),
-          userId: data.userId
-        };
-      });
-      
-      res.json({ history });
-    } catch (error) {
-      console.error("Fetch streak history failed:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/admin/broadcast-notification", verifyAuth, verifyAdmin, async (req, res) => {
-    try {
-      const { title, body } = req.body;
-      if (!title || !body) return res.status(400).json({ error: "Missing title or body" });
-      
-      const db = admin.firestore();
-      
-      // We will create a document in 'systemNotifications' for each student/user
-      const usersSnap = await db.collection('users').get();
-      const batch = db.batch();
-      let count = 0;
-      
-      usersSnap.forEach(doc => {
-        // limit batch size, ideally max is 500, we'll just write sequentially if > 400
-        const notifRef = db.collection('systemNotifications').doc();
-        batch.set(notifRef, {
-          userId: doc.id,
-          title,
-          body,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        count++;
-      });
-      // A batch can max out at 500. This is a simplified approach, if > 400, commit and re-init might be needed. 
-      // Assuming users < 400 for now. Better yet, we can do manual looping to be safe:
-      
-      // Let's use Promises to bypass 500 limit for robust behavior
-      const promises: Promise<any>[] = [];
-      usersSnap.forEach(doc => {
-        promises.push(db.collection('systemNotifications').add({
-          userId: doc.id,
-          title,
-          body,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        }));
-      });
-      await Promise.all(promises);
-
-      // Also send FCM broadcast if possible
-      const tokens: string[] = [];
-      usersSnap.forEach(doc => {
-        const token = doc.data()?.fcmToken;
-        if (token) tokens.push(token);
-      });
-      
-      if (tokens.length > 0) {
-        // Split tokens into chunks of 500 (FCM limit)
-        for (let i = 0; i < tokens.length; i += 500) {
-          const chunk = tokens.slice(i, i + 500);
-          await admin.messaging().sendEachForMulticast({
-            notification: { title, body },
-            tokens: chunk
-          }).catch(console.error);
-        }
-      }
-      
-      res.json({ success: true, count: usersSnap.size });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Broadcast failed" });
-    }
-  });
-
-  app.post("/api/admin/simulate-streak-day", verifyAuth, verifyAdmin, async (req, res) => {
-    try {
-      const { offsetDays } = req.body;
-      const db = admin.firestore();
-      await db.collection('app_settings').doc('streak').set({
-        simulatedDaysOffset: offsetDays
-      }, { merge: true });
-      res.json({ success: true });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Failed to simulate logic" });
-    }
-  });
-
-  app.get("/api/admin/simulate-streak-day", verifyAuth, verifyAdmin, async (req, res) => {
-    try {
-      const db = admin.firestore();
-      const doc = await db.collection('app_settings').doc('streak').get();
-      res.json({ simulatedDaysOffset: doc.data()?.simulatedDaysOffset ?? 0 });
-    } catch (e) {
-      res.status(500).json({ error: "Failed" });
-    }
-  });
-
   app.post("/api/admin/streak-recovery", verifyAuth, verifyAdmin, async (req, res) => {
     try {
       const { userUid, studentEmail, newStreak, reason } = req.body;
@@ -985,24 +851,6 @@ async function startServer() {
           recoveredBy: adminUser.email,
           recoveredAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        
-        // Populate streak history for the calendar
-        const daysToPopulate = Math.min(newStreak, 400); // 500 writes limit per transaction
-        const today = new Date();
-        for (let i = 0; i < daysToPopulate; i++) {
-          const pastDate = new Date(today);
-          pastDate.setDate(today.getDate() - i);
-          const dateStr = pastDate.toISOString().split('T')[0];
-          
-          const historyRef = db.collection('streak_history').doc(`${userUid}_${dateStr}`);
-          t.set(historyRef, {
-            userId: userUid,
-            date: dateStr,
-            wasActive: true,
-            freezeUsed: false,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
-        }
       });
       
       try {
@@ -1042,10 +890,7 @@ async function startServer() {
     // and send them an FCM notification. Because querying exactly this might be tricky, we can fetch users and filter.
     try {
       const db = admin.firestore();
-      
-      const appSettingsDoc = await db.collection('app_settings').doc('streak').get();
-      const simulatedDaysOffset = appSettingsDoc.exists ? (appSettingsDoc.data()?.simulatedDaysOffset ?? 0) : 0;
-      const effectiveDate = getEffectiveDateString(2, simulatedDaysOffset);
+      const effectiveDate = getEffectiveDateString();
       
       // Just getting all users who have FCM tokens
       const usersSnap = await db.collection('users').where('fcmToken', '!=', null).get();
@@ -1076,11 +921,6 @@ async function startServer() {
     }
   });
 
-  // API Catch-all
-  app.use("/api", (req, res) => {
-    res.status(404).json({ error: "API route not found: " + req.method + " " + req.url });
-  });
-
   // --- Vite Middleware for Development / Static Serving for Production ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1095,12 +935,6 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
-  // Global error handler
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("Unhandled Error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
-  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

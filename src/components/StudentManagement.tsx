@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, Flame, CalendarIcon } from 'lucide-react';
+import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
@@ -48,9 +48,61 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [editStreakCount, setEditStreakCount] = useState<number | ''>(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [showHistoryModalFor, setShowHistoryModalFor] = useState<Student | null>(null);
+  const [freezeAmount, setFreezeAmount] = useState<number>(0);
+  const [recoveryReason, setRecoveryReason] = useState('');
   const [matchedExamCodes, setMatchedExamCodes] = useState<ExamCodeMatch[]>([]);
   const [examCodesCsvName, setExamCodesCsvName] = useState<string>('');
   const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
+  
+  const handleGrantFreeze = async (userUid: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!userUid || freezeAmount <= 0) return;
+    setIsSubmitting(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("No auth token");
+      const res = await fetch("/api/admin/grant-freeze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ userUid, amount: freezeAmount })
+      });
+      if (res.ok) {
+        setSuccess(isRtl ? 'تم منح دروع التجميد بنجاح' : 'Freeze tokens granted successfully');
+        setFreezeAmount(0);
+      } else throw new Error("API error");
+    } catch (err) {
+      setError(isRtl ? 'فشل في منح دروع التجميد' : 'Failed to grant freeze tokens');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStreakRecovery = async (userUid: string, studentEmail: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!userUid || editStreakCount === '' || !recoveryReason) {
+      setError(isRtl ? 'يرجى إدخال الستريك الجديد والسبب' : 'Please enter new streak and reason');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("No auth token");
+      const res = await fetch("/api/admin/streak-recovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ userUid, studentEmail, newStreak: editStreakCount, reason: recoveryReason })
+      });
+      if (res.ok) {
+        setSuccess(isRtl ? 'تم استرجاع الستريك بنجاح' : 'Streak recovered successfully');
+        setRecoveryReason('');
+      } else throw new Error("API error");
+    } catch (err) {
+      setError(isRtl ? 'فشل في استرجاع الستريك' : 'Failed to recover streak');
+    } finally {
+      setIsSubmitting(false);
+      fetchStudents();
+    }
+  };
 
   const fetchStudents = async () => {
     setIsLoading(true);
@@ -216,27 +268,6 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         await deleteDoc(doc(db, 'students', oldEmail));
       } else {
         await updateDoc(doc(db, 'students', oldEmail), updateData);
-      }
-      
-      // Update streak count if changed
-      if (editingStudent.userUid && editStreakCount !== '' && editStreakCount !== editingStudent.streakCount) {
-        const token = await auth.currentUser?.getIdToken();
-        if (token) {
-          try {
-            await fetch("/api/admin/streak-recovery", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-              body: JSON.stringify({ 
-                userUid: editingStudent.userUid, 
-                studentEmail: newEmailLower, 
-                newStreak: editStreakCount, 
-                reason: "Manual edit from Student Management" 
-              })
-            });
-          } catch (e) {
-            console.error("Failed to update streak count via API:", e);
-          }
-        }
       }
 
       setSuccess(isRtl ? 'تم تحديث الطالب بنجاح' : 'Student updated successfully');
@@ -685,49 +716,78 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         onChange={(e) => setEditExamCode(e.target.value)}
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       />
-                      {editingStudent.userUid && (
-                        <div className="p-5 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/10 dark:to-amber-900/10 rounded-2xl space-y-5 border border-orange-200 dark:border-orange-800/40 relative overflow-hidden shadow-sm">
-                          <div className="absolute -top-8 -right-8 opacity-5 pointer-events-none">
-                            <Flame className="w-32 h-32 text-orange-500" />
-                          </div>
-                          
-                          <div className="flex items-center gap-2 relative z-10 w-full mb-2">
-                            <div className="bg-orange-500 text-white p-1.5 rounded-lg shadow-sm">
-                              <Flame className="w-4 h-4" />
-                            </div>
-                            <h4 className="font-bold text-orange-900 dark:text-orange-200 tracking-tight">
-                              {isRtl ? 'معلومات الستريك' : 'Streak Information'}
-                            </h4>
-                          </div>
+                      {editingStudent.userUid && isMasterAdmin && (
+                        <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl space-y-4 border border-orange-100 dark:border-orange-800/30">
+                          <h4 className="font-bold text-orange-800 dark:text-orange-300">
+                            {isRtl ? 'إدارة الستريك' : 'Streak Management'}
+                          </h4>
                           
                           <div className="flex items-center justify-between border-b border-orange-200 dark:border-orange-800/30 pb-4 relative z-10">
-                            <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                               {isRtl ? 'سجل الستريك' : 'Streak History Log'}
                             </label>
                             <button
                               onClick={(e) => { e.preventDefault(); setShowHistoryModalFor(editingStudent); }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-xl hover:bg-orange-200 dark:hover:bg-orange-800/50 transition-colors shadow-sm font-bold text-sm"
+                              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl cursor-pointer"
                             >
-                              <CalendarIcon className="w-4 h-4" />
                               {isRtl ? 'عرض السجل' : 'View History'}
                             </button>
                           </div>
                           
-                          <div className="space-y-2 pt-2 relative z-10">
-                            <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                              {isRtl ? 'تعديل عدد أيام الستريك' : 'Edit Streak Count'}
-                            </label>
-                            <div className="relative">
-                              <Flame className="absolute top-1/2 -translate-y-1/2 left-3 w-5 h-5 text-orange-500 opacity-70" />
-                              <input
-                                type="number"
-                                placeholder="0"
-                                value={editStreakCount}
-                                onChange={(e) => setEditStreakCount(e.target.value ? parseInt(e.target.value) : '')}
-                                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-orange-200 dark:border-orange-800/30 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-sm font-bold"
-                              />
-                            </div>
-                          </div>
+                          {user?.isMasterAdmin && (
+                            <>
+                              <div className="space-y-2 relative z-10 border-b border-orange-200 dark:border-orange-800/30 pb-4">
+                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                  {isRtl ? 'منح دروع التجميد' : 'Grant Freeze Tokens'}
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="number"
+                                    placeholder={isRtl ? 'عدد الدروع' : 'Token count'}
+                                    value={freezeAmount || ''}
+                                    onChange={(e) => setFreezeAmount(parseInt(e.target.value) || 0)}
+                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none"
+                                  />
+                                  <button
+                                    onClick={(e) => handleGrantFreeze(editingStudent.userUid!, e)}
+                                    disabled={isSubmitting || freezeAmount <= 0}
+                                    className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl whitespace-nowrap"
+                                  >
+                                    {isRtl ? 'منح' : 'Grant'}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 relative z-10">
+                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                  {isRtl ? 'استرجاع الستريك (Recovery)' : 'Streak Recovery'}
+                                </label>
+                                <div className="flex gap-2 mb-2">
+                                  <input
+                                    type="number"
+                                    placeholder={isRtl ? 'الستريك الجديد' : 'New Streak'}
+                                    value={editStreakCount === '' ? '' : editStreakCount}
+                                    onChange={(e) => setEditStreakCount(e.target.value === '' ? '' : parseInt(e.target.value))}
+                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none"
+                                  />
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder={isRtl ? 'سبب الاسترجاع...' : 'Reason for recovery...'}
+                                  value={recoveryReason}
+                                  onChange={(e) => setRecoveryReason(e.target.value)}
+                                  className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none mb-2"
+                                />
+                                <button
+                                    onClick={(e) => handleStreakRecovery(editingStudent.userUid!, editingStudent.email, e)}
+                                    disabled={isSubmitting || !recoveryReason || editStreakCount === ''}
+                                    className="w-full px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl whitespace-nowrap"
+                                  >
+                                    {isRtl ? 'استرجاع الستريك المُستحق' : 'Recover Streak'}
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                       <button
@@ -1024,8 +1084,6 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
           isOpen={!!showHistoryModalFor}
           onClose={() => setShowHistoryModalFor(null)}
           lang={lang}
-          isMasterAdmin={isMasterAdmin}
-          onStreakUpdated={fetchStudents}
         />
       )}
     </AnimatePresence>

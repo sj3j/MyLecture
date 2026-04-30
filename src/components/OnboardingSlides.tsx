@@ -63,7 +63,7 @@ export default function OnboardingSlides({ onComplete }: OnboardingSlidesProps) 
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#F5F7FA] dark:bg-zinc-950 flex flex-col pt-16 overflow-hidden" dir="rtl">
+    <div className="fixed inset-0 z-50 bg-[#F5F7FA] dark:bg-zinc-950 flex flex-col pt-16 overflow-hidden" dir="rtl">
       
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative w-full overflow-hidden">
         <AnimatePresence mode="wait">

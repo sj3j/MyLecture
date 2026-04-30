@@ -86,7 +86,6 @@ service cloud.firestore {
              (!('streakCount' in data) || data.streakCount is number) &&
              (!('longestStreak' in data) || data.longestStreak is number) &&
              (!('freezeTokens' in data) || data.freezeTokens is number) &&
-             (!('presenceMs' in data) || data.presenceMs is number) &&
              (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
@@ -146,7 +145,7 @@ service cloud.firestore {
     }
 
     match /streak_history/{docId} {
-      allow read: if isAuthenticated() && (isAdminOrModerator() || resource.data.userId == request.auth.uid);
+      allow read: if isAuthenticated() && (isAdminOrModerator() || docId.split('_')[0] == request.auth.uid);
       allow write: if false; // Only Cloud Functions / Admin SDK
     }
 

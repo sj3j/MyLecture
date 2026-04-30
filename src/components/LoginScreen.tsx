@@ -93,11 +93,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
         console.error('Error signing in:', error);
         if (!externalError) {
-          if (error.code === 'auth/network-request-failed') {
-            setError(isRtl ? 'حدث خطأ في الاتصال بالشبكة. يرجى التحقق من اتصالك وإيقاف مانع الإعلانات إذا لزم الأمر.' : 'Network error. Please check your connection and disable any adblockers.');
-          } else {
-            setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in: ' + (error.message || ''));
-          }
+          setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
         }
       }
     } finally {

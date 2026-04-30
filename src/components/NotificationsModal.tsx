@@ -152,7 +152,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
   }, [user.name, user.uid, user.email, isRtl]);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] shadow-2xl border border-slate-200 dark:border-zinc-800 relative animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
