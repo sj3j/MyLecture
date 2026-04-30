@@ -666,21 +666,19 @@ async function startServer() {
   // --- Streak System Backend ---
   
   const getIraqDateAndHour = () => {
-    // using Intl.DateTimeFormat to reliably get hour and date in Asia/Baghdad
     const now = new Date();
-    // get time in Iraq, guaranteeing 0-23 hours
-    const str = now.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", hourCycle: "h23" });
-    // form: '28/04/2026, 15:30:00'
-    const [datePart, timePart] = str.split(', ');
-    const [day, month, year] = datePart.split('/');
-    const [hour] = timePart.split(':');
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Baghdad",
+      year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", hourCycle: "h23"
+    }).formatToParts(now);
+
+    const year = parseInt(parts.find(p => p.type === 'year')?.value || '0');
+    const month = parseInt(parts.find(p => p.type === 'month')?.value || '0');
+    const day = parseInt(parts.find(p => p.type === 'day')?.value || '0');
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
     
-    return {
-      year: parseInt(year),
-      month: parseInt(month),
-      day: parseInt(day),
-      hour: parseInt(hour)
-    };
+    return { year, month, day, hour };
   };
 
   const getEffectiveDateString = (gracePeriodHours: number = 2) => {
@@ -820,6 +818,50 @@ async function startServer() {
       res.json({ success: true });
     } catch (e) {
       res.status(500).json({ error: "Error granting freeze token" });
+    }
+  });
+
+  app.get("/api/streak-history/:uid", verifyAuth, async (req, res) => {
+    try {
+      const callerUid = (req as any).user.uid;
+      const targetUid = req.params.uid;
+      
+      const db = admin.firestore();
+      
+      let isAdmin = false;
+      if (callerUid !== targetUid) {
+        const userDoc = await db.collection('users').doc(callerUid).get();
+        if (userDoc.exists && ['admin', 'moderator', 'master_admin'].includes(userDoc.data()?.role)) {
+          isAdmin = true;
+        } else {
+          const allowedAdminDoc = await db.collection('allowed_admins').doc(callerUid).get();
+          if (allowedAdminDoc.exists && ['admin', 'moderator'].includes(allowedAdminDoc.data()?.role)) {
+            isAdmin = true;
+          }
+        }
+        
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Forbidden: Only admins can view other users history' });
+        }
+      }
+      
+      const snap = await db.collection('streak_history').where('userId', '==', targetUid).get();
+      const history = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          date: data.date,
+          wasActive: data.wasActive,
+          freezeUsed: data.freezeUsed,
+          timestamp: data.timestamp?.toMillis?.() || Date.now(),
+          userId: data.userId
+        };
+      });
+      
+      res.json({ history });
+    } catch (error) {
+      console.error("Fetch streak history failed:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

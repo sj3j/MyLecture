@@ -6,6 +6,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info } from 'lucide-react';
 import NotificationsModal from './NotificationsModal';
+import StreakHistoryModal from './StreakHistoryModal';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -570,51 +571,14 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
         />
       )}
 
-      {showStreakInfo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-y-auto max-h-[90vh] shadow-2xl relative p-6">
-            <button onClick={() => setShowStreakInfo(false)} className="absolute top-4 right-4 p-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors z-10">
-              <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-            </button>
-            
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-orange-100 dark:bg-orange-900/30 rounded-3xl flex items-center justify-center mx-auto mb-4 transform -rotate-6">
-                <Shield className="w-8 h-8 sm:w-10 sm:h-10 text-orange-500" />
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white capitalize">
-                {isRtl ? 'كيف يعمل الستريك؟' : 'How the streak works'}
-              </h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex gap-4 items-start">
-                <div className="p-2 bg-slate-100 dark:bg-zinc-800 rounded-xl shrink-0"><Check className="w-5 h-5 text-emerald-500" /></div>
-                <div>
-                  <h4 className="font-bold text-slate-900 dark:text-white">{isRtl ? 'تتبع نشاطك' : 'Track your activity'}</h4>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">{isRtl ? 'كل يوم تفتح فيه التطبيق، يزداد الستريك الخاص بك. يرجى العلم أنّ اليوم يُحسب حسب توقيت العراق.' : 'Every day you open the app, your streak increases by one day. Note that the day restarts according to Iraq timezone.'}</p>
-                </div>
-              </div>
-              <div className="flex gap-4 items-start">
-                <div className="p-2 bg-slate-100 dark:bg-zinc-800 rounded-xl shrink-0"><Shield className="w-5 h-5 text-blue-500" /></div>
-                <div>
-                  <h4 className="font-bold text-slate-900 dark:text-white">{isRtl ? 'دروع التجميد (الحد: 3)' : 'Freeze Shields (Max: 3)'}</h4>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">{isRtl ? 'يتم منح درع التجميد بشكل تلقائي وفقاً لنشاطك المستمر وتفاعلك. بإمكانك امتلاك 3 دروع بحد أقصى للتعويض عن الأيام التي قد تفوتك.' : 'Freeze shields are granted automatically based on your continuous activity and engagement. You can hold up to 3 shields to cover any missed days.'}</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-8 px-4 py-3 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 rounded-2xl text-sm font-medium text-center">
-              {isRtl ? 'واصل الحفاظ على تألقك ونجاحك اليومي!' : 'Keep up the daily grind to stay on fire!'}
-            </div>
-            
-            <button
-               onClick={() => setShowStreakInfo(false)}
-               className="w-full mt-6 py-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl transition-colors shadow-lg shadow-orange-500/30"
-            >
-              {isRtl ? 'حسناً، فهمت' : 'Got it!'}
-            </button>
-          </div>
-        </div>
+      {showStreakInfo && user && (
+        <StreakHistoryModal
+          student={user}
+          isOpen={showStreakInfo}
+          onClose={() => setShowStreakInfo(false)}
+          lang={lang}
+          isMasterAdmin={user.isMasterAdmin}
+        />
       )}
     </div>
   );

@@ -145,7 +145,7 @@ service cloud.firestore {
     }
 
     match /streak_history/{docId} {
-      allow read: if isAuthenticated() && (isAdminOrModerator() || docId.split('_')[0] == request.auth.uid);
+      allow read: if isAuthenticated() && (isAdminOrModerator() || resource.data.userId == request.auth.uid);
       allow write: if false; // Only Cloud Functions / Admin SDK
     }
 
@@ -180,7 +180,7 @@ service cloud.firestore {
 
     match /chat_messages/{messageId} {
       allow read: if hasAccess();
-      allow create: if hasAccess() && (isAdminOrModerator() || (exists(/databases/$(database)/documents/chat_settings/config) && get(/databases/$(database)/documents/chat_settings/config).data.isChatOpen == true));
+      allow create: if hasAccess() && (isAdminOrModerator() || (exists(/databases/$(database)/documents/chat_settings/config) && get(/databases/$(database)/documents/chat_settings/config).data.get('isChatOpen', true) == true));
       allow update: if isAdminOrModerator() || (
         hasAccess() && 
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'viewers']) &&

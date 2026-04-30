@@ -66,9 +66,9 @@ export default function BankQuizSetupScreen({ bankQuestions, onStartQuiz, onBack
         <div>
           <h3 className="font-bold text-slate-900 dark:text-white mb-4">عدد الأسئلة</h3>
           <div className="flex gap-3">
-             {[5, 10, 15, bankQuestions.length].map(num => (
+            {Array.from(new Set([5, 10, 15, bankQuestions.length])).filter(num => num > 0).map((num, i) => (
                <button 
-                 key={'count_'+num}
+                 key={'count_'+num+'_'+i}
                  onClick={() => setCount(num)}
                  className={`flex-1 py-3 font-bold rounded-xl transition-colors border-2 ${
                    count === num 

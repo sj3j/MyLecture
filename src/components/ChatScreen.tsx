@@ -513,11 +513,18 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   // Real-time Settings Listener
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'chat_settings', CHAT_DOC_ID), (docSnap) => {
+      const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 0, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
+      
       if (docSnap.exists()) {
-        setSettings(docSnap.data() as ChatSettings);
+        const data = docSnap.data() as Partial<ChatSettings>;
+        setSettings(prev => ({ ...prev, ...data }));
+        
+        // Failsafe: if the document exists but is missing 'isChatOpen', write it to the DB so live rules don't crash.
+        if (isAdminOrModerator && data.isChatOpen === undefined) {
+          setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { isChatOpen: true }, { merge: true }).catch(console.error);
+        }
       } else if (isAdminOrModerator) {
         // Initialize if not exists
-        const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 30, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
         setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings, { merge: true }).catch(() => {});
         setSettings(defaultSettings);
       }
@@ -760,16 +767,12 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
       // Instantly start cooldown for students
       if (!isAdminOrModerator) {
-        const cooldown = settings.messageCooldown !== undefined ? settings.messageCooldown : 30;
+        const cooldown = settings.messageCooldown !== undefined ? settings.messageCooldown : 0;
         setCooldownRemaining(cooldown);
         if (cooldown > 0) {
           localStorage.setItem(`chat_cooldown_${user.uid}`, Date.now().toString());
         }
       }
-
-      // Release UI early so it doesn't spin
-      setIsSending(false);
-      setIsUploadingAttachment(false);
 
       // Perform setDoc
       await setDoc(docRef, payload);
@@ -779,7 +782,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       setAlertMessage(e instanceof Error ? e.message : String(e));
       // Revert optimistic UI
       setMessages(prev => prev.filter(m => m.id !== docRef.id));
-      // Failsafe state cleanup just in case sync errors occurred before setDoc
+    } finally {
       setIsSending(false);
       setIsUploadingAttachment(false);
     }
