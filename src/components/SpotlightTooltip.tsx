@@ -96,7 +96,7 @@ export default function SpotlightTooltip({ targetSelector, text, placement = 'bo
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 pointer-events-none" style={{ direction: 'rtl' }}>
+      <div className="fixed inset-0 z-[60] pointer-events-none" style={{ direction: 'rtl' }}>
         {/* Dark overlay with cutout */}
         <div
           className="absolute inset-0 bg-slate-900/70"

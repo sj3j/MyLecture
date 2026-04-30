@@ -217,6 +217,27 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       } else {
         await updateDoc(doc(db, 'students', oldEmail), updateData);
       }
+      
+      // Update streak count if changed
+      if (editingStudent.userUid && editStreakCount !== '' && editStreakCount !== editingStudent.streakCount) {
+        const token = await auth.currentUser?.getIdToken();
+        if (token) {
+          try {
+            await fetch("/api/admin/streak-recovery", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ 
+                userUid: editingStudent.userUid, 
+                studentEmail: newEmailLower, 
+                newStreak: editStreakCount, 
+                reason: "Manual edit from Student Management" 
+              })
+            });
+          } catch (e) {
+            console.error("Failed to update streak count via API:", e);
+          }
+        }
+      }
 
       setSuccess(isRtl ? 'تم تحديث الطالب بنجاح' : 'Student updated successfully');
       setEditingStudent(null);

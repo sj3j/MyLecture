@@ -985,6 +985,24 @@ async function startServer() {
           recoveredBy: adminUser.email,
           recoveredAt: admin.firestore.FieldValue.serverTimestamp()
         });
+        
+        // Populate streak history for the calendar
+        const daysToPopulate = Math.min(newStreak, 400); // 500 writes limit per transaction
+        const today = new Date();
+        for (let i = 0; i < daysToPopulate; i++) {
+          const pastDate = new Date(today);
+          pastDate.setDate(today.getDate() - i);
+          const dateStr = pastDate.toISOString().split('T')[0];
+          
+          const historyRef = db.collection('streak_history').doc(`${userUid}_${dateStr}`);
+          t.set(historyRef, {
+            userId: userUid,
+            date: dateStr,
+            wasActive: true,
+            freezeUsed: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
       });
       
       try {
