@@ -86,6 +86,7 @@ service cloud.firestore {
              (!('streakCount' in data) || data.streakCount is number) &&
              (!('longestStreak' in data) || data.longestStreak is number) &&
              (!('freezeTokens' in data) || data.freezeTokens is number) &&
+             (!('presenceMs' in data) || data.presenceMs is number) &&
              (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&

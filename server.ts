@@ -681,7 +681,7 @@ async function startServer() {
     return { year, month, day, hour };
   };
 
-  const getEffectiveDateString = (gracePeriodHours: number = 2) => {
+  const getEffectiveDateString = (gracePeriodHours: number = 2, offsetDays: number = 0) => {
     const { year, month, day, hour } = getIraqDateAndHour();
     // GRACE PERIOD: 00:00 to <gracePeriodHours>:59AM will be counted as previous day
     // We get the actual date
@@ -689,6 +689,10 @@ async function startServer() {
     
     if (hour >= 0 && hour < gracePeriodHours) {
       effectiveDate.setDate(effectiveDate.getDate() - 1);
+    }
+
+    if (offsetDays) {
+      effectiveDate.setDate(effectiveDate.getDate() + offsetDays);
     }
     
     const ey = effectiveDate.getUTCFullYear();
@@ -714,8 +718,9 @@ async function startServer() {
       await db.runTransaction(async (t) => {
         const appSettingsDoc = await t.get(db.collection('app_settings').doc('streak'));
         const gracePeriodHours = appSettingsDoc.exists ? (appSettingsDoc.data()?.gracePeriodHours ?? 2) : 2;
+        const simulatedDaysOffset = appSettingsDoc.exists ? (appSettingsDoc.data()?.simulatedDaysOffset ?? 0) : 0;
         
-        const effectiveDate = getEffectiveDateString(gracePeriodHours);
+        const effectiveDate = getEffectiveDateString(gracePeriodHours, simulatedDaysOffset);
         const historyId = `${user.uid}_${effectiveDate}`;
         const historyRef = db.collection('streak_history').doc(historyId);
         
@@ -865,6 +870,93 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/broadcast-notification", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { title, body } = req.body;
+      if (!title || !body) return res.status(400).json({ error: "Missing title or body" });
+      
+      const db = admin.firestore();
+      
+      // We will create a document in 'systemNotifications' for each student/user
+      const usersSnap = await db.collection('users').get();
+      const batch = db.batch();
+      let count = 0;
+      
+      usersSnap.forEach(doc => {
+        // limit batch size, ideally max is 500, we'll just write sequentially if > 400
+        const notifRef = db.collection('systemNotifications').doc();
+        batch.set(notifRef, {
+          userId: doc.id,
+          title,
+          body,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        count++;
+      });
+      // A batch can max out at 500. This is a simplified approach, if > 400, commit and re-init might be needed. 
+      // Assuming users < 400 for now. Better yet, we can do manual looping to be safe:
+      
+      // Let's use Promises to bypass 500 limit for robust behavior
+      const promises: Promise<any>[] = [];
+      usersSnap.forEach(doc => {
+        promises.push(db.collection('systemNotifications').add({
+          userId: doc.id,
+          title,
+          body,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }));
+      });
+      await Promise.all(promises);
+
+      // Also send FCM broadcast if possible
+      const tokens: string[] = [];
+      usersSnap.forEach(doc => {
+        const token = doc.data()?.fcmToken;
+        if (token) tokens.push(token);
+      });
+      
+      if (tokens.length > 0) {
+        // Split tokens into chunks of 500 (FCM limit)
+        for (let i = 0; i < tokens.length; i += 500) {
+          const chunk = tokens.slice(i, i + 500);
+          await admin.messaging().sendEachForMulticast({
+            notification: { title, body },
+            tokens: chunk
+          }).catch(console.error);
+        }
+      }
+      
+      res.json({ success: true, count: usersSnap.size });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Broadcast failed" });
+    }
+  });
+
+  app.post("/api/admin/simulate-streak-day", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { offsetDays } = req.body;
+      const db = admin.firestore();
+      await db.collection('app_settings').doc('streak').set({
+        simulatedDaysOffset: offsetDays
+      }, { merge: true });
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to simulate logic" });
+    }
+  });
+
+  app.get("/api/admin/simulate-streak-day", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const doc = await db.collection('app_settings').doc('streak').get();
+      res.json({ simulatedDaysOffset: doc.data()?.simulatedDaysOffset ?? 0 });
+    } catch (e) {
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
   app.post("/api/admin/streak-recovery", verifyAuth, verifyAdmin, async (req, res) => {
     try {
       const { userUid, studentEmail, newStreak, reason } = req.body;
@@ -932,7 +1024,10 @@ async function startServer() {
     // and send them an FCM notification. Because querying exactly this might be tricky, we can fetch users and filter.
     try {
       const db = admin.firestore();
-      const effectiveDate = getEffectiveDateString();
+      
+      const appSettingsDoc = await db.collection('app_settings').doc('streak').get();
+      const simulatedDaysOffset = appSettingsDoc.exists ? (appSettingsDoc.data()?.simulatedDaysOffset ?? 0) : 0;
+      const effectiveDate = getEffectiveDateString(2, simulatedDaysOffset);
       
       // Just getting all users who have FCM tokens
       const usersSnap = await db.collection('users').where('fcmToken', '!=', null).get();

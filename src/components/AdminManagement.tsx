@@ -29,6 +29,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
+  const [activeTab, setActiveTab] = useState<'roles' | 'notifications' | 'streak'>('roles');
+  
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'admin' | 'moderator'>('admin');
   const [permissions, setPermissions] = useState({
@@ -43,6 +45,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState<'admin' | 'moderator'>('admin');
@@ -54,6 +57,13 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     manageHomeworks: true,
     manageStudents: true,
   });
+
+  // Global Notifications State
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifBody, setNotifBody] = useState('');
+
+  // Streak Test State
+  const [simulatedDaysOffset, setSimulatedDaysOffset] = useState<number>(0);
 
   const fetchAdmins = async () => {
     setIsLoading(true);
@@ -81,11 +91,84 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     }
   };
 
+  const fetchSimulationOffset = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await fetch("/api/admin/simulate-streak-day", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSimulatedDaysOffset(data.simulatedDaysOffset || 0);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       fetchAdmins();
+      fetchSimulationOffset();
+      setError(null);
+      setSuccess(null);
     }
   }, [isOpen]);
+
+  const handleBroadcastNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle || !notifBody) {
+      setError(isRtl ? 'يرجى إدخال عنوان ونص الإشعار' : 'Title and body are required');
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("No token");
+      
+      const res = await fetch("/api/admin/broadcast-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ title: notifTitle, body: notifBody })
+      });
+      
+      if (!res.ok) throw new Error("API error");
+      setSuccess(isRtl ? 'تم إرسال الإشعار لجميع المستخدمين بنجاح' : 'Notification broadcasted successfully');
+      setNotifTitle('');
+      setNotifBody('');
+    } catch (e) {
+      setError(isRtl ? 'فشل إرسال الإشعار' : 'Failed to send notification');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateSimulatedDays = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("No token");
+      
+      const res = await fetch("/api/admin/simulate-streak-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ offsetDays: simulatedDaysOffset })
+      });
+      
+      if (!res.ok) throw new Error("API error");
+      setSuccess(isRtl ? 'تم تحديث يوم الاختبار بنجاح' : 'Test day updated successfully');
+    } catch(e) {
+      setError(isRtl ? 'فشل تحديث اليوم' : 'Failed to update test day');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,23 +260,53 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
             <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-600 dark:bg-sky-600 text-white">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Shield className="w-5 h-5" />
-                {t.manageAdmins}
+                {isRtl ? 'الإدارة' : 'Administration'}
               </h2>
               <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-full transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-8">
-              {/* Add Admin Form */}
-              <form onSubmit={handleAddAdmin} className="space-y-4">
-                <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.addAdmin}</h3>
-                {error && (
-                  <div className="p-3 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-2 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {error}
-                  </div>
-                )}
+            <div className="flex bg-slate-50 dark:bg-zinc-800 border-b border-slate-200 dark:border-zinc-700">
+              <button
+                onClick={() => setActiveTab('roles')}
+                className={`flex-1 py-3 text-sm font-bold transition-colors border-b-2 ${activeTab === 'roles' ? 'border-sky-500 text-sky-600 dark:text-sky-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                {isRtl ? 'الأدوار' : 'Roles'}
+              </button>
+              <button
+                onClick={() => setActiveTab('notifications')}
+                className={`flex-1 py-3 text-sm font-bold transition-colors border-b-2 ${activeTab === 'notifications' ? 'border-sky-500 text-sky-600 dark:text-sky-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                {isRtl ? 'الإشعارات' : 'Notifications'}
+              </button>
+              <button
+                onClick={() => setActiveTab('streak')}
+                className={`flex-1 py-3 text-sm font-bold transition-colors border-b-2 ${activeTab === 'streak' ? 'border-sky-500 text-sky-600 dark:text-sky-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                {isRtl ? 'اختبار الستريك' : 'Streak Test'}
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-8 flex-1">
+              {error && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-2 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
+              {success && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center gap-2 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {success}
+                </div>
+              )}
+
+              {activeTab === 'roles' && (
+                <>
+                  {/* Add Admin Form */}
+                  <form onSubmit={handleAddAdmin} className="space-y-4">
+                    <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.addAdmin}</h3>
                 <div className="space-y-3">
                   <input
                     required
@@ -372,10 +485,98 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                   </div>
                 )}
               </div>
+            </>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div className="space-y-6">
+              <div className="flex items-start gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 rounded-xl">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <p className="text-sm font-medium">
+                  {isRtl ? 'هذا الإشعار سيتم إرساله كإشعار منبثق (Push Notification) وسيظهر في قسم الإشعارات لجميع المستخدمين.' : 'This broadcast will send a push notification and push to the in-app notifications section for all users.'}
+                </p>
+              </div>
+
+              <form onSubmit={handleBroadcastNotification} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'عنوان الإشعار' : 'Notification Title'}
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={notifTitle}
+                    onChange={(e) => setNotifTitle(e.target.value)}
+                    placeholder={isRtl ? 'مثال: تحديث هام...' : 'ex: Important Update...'}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'نص الإشعار' : 'Notification Body'}
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={notifBody}
+                    onChange={(e) => setNotifBody(e.target.value)}
+                    placeholder={isRtl ? 'تفاصيل الإشعار هنا...' : 'Notification details here...'}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                  {isRtl ? 'إرسال لجميع الطلاب' : 'Broadcast to all students'}
+                </button>
+              </form>
             </div>
-          </motion.div>
+          )}
+
+          {activeTab === 'streak' && (
+            <div className="space-y-6">
+              <div className="flex items-start gap-3 p-4 bg-sky-50 dark:bg-sky-900/20 text-sky-800 dark:text-sky-300 rounded-xl">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <p className="text-sm font-medium">
+                  {isRtl ? 'يمكنك هنا محاكاة مرور الأيام لاختبار نظام الستريك بدون الانتظار لأيام حقيقية.' : 'You can simulate days passing to test the streak system without waiting for real days.'}
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdateSimulatedDays} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'إزاحة الأيام (للأمام)' : 'Days Offset (Forward)'}
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      value={simulatedDaysOffset}
+                      onChange={(e) => setSimulatedDaysOffset(parseInt(e.target.value) || 0)}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-mono text-center"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {isRtl ? 'مثال: 1 = غداً، 2 = بعد يومين. أدخل 0 للعودة للوقت الحقيقي.' : 'Example: 1 = Tomorrow, 2 = Day after tomorrow. Enter 0 to return to real time.'}
+                  </p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                  {isRtl ? 'تحديث وقت النظام' : 'Update System Time'}
+                </button>
+              </form>
+            </div>
+          )}
         </div>
-      )}
-    </AnimatePresence>
+      </motion.div>
+    </div>
+  )}
+</AnimatePresence>
   );
 }

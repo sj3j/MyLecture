@@ -415,7 +415,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   useEffect(() => {
     if (!user) return;
     const updatePresence = () => {
-      updateDoc(doc(db, 'users', user.uid), { lastActiveDate: new Date().toISOString() }).catch(() => {});
+      updateDoc(doc(db, 'users', user.uid), { presenceMs: Date.now() }).catch(() => {});
     };
     updatePresence();
     const interval = setInterval(updatePresence, 60000); // Heartbeat every 1 minute
@@ -429,16 +429,18 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const threeMinsAgo = new Date(Date.now() - 3 * 60000).toISOString();
+        const threeMinsAgoMs = Date.now() - 3 * 60000;
         const qOnline = query(
           collection(db, 'users'),
-          where('lastActiveDate', '>', threeMinsAgo) // Active in last 3 mins
+          where('presenceMs', '>', threeMinsAgoMs) // Active in last 3 mins
         );
         const onlineSnapshot = await getCountFromServer(qOnline);
         // Ensure it's at least 1 since the current user is online viewing the chat
         setOnlineStudentsCount(Math.max(1, onlineSnapshot.data().count));
-      } catch (err) {
-        console.error('Failed to fetch online presence count:', err);
+      } catch (err: any) {
+        if (err?.code !== 'unavailable' && !err?.message?.includes('Connection failed')) {
+          console.error('Failed to fetch online presence count:', err);
+        }
         // Fallback to 1 if the query fails (e.g. index issue or permission issue)
         setOnlineStudentsCount(prev => Math.max(1, prev));
       }
@@ -450,7 +452,10 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         const qStudents = query(collection(db, 'users'), where('role', '==', 'student'));
         const totalUsersSnapshot = await getCountFromServer(qStudents);
         setTotalUsersCount(totalUsersSnapshot.data().count);
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.code !== 'unavailable' && !err?.message?.includes('Connection failed')) {
+           console.error('Failed to fetch total users:', err);
+        }
       }
     };
     
@@ -775,13 +780,16 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       }
 
       // Perform setDoc
-      await setDoc(docRef, payload);
+      setDoc(docRef, payload).catch((e: any) => {
+        console.error('Failed to send message', e);
+        setAlertMessage(e instanceof Error ? e.message : String(e));
+        // Revert optimistic UI
+        setMessages(prev => prev.filter(m => m.id !== docRef.id));
+      });
 
     } catch (e: any) {
-      console.error('Failed to send message', e);
+      console.error('Failed to prepare message', e);
       setAlertMessage(e instanceof Error ? e.message : String(e));
-      // Revert optimistic UI
-      setMessages(prev => prev.filter(m => m.id !== docRef.id));
     } finally {
       setIsSending(false);
       setIsUploadingAttachment(false);
