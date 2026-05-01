@@ -178,27 +178,30 @@ export async function finalizeFirstAttempt(
   };
 
   try {
-    const answersDoc = await getDoc(answersDocRef);
-    if (answersDoc.exists() && answersDoc.data()?.hasCompletedFirstAttempt) {
-      return { success: true, score: scorePercentage, correct: correctCount };
-    }
-
-    const answerDocData = {
-      lectureId,
-      userId,
-      subjectId,
-      attempts: [newAttempt],
-      firstAttemptScore: scorePercentage,
-      firstAttemptCorrect: correctCount,
-      firstAttemptTotal: totalQuestions,
-      hasCompletedFirstAttempt: true,
-      totalAttempts: 1,
-      createdAt: serverTimestamp()
-    };
+    let alreadyCompleted = false;
 
     await runTransaction(db, async (transaction) => {
+      const answersDoc = await transaction.get(answersDocRef);
+      if (answersDoc.exists() && answersDoc.data()?.hasCompletedFirstAttempt) {
+        alreadyCompleted = true;
+        return;
+      }
+
       const statsRef = doc(db, `userMCQStats/${userId}`);
       const statsDoc = await transaction.get(statsRef);
+
+      const answerDocData = {
+        lectureId,
+        userId,
+        subjectId,
+        attempts: [newAttempt],
+        firstAttemptScore: scorePercentage,
+        firstAttemptCorrect: correctCount,
+        firstAttemptTotal: totalQuestions,
+        hasCompletedFirstAttempt: true,
+        totalAttempts: 1,
+        createdAt: serverTimestamp()
+      };
 
       transaction.set(answersDocRef, answerDocData);
 
@@ -247,6 +250,10 @@ export async function finalizeFirstAttempt(
 
       transaction.set(statsRef, statsData, { merge: true });
     });
+
+    if (alreadyCompleted) {
+      return { success: true, score: scorePercentage, correct: correctCount };
+    }
 
     return { success: true, score: scorePercentage, correct: correctCount };
   } catch (error) {
