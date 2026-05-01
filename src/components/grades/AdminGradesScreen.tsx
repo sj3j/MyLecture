@@ -8,16 +8,19 @@ import { matchGradesToStudents } from '../../services/fuzzyMatchingService';
 import { MatchedResult, GradeBatch } from '../../types/grades.types';
 import { confirmDegreeBatchClient, undoDegreeBatch } from '../../services/adminGradeService';
 import { motion, AnimatePresence } from 'motion/react';
+import { UserProfile } from '../../types';
 
 export interface AdminGradesScreenProps {
   isOpen: boolean;
   onClose: () => void;
+  user: UserProfile | null;
 }
 
-export default function AdminGradesScreen({ isOpen, onClose }: AdminGradesScreenProps) {
+export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGradesScreenProps) {
   const isMasterAdmin = auth.currentUser?.email === 'almdrydyl335@gmail.com' || auth.currentUser?.email === 'fenix.admin@gmail.com';
+  const canManageGrades = user && (user.role === 'admin' || user.role === 'moderator') && user.permissions?.manageGrades !== false;
   
-  if (isOpen && !isMasterAdmin) {
+  if (isOpen && !canManageGrades && !isMasterAdmin) {
     onClose();
     return null;
   }

@@ -22,6 +22,7 @@ interface AdminRole {
     manageChat?: boolean;
     manageHomeworks?: boolean;
     manageStudents?: boolean;
+    manageGrades?: boolean;
   };
 }
 
@@ -38,6 +39,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     manageChat: true,
     manageHomeworks: true,
     manageStudents: true,
+    manageGrades: true,
   });
   const [admins, setAdmins] = useState<AdminRole[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,6 +55,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     manageChat: true,
     manageHomeworks: true,
     manageStudents: true,
+    manageGrades: true,
   });
 
   const fetchAdmins = async () => {
@@ -71,6 +74,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
           manageChat: true,
           manageHomeworks: true,
           manageStudents: true,
+          manageGrades: true,
         }
       }));
       setAdmins(adminList);
@@ -106,6 +110,20 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.uid
       });
+
+      // Update users collection if doc exists
+      const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase()));
+      const userSnap = await getDocs(q);
+      if (!userSnap.empty) {
+         try {
+            await setDoc(doc(db, 'users', userSnap.docs[0].id), {
+               role: role,
+               permissions: permissions
+            }, { merge: true });
+         } catch (e) {
+            console.error(e);
+         }
+      }
 
       setEmail('');
       fetchAdmins();
@@ -149,6 +167,21 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const handleDeleteAdmin = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'allowed_admins', id));
+      
+      // Update users collection to revert to student
+      const q = query(collection(db, 'users'), where('email', '==', id));
+      const userSnap = await getDocs(q);
+      if (!userSnap.empty) {
+         try {
+            await setDoc(doc(db, 'users', userSnap.docs[0].id), {
+               role: 'student',
+               permissions: null
+            }, { merge: true });
+         } catch (e) {
+            console.error(e);
+         }
+      }
+
       setDeletingId(null);
       fetchAdmins();
     } catch (err) {
@@ -221,6 +254,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                       { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
                       { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
                       { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
+                      { id: 'manageGrades', labelEn: 'Manage Grades', labelAr: 'إدارة السعي والدرجات' },
                     ].map(perm => (
                       <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -282,6 +316,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                                 { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
                                 { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
                                 { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
+                                { id: 'manageGrades', labelEn: 'Manage Grades', labelAr: 'إدارة السعي والدرجات' },
                               ].map(perm => (
                                 <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
                                   <input
@@ -351,6 +386,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                                       manageChat: true,
                                       manageHomeworks: true,
                                       manageStudents: true,
+                                      manageGrades: true,
                                     });
                                   }}
                                   className="p-2 text-slate-400 dark:text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-all"

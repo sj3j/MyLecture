@@ -36,7 +36,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       // Check whitelist FIRST
       const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(result.user.email || '');
+      const isMasterAdmin = adminEmails.includes(result.user.email?.toLowerCase() || '');
       
       let userRole = isMasterAdmin ? 'admin' : 'student';
 

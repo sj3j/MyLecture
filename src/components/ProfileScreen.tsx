@@ -55,7 +55,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
       
       // Check if user is in users collection or is master admin
       const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(result.user.email || '');
+      const isMasterAdmin = adminEmails.includes(result.user.email?.toLowerCase() || '');
       
       let role = 'student';
       let permissions = undefined;
@@ -518,7 +518,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </div>
           </div>
 
-          {(user?.role === 'admin' && (user?.email === 'almdrydyl335@gmail.com' || user?.email === 'fenix.admin@gmail.com')) && setShowAdminManage && (
+          {(user?.role === 'admin' && isMasterAdminUser) && setShowAdminManage && (
             <button
               onClick={() => setShowAdminManage(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors mt-4"
@@ -538,7 +538,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {isMasterAdminUser && setShowAdminGrades && (
+          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageGrades !== false) && setShowAdminGrades && (
             <button
               onClick={() => setShowAdminGrades(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-fuchsia-50 dark:bg-fuchsia-900/30 text-fuchsia-600 dark:text-fuchsia-400 rounded-xl font-bold hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/50 transition-colors mt-4"

@@ -82,6 +82,7 @@ export interface UserProfile {
     manageChat: boolean;
     manageHomeworks: boolean;
     manageStudents: boolean;
+    manageGrades?: boolean;
     manageAdmins?: boolean;
   };
   memberSince?: any;

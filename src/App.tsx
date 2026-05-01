@@ -118,7 +118,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userEmail = firebaseUser.email || firebaseUser.uid;
-        const isMasterAdmin = adminEmails.includes(userEmail || '');
+        const isMasterAdmin = adminEmails.includes(userEmail?.toLowerCase() || '');
         
         let studentData: any = null;
 
@@ -198,7 +198,8 @@ export default function App() {
               manageRecords: true,
               manageChat: true,
               manageHomeworks: true,
-              manageStudents: true
+              manageStudents: true,
+              manageGrades: true
             } : undefined;
 
             setUser({
@@ -218,7 +219,7 @@ export default function App() {
               completedWeeklyTasks: userDoc.data().completedWeeklyTasks || [],
               notificationPreferences: userDoc.data().notificationPreferences || { lectures: true, announcements: true, chat: true, records: true, homeworks: true },
               memberSince: studentData?.createdAt || userDoc.data().createdAt,
-              permissions: masterAdminPermissions || studentData?.permissions || userDoc.data().permissions,
+              permissions: masterAdminPermissions || userDoc.data().permissions || studentData?.permissions,
               hideNameOnLeaderboard: userDoc.data().hideNameOnLeaderboard,
               hidePhotoOnLeaderboard: userDoc.data().hidePhotoOnLeaderboard
             });
@@ -229,7 +230,8 @@ export default function App() {
               manageRecords: true,
               manageChat: true,
               manageHomeworks: true,
-              manageStudents: true
+              manageStudents: true,
+              manageGrades: true
             } : undefined;
 
             setUser({
@@ -260,7 +262,8 @@ export default function App() {
             manageRecords: true,
             manageChat: true,
             manageHomeworks: true,
-            manageStudents: true
+            manageStudents: true,
+            manageGrades: true
           } : undefined;
 
           setUser({
@@ -520,7 +523,7 @@ export default function App() {
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
-      <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} />
+      <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} user={user} />
       <AdminQuestionBankScreen isOpen={showAdminBank} onClose={() => setShowAdminBank(false)} lang={lang} />
       <AntiCheatDashboard isOpen={showAntiCheat} onClose={() => setShowAntiCheat(false)} lang={lang} />
       <StudentGradesScreen isOpen={showStudentGrades} onClose={() => setShowStudentGrades(false)} />
