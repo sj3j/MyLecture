@@ -60,6 +60,7 @@ interface HomeScreenProps {
   onEdit: (l: Lecture) => void;
   onOpenMCQ?: (l: Lecture) => void;
   setShowStudentManage: (val: boolean) => void;
+  setShowStreakManage: (val: boolean) => void;
   setShowAdminManage: (val: boolean) => void;
   initialTab?: InnerTab;
 }
@@ -74,6 +75,7 @@ export default function HomeScreen({
   onEdit,
   onOpenMCQ,
   setShowStudentManage,
+  setShowStreakManage,
   setShowAdminManage,
   initialTab = 'lectures'
 }: HomeScreenProps) {

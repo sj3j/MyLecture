@@ -532,39 +532,29 @@ app.post("/api/check-whitelist", async (req, res) => {
 
 // --- Streak System Backend ---
 
-const getIraqDateAndHour = () => {
-  const now = new Date();
-  const str = now.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", hourCycle: "h23" });
-  const [datePart, timePart] = str.split(', ');
-  const [day, month, year] = datePart.split('/');
-  const [hour] = timePart.split(':');
-  
-  return {
-    year: parseInt(year),
-    month: parseInt(month),
-    day: parseInt(day),
-    hour: parseInt(hour)
-  };
+const getBaghdadDate = (date = new Date()) => {
+  return date.toLocaleDateString("en-CA", {
+    timeZone: "Asia/Baghdad"
+  }); // returns "YYYY-MM-DD"
 };
 
 const getEffectiveDateString = (gracePeriodHours: number = 2) => {
-  const { year, month, day, hour } = getIraqDateAndHour();
-  let effectiveDate = new Date(`${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00Z`);
+  const now = new Date();
+  
+  // Get current hour in Baghdad (0-23)
+  const timeStr = now.toLocaleTimeString("en-GB", { timeZone: "Asia/Baghdad", hourCycle: "h23", hour: "2-digit" });
+  const hour = parseInt(timeStr.split(":")[0], 10);
   
   if (hour >= 0 && hour < gracePeriodHours) {
-    effectiveDate.setDate(effectiveDate.getDate() - 1);
+    now.setDate(now.getDate() - 1);
   }
   
-  const ey = effectiveDate.getUTCFullYear();
-  const em = effectiveDate.getUTCMonth() + 1;
-  const ed = effectiveDate.getUTCDate();
-  
-  return `${ey}-${em.toString().padStart(2, '0')}-${ed.toString().padStart(2, '0')}`;
+  return getBaghdadDate(now);
 };
 
-const calcDaysDifference = (date1Str: string, date2Str: string) => {
-  const d1 = new Date(`${date1Str}T12:00:00Z`);
-  const d2 = new Date(`${date2Str}T12:00:00Z`);
+const calcDaysDifference = (parsedDate1Str: string, parsedDate2Str: string) => {
+  const d1 = new Date(`${parsedDate1Str}T12:00:00Z`);
+  const d2 = new Date(`${parsedDate2Str}T12:00:00Z`);
   const diff = Math.abs(d1.getTime() - d2.getTime());
   return Math.round(diff / (1000 * 60 * 60 * 24));
 };
@@ -575,9 +565,11 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
     const db = admin.firestore();
     const userRef = db.collection('users').doc(user.uid);
     
-    await db.runTransaction(async (t) => {
+    const txResult = await db.runTransaction(async (t) => {
       const appSettingsDoc = await t.get(db.collection('app_settings').doc('streak'));
       const gracePeriodHours = appSettingsDoc.exists ? (appSettingsDoc.data()?.gracePeriodHours ?? 2) : 2;
+      const globalFreeze = appSettingsDoc.exists ? (appSettingsDoc.data()?.globalFreezeActive ?? false) : false;
+      const globalFreezeDate = appSettingsDoc.exists ? appSettingsDoc.data()?.globalFreezeDate : null;
       
       const effectiveDate = getEffectiveDateString(gracePeriodHours);
       const historyId = `${user.uid}_${effectiveDate}`;
@@ -595,18 +587,34 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
            t.update(historyRef, { freezeUsed: false });
         }
         t.update(userRef, { lastActiveAt: admin.firestore.FieldValue.serverTimestamp() });
-        return;
+        return { freezeUsed: false };
       }
 
       const data = userDoc.data()!;
       let streakCount = data.streakCount || 0;
       let longestStreak = data.longestStreak || 0;
       let freezeTokens = data.freezeTokens ?? 1;
+      let hasUsedFreeze = false;
       const lastActiveDate = data.lastActiveDate;
+      const initialStreakCount = streakCount;
+      const initialFreezeTokens = freezeTokens;
+      let method = 'normal';
+      let missedDaysForLog = 0;
       
       let processedLastDate = lastActiveDate;
       if (processedLastDate && processedLastDate.includes("T")) {
         processedLastDate = processedLastDate.split("T")[0];
+      }
+
+      if (globalFreeze && globalFreezeDate && processedLastDate) {
+         // Treat frozen date as if student was active
+         // Don't penalize for missing that day if the gap spans across the globalFreezeDate
+         // Just a simple safety mechanism, if processedLastDate is before globalFreezeDate
+         // and effective date is after or equal, we fast forward processedLastDate
+         if (processedLastDate < globalFreezeDate && effectiveDate >= globalFreezeDate) {
+             processedLastDate = globalFreezeDate;
+             method = 'global_freeze';
+         }
       }
 
       if (!processedLastDate) {
@@ -618,18 +626,18 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
           streakCount += 1;
         } else if (daysDiff > 1) {
           const missedDays = daysDiff - 1;
+          missedDaysForLog = missedDays;
           
           if (freezeTokens >= missedDays) {
             freezeTokens -= missedDays;
             streakCount += 1;
+            hasUsedFreeze = true;
+            if (method !== 'global_freeze') method = 'freeze_token';
             
             let d = new Date(`${processedLastDate}T12:00:00Z`);
             for (let i = 0; i < missedDays; i++) {
               d.setDate(d.getDate() + 1);
-              const gapY = d.getUTCFullYear();
-              const gapM = d.getUTCMonth() + 1;
-              const gapD = d.getUTCDate();
-              const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
+              const gapDateStr = getBaghdadDate(d);
               
               const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDateStr}`);
               t.set(gapHistoryRef, {
@@ -641,20 +649,38 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
               });
             }
           } else {
-            streakCount = 1;
+            if (!data.hasPendingStreakReset) {
+              const pendingDocRef = db.collection('pending_streak_resets').doc(user.uid);
+              t.set(pendingDocRef, {
+                 userId: user.uid,
+                 email: user.email || '',
+                 name: data.name || '',
+                 missedDays: missedDays,
+                 streakAtRisk: streakCount,
+                 dateRecorded: effectiveDate,
+                 createdAt: admin.firestore.FieldValue.serverTimestamp()
+              });
+            }
+            streakCount += 1;
+            method = 'pending_loss';
           }
         }
       }
       
       longestStreak = Math.max(longestStreak, streakCount);
       
-      t.update(userRef, {
+      const updateData: any = {
         streakCount,
         longestStreak,
         freezeTokens,
         lastActiveDate: effectiveDate,
         lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      if (method === 'pending_loss' && !data.hasPendingStreakReset) {
+         updateData.hasPendingStreakReset = true;
+      }
+      
+      t.update(userRef, updateData);
       
       t.set(historyRef, {
         userId: user.uid,
@@ -663,10 +689,29 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
         freezeUsed: false,
         timestamp: admin.firestore.FieldValue.serverTimestamp()
       });
+      
+      const streakLogRef = db.collection('streakLog').doc(user.uid).collection('days').doc(effectiveDate);
+      t.set(streakLogRef, {
+        date: effectiveDate,
+        recordedAt: admin.firestore.FieldValue.serverTimestamp(),
+        streakBefore: initialStreakCount,
+        streakAfter: streakCount,
+        method: method,
+        tokensBefore: initialFreezeTokens,
+        tokensAfter: freezeTokens,
+        missedDays: missedDaysForLog,
+        gracePeriodApplied: getBaghdadDate() !== effectiveDate
+      }, { merge: true });
+      
+      return { freezeUsed: hasUsedFreeze };
     });
     
     const updatedUser = await userRef.get();
-    res.json({ success: true, streakCount: updatedUser.data()?.streakCount, freezeUsed: updatedUser.data()?.freezeTokens < (updatedUser.data()?.freezeTokens ?? 1) });
+    res.json({ 
+      success: true, 
+      streakCount: updatedUser.data()?.streakCount, 
+      freezeUsed: txResult?.freezeUsed || false
+    });
   } catch (error) {
     console.error("Error recording activity:", error);
     res.status(500).json({ error: "Failed to record activity" });
@@ -715,9 +760,7 @@ app.post("/api/admin/time-freeze", verifyAuth, verifyAdmin, async (req, res) => 
     
     const d = new Date(`${effectiveDate}T12:00:00Z`);
     d.setDate(d.getDate() - 1);
-    const yMonth = d.getUTCMonth() + 1;
-    const yDay = d.getUTCDate();
-    const yesterdayStr = `${d.getUTCFullYear()}-${yMonth.toString().padStart(2, '0')}-${yDay.toString().padStart(2, '0')}`;
+    const yesterdayStr = getBaghdadDate(d);
 
     const usersRef = db.collection('users');
     const snapshot = await usersRef.get();
@@ -813,7 +856,8 @@ app.post("/api/admin/grant-freeze", verifyAuth, verifyAdmin, async (req, res) =>
     });
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: "Error granting freeze token" });
+    console.error("Error recovering streak", e);
+    res.status(500).json({ error: "Error recovering streak" });
   }
 });
 
@@ -848,6 +892,40 @@ app.post("/api/admin/streak-recovery", verifyAuth, verifyAdmin, async (req, res)
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: "Error recovering streak" });
+  }
+});
+
+app.post("/api/admin/resolve-pending-streak", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { userUid, action } = req.body;
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userUid);
+    const pendingRef = db.collection('pending_streak_resets').doc(userUid);
+
+    await db.runTransaction(async (t) => {
+      const pendingDoc = await t.get(pendingRef);
+      if (!pendingDoc.exists) throw new Error("Pending streak reset not found");
+
+      if (action === 'reset') {
+        t.update(userRef, {
+          streakCount: 1,
+          hasPendingStreakReset: admin.firestore.FieldValue.delete()
+        });
+      } else if (action === 'forgive') {
+        t.update(userRef, {
+          hasPendingStreakReset: admin.firestore.FieldValue.delete()
+        });
+      } else {
+        throw new Error("Invalid action");
+      }
+
+      t.delete(pendingRef);
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error resolving pending streak", error);
+    res.status(500).json({ error: error.message || "Error resolving pending streak" });
   }
 });
 

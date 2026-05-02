@@ -67,7 +67,7 @@ service cloud.firestore {
              data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
              data.category in ['pharmacology', 'pharmacognosy', 'organic_chemistry', 'biochemistry', 'cosmetics'] &&
              data.type in ['theoretical', 'practical'] &&
-             data.pdfUrl is string && data.pdfUrl.matches("^https?://.*") &&
+             data.pdfUrl is string && data.pdfUrl.matches(".*") &&
              data.createdAt is timestamp &&
              data.uploadedBy == request.auth.uid &&
              (!('number' in data) || data.number == null || (data.number is number && data.number > 0)) &&
@@ -78,10 +78,10 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.keys().hasAll(['name', 'email', 'role']) &&
              data.name is string && data.name.size() > 0 &&
-             data.email is string && (data.email == '' || data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) &&
+             data.email is string && (data.email == '' || data.email.matches(".*@.*")) &&
              data.role in ['admin', 'moderator', 'student'] &&
              (!('originalName' in data) || data.originalName is string) &&
-             (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches("^https?://.*"))) &&
+             (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches(".*"))) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
              (!('favorites' in data) || data.favorites is list) &&
              (!('studied' in data) || data.studied is list) &&
@@ -89,6 +89,8 @@ service cloud.firestore {
              (!('longestStreak' in data) || data.longestStreak is number) &&
              (!('freezeTokens' in data) || data.freezeTokens is number) &&
              (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
+             (!('lastActiveAt' in data) || data.lastActiveAt is timestamp) &&
+             (!('hasPendingStreakReset' in data) || data.hasPendingStreakReset is bool) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
              (!('notificationPreferences' in data) || (data.notificationPreferences is map && 
@@ -152,6 +154,11 @@ service cloud.firestore {
     }
 
     match /streak_recoveries/{docId} {
+      allow read: if isAdminOrModerator();
+      allow write: if false; // Only via API
+    }
+
+    match /pending_streak_resets/{docId} {
       allow read: if isAdminOrModerator();
       allow write: if false; // Only via API
     }

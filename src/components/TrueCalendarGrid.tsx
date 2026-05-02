@@ -28,7 +28,7 @@ export default function TrueCalendarGrid({ history, isRtl }: TrueCalendarGridPro
 
   const days = [];
   for (let i = 0; i < firstDay; i++) {
-      days.push(<div key={`empty-${i}`} className="w-8 h-8 sm:w-10 sm:h-10"></div>);
+      days.push(<div key={`empty-${year}-${month}-${i}`} className="w-8 h-8 sm:w-10 sm:h-10"></div>);
   }
 
   for (let d = 1; d <= daysInMonth; d++) {
@@ -39,7 +39,7 @@ export default function TrueCalendarGrid({ history, isRtl }: TrueCalendarGridPro
       else if (record?.wasActive) bgClass = "bg-orange-500 dark:bg-orange-600 text-white shadow-sm ring-2 ring-orange-300 dark:ring-orange-600 ring-offset-1 dark:ring-offset-zinc-900";
 
       days.push(
-          <div key={d} title={dateStr} className={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl text-sm font-bold transition-all hover:opacity-80 ${bgClass}`}>
+          <div key={`day-${year}-${month}-${d}`} title={dateStr} className={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl text-sm font-bold transition-all hover:opacity-80 ${bgClass}`}>
               {d}
           </div>
       );
@@ -60,7 +60,7 @@ export default function TrueCalendarGrid({ history, isRtl }: TrueCalendarGridPro
           </div>
           <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center mb-3">
               {(isRtl ? dayNamesAr : dayNamesEn).map((day, i) => (
-                  <div key={i} className="text-[11px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">{day}</div>
+                  <div key={`dayname-${i}`} className="text-[11px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">{day}</div>
               ))}
           </div>
           <div className="grid grid-cols-7 gap-1 sm:gap-2 place-items-center">

@@ -97,6 +97,11 @@ async function startServer() {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
+    const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+    if (user.email && adminEmails.includes(user.email.toLowerCase())) {
+      return next();
+    }
+
     try {
       const db = admin.firestore();
       const userDoc = await db.collection('users').doc(user.uid).get();
@@ -781,20 +786,39 @@ async function startServer() {
                 });
               }
             } else {
-              streakCount = 1; // Streak broken
+              if (!data.hasPendingStreakReset) {
+                const pendingDocRef = db.collection('pending_streak_resets').doc(user.uid);
+                t.set(pendingDocRef, {
+                   userId: user.uid,
+                   email: user.email || '',
+                   name: data.name || '',
+                   missedDays: missedDays,
+                   streakAtRisk: streakCount,
+                   dateRecorded: effectiveDate,
+                   createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+              }
+              streakCount += 1; // Add to previous streak while pending review
+              data.hasPendingStreakReset = true; // Mark locally so update grabs it
             }
           }
         }
         
         longestStreak = Math.max(longestStreak, streakCount);
         
-        t.update(userRef, {
+        const updateData: any = {
           streakCount,
           longestStreak,
           freezeTokens,
           lastActiveDate: effectiveDate,
           lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        
+        if (data.hasPendingStreakReset) {
+           updateData.hasPendingStreakReset = true;
+        }
+
+        t.update(userRef, updateData);
         
         t.set(historyRef, {
           userId: user.uid,
@@ -957,6 +981,38 @@ async function startServer() {
       res.json({ success: true });
     } catch (e) {
       res.status(500).json({ error: "Error granting freeze token" });
+    }
+  });
+
+  app.post("/api/admin/resolve-pending-streak", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { userUid, action } = req.body;
+      const db = admin.firestore();
+      const userRef = db.collection('users').doc(userUid);
+      const pendingRef = db.collection('pending_streak_resets').doc(userUid);
+  
+      await db.runTransaction(async (t) => {
+        const pendingDoc = await t.get(pendingRef);
+        if (!pendingDoc.exists) throw new Error("Pending streak reset not found");
+  
+        if (action === 'reset') {
+          t.update(userRef, {
+            streakCount: 1,
+            hasPendingStreakReset: admin.firestore.FieldValue.delete()
+          });
+        } else if (action === 'forgive') {
+          t.update(userRef, {
+            hasPendingStreakReset: admin.firestore.FieldValue.delete()
+          });
+        } else {
+          throw new Error("Invalid action");
+        }
+        t.delete(pendingRef);
+      });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error resolving pending streak", error);
+      res.status(500).json({ error: error.message || "Error resolving pending streak" });
     }
   });
 

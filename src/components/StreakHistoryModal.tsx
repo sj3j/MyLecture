@@ -142,7 +142,7 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang }: S
                         </tr>
                       ) : (
                         history.map((h, i) => (
-                          <tr key={i} className="border-t border-slate-100 dark:border-zinc-800">
+                          <tr key={`history-${h.date}-${i}`} className="border-t border-slate-100 dark:border-zinc-800">
                             <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">{h.date}</td>
                             <td className="px-4 py-3">
                               {h.wasActive ? <span className="text-emerald-500">Yes</span> : <span className="text-red-500">No</span>}

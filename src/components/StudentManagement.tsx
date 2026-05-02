@@ -4,7 +4,6 @@ import { auth, db } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import StreakHistoryModal from './StreakHistoryModal';
 import { hashPassword } from '../lib/hash';
 
 interface StudentManagementProps {
@@ -45,64 +44,160 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editExamCode, setEditExamCode] = useState('');
-  const [editStreakCount, setEditStreakCount] = useState<number | ''>(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showHistoryModalFor, setShowHistoryModalFor] = useState<Student | null>(null);
-  const [freezeAmount, setFreezeAmount] = useState<number>(0);
-  const [recoveryReason, setRecoveryReason] = useState('');
-  const [matchedExamCodes, setMatchedExamCodes] = useState<ExamCodeMatch[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+        const [matchedExamCodes, setMatchedExamCodes] = useState<ExamCodeMatch[]>([]);
   const [examCodesCsvName, setExamCodesCsvName] = useState<string>('');
   const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
   
-  const handleGrantFreeze = async (userUid: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!userUid || freezeAmount <= 0) return;
-    setIsSubmitting(true);
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/grant-freeze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ userUid, amount: freezeAmount })
-      });
-      if (res.ok) {
-        setSuccess(isRtl ? 'تم منح دروع التجميد بنجاح' : 'Freeze tokens granted successfully');
-        setFreezeAmount(0);
-      } else throw new Error("API error");
-    } catch (err) {
-      setError(isRtl ? 'فشل في منح دروع التجميد' : 'Failed to grant freeze tokens');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
-  const handleStreakRecovery = async (userUid: string, studentEmail: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!userUid || editStreakCount === '' || !recoveryReason) {
-      setError(isRtl ? 'يرجى إدخال الستريك الجديد والسبب' : 'Please enter new streak and reason');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/streak-recovery", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ userUid, studentEmail, newStreak: editStreakCount, reason: recoveryReason })
-      });
-      if (res.ok) {
-        setSuccess(isRtl ? 'تم استرجاع الستريك بنجاح' : 'Streak recovered successfully');
-        setRecoveryReason('');
-      } else throw new Error("API error");
-    } catch (err) {
-      setError(isRtl ? 'فشل في استرجاع الستريك' : 'Failed to recover streak');
-    } finally {
-      setIsSubmitting(false);
-      fetchStudents();
-    }
-  };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const fetchStudents = async () => {
     setIsLoading(true);
@@ -110,34 +205,38 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       const snapshot = await getDocs(collection(db, 'students'));
       const usersSnapshot = await getDocs(collection(db, 'users'));
       
-      // Create a map of email to user data to easily append currentName
       const userMap = new Map();
-      usersSnapshot.docs.forEach(doc => {
+      usersSnapshot.docs.forEach((doc: any) => {
         const userData = doc.data();
         const userEmail = userData.email || doc.id;
         if (userEmail) {
           userMap.set(userEmail.toLowerCase().trim(), {
             name: userData.name,
             streakCount: userData.streakCount || 0,
-            uid: doc.id
+            longestStreak: userData.longestStreak || 0,
+            freezeTokens: userData.freezeTokens || 0,
+            userUid: doc.id
           });
         }
       });
-
-      const studentsData = snapshot.docs.map(doc => {
+      
+      const studentsData = snapshot.docs.map((doc: any) => {
         const data = doc.data();
-        const emailKey = (data.email || doc.id).toLowerCase().trim();
-        const userInfo = userMap.get(emailKey);
-        
+        const userProfile = userMap.get((data.email || doc.id).toLowerCase().trim());
         return {
           id: doc.id,
-          ...data,
-          currentName: userInfo?.name,
-          streakCount: userInfo?.streakCount,
-          userUid: userInfo?.uid,
-          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now()
+          name: data.name,
+          email: data.email,
+          examCode: data.examCode || '',
+          isActive: data.isActive ?? true,
+          createdAt: data.createdAt,
+          userUid: userProfile?.userUid,
+          currentName: userProfile?.name || data.name,
+          streakCount: userProfile?.streakCount || 0,
+          longestStreak: userProfile?.longestStreak || 0,
+          freezeTokens: userProfile?.freezeTokens || 0
         };
-      }) as Student[];
+      }) as unknown as Student[];
       
       setStudents(studentsData);
     } catch (err) {
@@ -213,41 +312,35 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   };
 
-  const handleGrantGlobalFreeze = async () => {
-    if (!window.confirm(isRtl ? 'هل أنت متأكد من منح 3 دروع تجميد لجميع الطلاب؟' : 'Are you sure you want to grant 3 freeze shields to all students?')) return;
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch("/api/admin/grant-freeze-global", {
-        method: "POST",
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
-      setSuccess(isRtl ? `تم منح الدروع بنجاح لـ ${data.count} طالب` : `Granted shields to ${data.count} students`);
-    } catch (e) {
-      setError(isRtl ? 'فشل المنح العالمي' : 'Failed global grant');
-    }
-  };
 
-  const handleTimeFreeze = async () => {
-    if (!window.confirm(isRtl ? 'هل تريد استعادة جميع الستريكات المفقودة مؤخراً؟ هذا التغيير سيجعل نشاط الطلاب كأنه استمر حتى الأمس.' : 'Are you sure you want to freeze time? This will update the last active date to yesterday for all students who missed days recently, preventing streak loss.')) return;
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch("/api/admin/time-freeze", {
-        method: "POST",
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
-      setSuccess(isRtl ? `تم تجميد الوقت وحماية ستريك ${data.count} طالب` : `Time frozen! Protected streaks for ${data.count} students`);
-    } catch (e) {
-      setError(isRtl ? 'فشل إعادة ضبط الوقت' : 'Failed to freeze time');
-    }
-  };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const handleDeleteAllStudents = async () => {
     try {
@@ -321,7 +414,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsLoading(true);
+        setIsLoading(true);
     setError(null);
     setSuccess(null);
 
@@ -379,7 +472,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsLoading(true);
+        setIsLoading(true);
     setError(null);
     setSuccess(null);
 
@@ -592,9 +685,49 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                 <X className="w-5 h-5" />
               </button>
             </div>
+            
+            
 
-            {matchedExamCodes.length > 0 ? (
-              <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+            <div className="flex-1 overflow-hidden flex flex-col">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+              {matchedExamCodes.length > 0 ? (
+                <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+
                 <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-4">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white">
@@ -752,80 +885,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         onChange={(e) => setEditExamCode(e.target.value)}
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       />
-                      {editingStudent.userUid && isMasterAdmin && (
-                        <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl space-y-4 border border-orange-100 dark:border-orange-800/30">
-                          <h4 className="font-bold text-orange-800 dark:text-orange-300">
-                            {isRtl ? 'إدارة الستريك' : 'Streak Management'}
-                          </h4>
-                          
-                          <div className="flex items-center justify-between border-b border-orange-200 dark:border-orange-800/30 pb-4 relative z-10">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                              {isRtl ? 'سجل الستريك' : 'Streak History Log'}
-                            </label>
-                            <button
-                              onClick={(e) => { e.preventDefault(); setShowHistoryModalFor(editingStudent); }}
-                              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl cursor-pointer"
-                            >
-                              {isRtl ? 'عرض السجل' : 'View History'}
-                            </button>
-                          </div>
-                          
-                          {user?.isMasterAdmin && (
-                            <>
-                              <div className="space-y-2 relative z-10 border-b border-orange-200 dark:border-orange-800/30 pb-4">
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                  {isRtl ? 'منح دروع التجميد' : 'Grant Freeze Tokens'}
-                                </label>
-                                <div className="flex gap-2">
-                                  <input
-                                    type="number"
-                                    placeholder={isRtl ? 'عدد الدروع' : 'Token count'}
-                                    value={freezeAmount || ''}
-                                    onChange={(e) => setFreezeAmount(parseInt(e.target.value) || 0)}
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none"
-                                  />
-                                  <button
-                                    onClick={(e) => handleGrantFreeze(editingStudent.userUid!, e)}
-                                    disabled={isSubmitting || freezeAmount <= 0}
-                                    className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl whitespace-nowrap"
-                                  >
-                                    {isRtl ? 'منح' : 'Grant'}
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 relative z-10">
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                  {isRtl ? 'استرجاع الستريك (Recovery)' : 'Streak Recovery'}
-                                </label>
-                                <div className="flex gap-2 mb-2">
-                                  <input
-                                    type="number"
-                                    placeholder={isRtl ? 'الستريك الجديد' : 'New Streak'}
-                                    value={editStreakCount === '' ? '' : editStreakCount}
-                                    onChange={(e) => setEditStreakCount(e.target.value === '' ? '' : parseInt(e.target.value))}
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none"
-                                  />
-                                </div>
-                                <input
-                                  type="text"
-                                  placeholder={isRtl ? 'سبب الاسترجاع...' : 'Reason for recovery...'}
-                                  value={recoveryReason}
-                                  onChange={(e) => setRecoveryReason(e.target.value)}
-                                  className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl outline-none mb-2"
-                                />
-                                <button
-                                    onClick={(e) => handleStreakRecovery(editingStudent.userUid!, editingStudent.email, e)}
-                                    disabled={isSubmitting || !recoveryReason || editStreakCount === ''}
-                                    className="w-full px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl whitespace-nowrap"
-                                  >
-                                    {isRtl ? 'استرجاع الستريك المُستحق' : 'Recover Streak'}
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
+                      
                       <button
                         disabled={isSubmitting}
                         type="submit"
@@ -966,21 +1026,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                   </div>
                   {isMasterAdmin && (
                     <div className="flex flex-wrap items-center gap-2 mb-2 md:mb-0">
-                      <button
-                        onClick={handleGrantGlobalFreeze}
-                        className="px-3 py-1.5 text-xs font-bold bg-sky-50 text-sky-600 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-400 rounded-lg transition-colors flex items-center gap-1"
-                        title={isRtl ? 'منح 3 دروع تجميد لجميع الطلاب' : 'Grant 3 freeze shields to all students'}
-                      >
-                        🛡️ {isRtl ? 'منح دروع (الكل)' : 'Grant Shields (All)'}
-                      </button>
                       
-                      <button
-                        onClick={handleTimeFreeze}
-                        className="px-3 py-1.5 text-xs font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 rounded-lg transition-colors flex items-center gap-1"
-                        title={isRtl ? 'تجميد الوقت لمنع فقدان الستريك للجميع' : 'Freeze time to prevent streak loss globally'}
-                      >
-                        ⏳ {isRtl ? 'تجميد الوقت' : 'Freeze Time'}
-                      </button>
                       
                       {students.length > 0 && (
                         <div className="relative">
@@ -1104,7 +1150,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                                       setEditEmail(student.email);
                                       setEditPassword('');
                                       setEditExamCode(student.examCode || '');
-                                      setEditStreakCount(student.streakCount ?? 0);
+                                      
                                     }}
                                     className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
                                   >
@@ -1128,20 +1174,28 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                   )}
                 </div>
               </div>
+                </div>
+              )}
             </div>
-            )}
           </motion.div>
         </div>
-      )}
-
-      {showHistoryModalFor && (
-        <StreakHistoryModal
-          student={showHistoryModalFor}
-          isOpen={!!showHistoryModalFor}
-          onClose={() => setShowHistoryModalFor(null)}
-          lang={lang}
-        />
       )}
     </AnimatePresence>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

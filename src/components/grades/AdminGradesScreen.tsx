@@ -8,7 +8,6 @@ import { matchGradesToStudents } from '../../services/fuzzyMatchingService';
 import { MatchedResult, GradeBatch } from '../../types/grades.types';
 import { confirmDegreeBatchClient, undoDegreeBatch } from '../../services/adminGradeService';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserProfile } from '../../types';
 
 export interface AdminGradesScreenProps {
   isOpen: boolean;

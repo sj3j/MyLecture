@@ -14,11 +14,13 @@ interface ProfileScreenProps {
   setLang: (lang: Language) => void;
   setShowAdminManage?: (val: boolean) => void;
   setShowStudentManage?: (val: boolean) => void;
+  setShowStreakManage?: (val: boolean) => void;
   setShowAdminGrades?: (val: boolean) => void;
   setShowStudentGrades?: (val: boolean) => void;
 }
 
-export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage, setShowAdminGrades, setShowStudentGrades }: ProfileScreenProps) {
+export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage,
+  setShowStreakManage, setShowAdminGrades, setShowStudentGrades }: ProfileScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -535,6 +537,16 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             >
               <User className="w-5 h-5" />
               {isRtl ? 'إدارة الطلاب' : 'Manage Students'}
+            </button>
+          )}
+
+          {isMasterAdminUser && setShowStreakManage && (
+            <button
+              onClick={() => setShowStreakManage(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-xl font-bold hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-colors mt-4"
+            >
+              <Shield className="w-5 h-5" />
+              {isRtl ? 'إدارة الستريك' : 'Streak Management'}
             </button>
           )}
 

@@ -8,6 +8,7 @@ import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
 import StudentManagement from './components/StudentManagement';
+import StreakManagement from './components/StreakManagement';
 import AdminGradesScreen from './components/grades/AdminGradesScreen';
 import AdminQuestionBankScreen from './components/questionBank/AdminQuestionBankScreen';
 import StudentGradesScreen from './components/grades/StudentGradesScreen';
@@ -65,6 +66,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminManage, setShowAdminManage] = useState(false);
   const [showStudentManage, setShowStudentManage] = useState(false);
+  const [showStreakManage, setShowStreakManage] = useState(false);
   const [showAdminGrades, setShowAdminGrades] = useState(false);
   const [showAdminBank, setShowAdminBank] = useState(false);
   const [showAntiCheat, setShowAntiCheat] = useState(false);
@@ -499,7 +501,8 @@ export default function App() {
           onNavigateToChat={handleNavigateToChat} 
           onEdit={handleEditLecture} 
           onOpenMCQ={handleOpenMCQ}
-          setShowStudentManage={setShowStudentManage} 
+          setShowStudentManage={setShowStudentManage}
+            setShowStreakManage={setShowStreakManage} 
           setShowAdminManage={setShowAdminManage} 
           initialTab={currentTab === 'home' ? 'lectures' : currentTab as any} 
         />
@@ -511,7 +514,7 @@ export default function App() {
         <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} />
       )}
       {currentTab === 'profile' && (
-        <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
+        <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowStreakManage={setShowStreakManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
       )}
 
       <AdminUpload 
@@ -522,6 +525,7 @@ export default function App() {
         user={user}
       />
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} />
+      <StreakManagement isOpen={showStreakManage} onClose={() => setShowStreakManage(false)} lang={lang} user={user} />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
       <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} user={user} />
       <AdminQuestionBankScreen isOpen={showAdminBank} onClose={() => setShowAdminBank(false)} lang={lang} />
