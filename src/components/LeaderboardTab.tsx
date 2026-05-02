@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, getDocs, where, documentId } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, documentId, getCountFromServer } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile, Language } from '../types';
 import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw } from 'lucide-react';
@@ -15,6 +15,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
   const [activeTab, setActiveTab] = useState<'streak' | 'mcq'>('streak');
   const [streakLeaders, setStreakLeaders] = useState<UserProfile[]>([]);
   const [mcqLeaders, setMcqLeaders] = useState<(UserMCQStats & { profile?: UserProfile })[]>([]);
+  const [userStreakRank, setUserStreakRank] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -27,6 +28,16 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
           const snap = await getDocs(q);
           const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
           setStreakLeaders(data);
+        }
+        if (user) {
+          const myStreak = user.streakCount || 0;
+          if (myStreak > 0) {
+            const countQ = query(collection(db, 'users'), where('streakCount', '>', myStreak));
+            const countSnap = await getCountFromServer(countQ);
+            setUserStreakRank(countSnap.data().count + 1);
+          } else {
+            setUserStreakRank(null);
+          }
         }
       } else {
         if (mcqLeaders.length === 0 || force) {
@@ -228,18 +239,32 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
       </div>
 
       {/* Sticky Bottom Rank Chip */}
-      {user && activeTab === 'mcq' && (
+      {user && (
          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40">
-           {mcqLeaders.findIndex(l => l.userId === user.uid) !== -1 ? (
-             <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-3">
-               <span className="font-bold text-sm opacity-80">مرتبتك الحالية</span>
-               <div className="w-px h-4 bg-slate-700" />
-               <span className="font-black text-lg text-sky-400">#{mcqLeaders.findIndex(l => l.userId === user.uid) + 1}</span>
-             </div>
+           {activeTab === 'mcq' ? (
+             mcqLeaders.findIndex(l => l.userId === user.uid) !== -1 ? (
+               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-3">
+                 <span className="font-bold text-sm opacity-80">{isRtl ? 'مرتبتك الحالية' : 'Your Rank'}</span>
+                 <div className="w-px h-4 bg-slate-700" />
+                 <span className="font-black text-lg text-sky-400">#{mcqLeaders.findIndex(l => l.userId === user.uid) + 1}</span>
+               </div>
+             ) : (
+               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-2 text-sm font-bold">
+                 <span>{isRtl ? 'لم تقم بحل أي MCQ بعد' : 'No MCQ solved yet'}</span>
+               </div>
+             )
            ) : (
-             <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-2 text-sm font-bold">
-               <span>لم تقم بحل أي MCQ بعد</span>
-             </div>
+             userStreakRank !== null ? (
+               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-3">
+                 <span className="font-bold text-sm opacity-80">{isRtl ? 'مرتبتك الحالية' : 'Your Rank'}</span>
+                 <div className="w-px h-4 bg-slate-700" />
+                 <span className="font-black text-lg text-orange-400">#{userStreakRank}</span>
+               </div>
+             ) : (
+               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-2 text-sm font-bold">
+                 <span>{isRtl ? 'ليس لديك ستريك حالياً' : 'You have no streak yet'}</span>
+               </div>
+             )
            )}
          </div>
       )}

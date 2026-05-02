@@ -300,14 +300,14 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                           </div>
                           <div className="flex gap-2 shrink-0">
                             <button
-                              onClick={() => handleResolvePending(pr.userId, 'forgive')}
+                              onClick={() => handleResolvePending(pr.id, 'forgive')}
                               disabled={isSubmitting}
                               className="px-4 py-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50 rounded-xl font-bold transition-colors text-sm"
                             >
                               {isRtl ? 'مسامحة (إبقاء الستريك)' : 'Forgive (Keep Streak)'}
                             </button>
                             <button
-                              onClick={() => handleResolvePending(pr.userId, 'reset')}
+                              onClick={() => handleResolvePending(pr.id, 'reset')}
                               disabled={isSubmitting}
                               className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 rounded-xl font-bold transition-colors text-sm"
                             >

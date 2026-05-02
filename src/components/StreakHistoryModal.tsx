@@ -84,7 +84,7 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang }: S
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-zinc-800">
           <div className="flex items-center gap-3">
