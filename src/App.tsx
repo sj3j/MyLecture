@@ -496,7 +496,10 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={requestPermission}
+              onClick={() => {
+                requestPermission();
+                handleDismissNotification();
+              }}
               disabled={isRequesting}
               className="px-4 py-1.5 bg-white text-sky-600 text-sm font-bold rounded-lg hover:bg-sky-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >

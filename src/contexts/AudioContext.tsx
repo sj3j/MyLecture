@@ -72,15 +72,19 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!audioRef.current) return;
     
     if (currentTrack?.id === track.id) {
-       audioRef.current.play();
-       setIsPlaying(true);
+       const playPromise = audioRef.current.play();
+       if (playPromise !== undefined) {
+         playPromise.then(() => setIsPlaying(true)).catch(console.warn);
+       }
        return;
     }
 
     setCurrentTrack(track);
     audioRef.current.src = track.src;
-    audioRef.current.play();
-    setIsPlaying(true);
+    const playPromise = audioRef.current.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => setIsPlaying(true)).catch(console.warn);
+    }
   };
 
   const pauseTrack = () => {
@@ -91,8 +95,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const resumeTrack = () => {
     if (!audioRef.current) return;
-    audioRef.current.play();
-    setIsPlaying(true);
+    const playPromise = audioRef.current.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => setIsPlaying(true)).catch(console.warn);
+    }
   };
 
   const closePlayer = () => {
