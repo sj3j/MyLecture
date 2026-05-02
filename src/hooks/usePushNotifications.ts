@@ -5,12 +5,16 @@ import { messaging, db } from '../lib/firebase';
 import { UserProfile } from '../types';
 
 export function usePushNotifications(user: UserProfile | null) {
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const [isRequesting, setIsRequesting] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPermission(Notification.permission);
+    if (typeof window !== 'undefined') {
+      if ('Notification' in window) {
+        setPermission(Notification.permission);
+      } else {
+        setPermission('unsupported');
+      }
     }
   }, []);
 
@@ -39,11 +43,12 @@ export function usePushNotifications(user: UserProfile | null) {
   /* NEEDS_ANDROID_PERMISSION (POST_NOTIFICATIONS) */
   const requestPermission = async () => {
     if (!user || isRequesting) return;
-    setIsRequesting(true);
     try {
-      // Request permission FIRST before any async operations to preserve user gesture context
+      // Request permission FIRST before any async operations or state updates to preserve user gesture context on iOS
       const perm = await Notification.requestPermission();
       setPermission(perm);
+      
+      setIsRequesting(true);
 
       if (perm === 'granted') {
         console.log('Notification permission granted.');

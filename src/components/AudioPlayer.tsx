@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Play, Pause, Download, Volume2, VolumeX } from 'lucide-react';
 import { forceDownload } from '../lib/utils';
 import { useAudio } from '../contexts/AudioContext';
+import { motion } from 'motion/react';
 
 interface AudioPlayerProps {
   id: string; // added id prop
@@ -62,12 +63,23 @@ export default function AudioPlayer({ id, src, title }: AudioPlayerProps) {
           }}>
              {Array.from({ length: 40 }).map((_, i) => {
                const isActive = (i / 40) * 100 <= currentProgress;
-               const height = Math.max(10, Math.sin(i * 0.4) * 100);
+               const baseHeight = Math.max(10, Math.sin(i * 0.4) * 100);
                return (
-                 <div 
+                 <motion.div 
                    key={i} 
+                   animate={currentIsPlaying ? {
+                     height: [`${Math.max(10, baseHeight * 0.7)}%`, `${Math.min(100, baseHeight * 1.3)}%`, `${baseHeight}%`]
+                   } : {
+                     height: `${baseHeight}%`
+                   }}
+                   transition={{
+                     repeat: Infinity,
+                     duration: 0.8,
+                     delay: i * 0.05,
+                     ease: "easeInOut"
+                   }}
                    className={`flex-1 rounded-full ${isActive ? 'bg-[#2196F3]' : 'bg-slate-200 dark:bg-zinc-700'}`}
-                   style={{ height: `${height}%` }}
+                   style={{ height: `${baseHeight}%` }}
                  />
                );
              })}

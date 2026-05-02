@@ -26,7 +26,7 @@ import OnboardingScreen from './components/OnboardingScreen';
 import OnboardingSlides from './components/OnboardingSlides';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import MCQOverlay from './components/MCQOverlay';
-import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap } from 'lucide-react';
+import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -93,6 +93,19 @@ export default function App() {
   });
 
   const { permission, requestPermission, isRequesting } = usePushNotifications(user);
+  const [hideNotificationBanner, setHideNotificationBanner] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hideNotificationBanner') === 'true';
+    }
+    return false;
+  });
+
+  const handleDismissNotification = () => {
+    setHideNotificationBanner(true);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hideNotificationBanner', 'true');
+    }
+  };
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -473,21 +486,26 @@ export default function App() {
         />
       )}
 
-      {user && permission === 'default' && (
-        <div className="bg-sky-600 text-white px-4 py-3 sm:px-6 lg:px-8 flex items-center justify-between">
+      {user && permission === 'default' && !hideNotificationBanner && (
+        <div className="bg-sky-600 text-white px-4 py-3 sm:px-6 lg:px-8 flex items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <AlertCircle className="w-5 h-5" />
+            <AlertCircle className="w-5 h-5 shrink-0" />
             <p className="text-sm font-medium">
               {isRtl ? 'قم بتفعيل الإشعارات لتلقي تنبيهات عند إضافة محاضرات جديدة.' : 'Enable notifications to receive alerts when new lectures are added.'}
             </p>
           </div>
-          <button
-            onClick={requestPermission}
-            disabled={isRequesting}
-            className="px-4 py-1.5 bg-white text-sky-600 text-sm font-bold rounded-lg hover:bg-sky-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isRequesting ? (isRtl ? 'جاري التفعيل...' : 'Enabling...') : (isRtl ? 'تفعيل' : 'Enable')}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={requestPermission}
+              disabled={isRequesting}
+              className="px-4 py-1.5 bg-white text-sky-600 text-sm font-bold rounded-lg hover:bg-sky-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRequesting ? (isRtl ? 'جاري التفعيل...' : 'Enabling...') : (isRtl ? 'تفعيل' : 'Enable')}
+            </button>
+            <button onClick={handleDismissNotification} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors" title="Dismiss">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       )}
 

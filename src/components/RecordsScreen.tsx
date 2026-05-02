@@ -3,11 +3,20 @@ import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
-import { Loader2, Mic, SearchX, Play, Pause, Plus, HardDrive, Clock, CheckCircle2 } from 'lucide-react';
+import { Loader2, Mic, Search, Play, Pause, Plus, HardDrive, Clock, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 import AdminRecordUpload from './AdminRecordUpload';
 import AudioPlayer from './AudioPlayer';
+
+const CATEGORY_UI: Record<string, { emoji: string; color: string; border: string; bg: string; badge: string }> = {
+  all: { emoji: '📚', color: 'text-indigo-500', border: 'border-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/20', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  pharmacology: { emoji: '💊', color: 'text-red-500', border: 'border-red-500', bg: 'bg-red-50 dark:bg-red-900/20', badge: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  pharmacognosy: { emoji: '🌿', color: 'text-emerald-500', border: 'border-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  organic_chemistry: { emoji: '⚗️', color: 'text-blue-500', border: 'border-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  biochemistry: { emoji: '🧬', color: 'text-purple-500', border: 'border-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  cosmetics: { emoji: '💄', color: 'text-pink-500', border: 'border-pink-500', bg: 'bg-pink-50 dark:bg-pink-900/20', badge: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300' },
+};
 
 interface RecordsScreenProps {
   user: UserProfile | null;
@@ -27,6 +36,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
   const [showUpload, setShowUpload] = useState(false);
   const [recordToEdit, setRecordToEdit] = useState<RecordItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [localSearch, setLocalSearch] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
@@ -48,13 +58,15 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     return matchesCategory && matchesType;
   });
 
-  if (searchQuery.trim()) {
+  const activeSearch = localSearch.trim() || searchQuery.trim();
+
+  if (activeSearch) {
     const fuse = new Fuse(baseRecords, {
       keys: ['title', 'description'],
       threshold: 0.4,
       ignoreLocation: true,
     });
-    baseRecords = fuse.search(searchQuery).map(result => result.item);
+    baseRecords = fuse.search(activeSearch).map(result => result.item);
   }
 
   const filteredRecords = baseRecords.sort((a, b) => {
@@ -83,9 +95,15 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     }
   };
 
+  const currentCatTypes = selectedCategory === 'all' 
+    ? ['theoretical', 'practical'] 
+    : CATEGORIES.find(c => c.value === selectedCategory)?.types || ['theoretical'];
+
+  const uic = CATEGORY_UI[selectedCategory] || CATEGORY_UI.all;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">
             <Mic className="w-6 h-6" />
@@ -95,66 +113,119 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
         {isAdmin && (
           <button
             onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors"
+            className="w-12 h-12 flex items-center justify-center bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30 shrink-0"
+            title={isRtl ? 'رفع تسجيل' : 'Upload Record'}
           >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">{isRtl ? 'رفع تسجيل' : 'Upload Record'}</span>
+            <Plus className="w-6 h-6" />
           </button>
         )}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-8">
-        <div className="flex-1">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value as Category | 'all')}
-            className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 outline-none focus:border-sky-500 dark:text-stone-100 font-bold"
-          >
-            <option value="all">{t.allSubjects}</option>
-            {CATEGORIES.map(cat => (
-              <option key={cat.value} value={cat.value}>{t[cat.labelKey]}</option>
-            ))}
-          </select>
+      {/* Local Search Bar */}
+      {!searchQuery.trim() && (
+        <div className="relative mb-6">
+          <Search className={`w-5 h-5 absolute top-1/2 -translate-y-1/2 text-slate-400 ${isRtl ? 'right-4' : 'left-4'}`} />
+          <input
+            type="text"
+            placeholder={isRtl ? 'ابحث في التسجيلات...' : 'Search recordings...'}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            className={`w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl py-3 ${isRtl ? 'pr-12 pl-4' : 'pl-12 pr-4'} focus:outline-none focus:border-sky-500 transition-colors font-medium dark:text-white`}
+          />
         </div>
-        <div className="flex bg-white dark:bg-zinc-800 p-1 rounded-xl border border-slate-200 dark:border-zinc-700">
-          <button
-            onClick={() => setSelectedType('all')}
-            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-              selectedType === 'all'
-                ? 'bg-slate-100 dark:bg-zinc-700 text-slate-900 dark:text-stone-100 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            {isRtl ? 'الكل' : 'All'}
-          </button>
-          <button
-            onClick={() => setSelectedType('theoretical')}
-            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-              selectedType === 'theoretical'
-                ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            {t.theoretical}
-          </button>
-          <button
-            onClick={() => setSelectedType('practical')}
-            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-              selectedType === 'practical'
-                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            {t.practical}
-          </button>
+      )}
+
+      {/* Horizontal Tabs */}
+      <div className="flex overflow-x-auto gap-3 pb-4 mb-2 no-scrollbar" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+        <button
+          onClick={() => { setSelectedCategory('all'); setSelectedType('all'); }}
+          className={`flex-shrink-0 px-5 py-3 rounded-2xl font-bold flex items-center gap-2 border transition-all ${
+            selectedCategory === 'all' 
+              ? 'bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-500 dark:text-indigo-300 shadow-sm'
+              : 'bg-white border-slate-200 text-slate-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-400 hover:border-slate-300'
+          }`}
+        >
+          <span className="text-lg">📚</span>
+          <span>{t.allSubjects}</span>
+        </button>
+        {CATEGORIES.map(cat => {
+          const tabUi = CATEGORY_UI[cat.value] || CATEGORY_UI.all;
+          return (
+            <button
+              key={cat.value}
+              onClick={() => { setSelectedCategory(cat.value); setSelectedType('all'); }}
+              className={`flex-shrink-0 px-5 py-3 rounded-2xl font-bold flex items-center gap-2 border transition-all ${
+                selectedCategory === cat.value 
+                  ? `${tabUi.bg} ${tabUi.border} ${tabUi.color} shadow-sm`
+                  : 'bg-white border-slate-200 text-slate-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-400 hover:border-slate-300'
+              }`}
+            >
+              <span className="text-lg">{tabUi.emoji}</span>
+              <span>{t[cat.labelKey]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        {/* Subject Info Card */}
+        <div className={`flex-1 p-4 rounded-2xl flex items-center gap-4 ${uic.bg}`}>
+          <div className="text-4xl">{uic.emoji}</div>
+          <div>
+            <h2 className={`font-bold text-lg leading-tight ${uic.color}`}>
+               {selectedCategory === 'all' ? t.allSubjects : t[CATEGORIES.find(c => c.value === selectedCategory)?.labelKey || 'pharmacology']}
+            </h2>
+            <p className="text-sm font-medium opacity-80 mt-1" style={{ color: 'inherit' }}>
+               {filteredRecords.length} {isRtl ? 'تسجيلات' : 'Recordings'}
+            </p>
+          </div>
         </div>
+
+        {/* Filters */}
+        {currentCatTypes.includes('practical') && (
+          <div className="flex bg-white dark:bg-zinc-800 p-1.5 rounded-2xl border border-slate-200 dark:border-zinc-700 h-fit self-center min-w-max">
+            <button
+              onClick={() => setSelectedType('all')}
+              className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+                selectedType === 'all'
+                  ? 'bg-slate-100 dark:bg-zinc-700 text-slate-900 dark:text-stone-100 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              {isRtl ? 'الكل' : 'All'}
+            </button>
+            <button
+              onClick={() => setSelectedType('theoretical')}
+              className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+                selectedType === 'theoretical'
+                  ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              {t.theoretical}
+            </button>
+            <button
+              onClick={() => setSelectedType('practical')}
+              className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+                selectedType === 'practical'
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              {t.practical}
+            </button>
+          </div>
+        )}
       </div>
 
       {filteredRecords.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           <AnimatePresence mode="popLayout">
-            {filteredRecords.map((record, index) => (
+            {filteredRecords.map((record, index) => {
+              const isNew = record.createdAt && (Date.now() - record.createdAt.toMillis()) < 7 * 24 * 60 * 60 * 1000;
+              const recUi = CATEGORY_UI[record.category] || CATEGORY_UI.all;
+
+              return (
               <motion.div
                 layout
                 initial={{ opacity: 0, y: 20 }}
@@ -164,11 +235,18 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
                 key={record.id}
                 className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col relative hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
               >
+              {isNew && (
+                 <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full absolute -top-2 left-4 rotate-[-10deg] shadow-sm z-10">
+                   {isRtl ? 'جديد!' : 'NEW!'}
+                 </span>
+              )}
+
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-slate-300">
-                      {t[CATEGORIES.find(c => c.value === record.category)?.labelKey || 'pharmacology']}
+                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${recUi.badge} flex items-center justify-center gap-1`}>
+                      <span>{recUi.emoji}</span>
+                      <span>{t[CATEGORIES.find(c => c.value === record.category)?.labelKey || 'pharmacology']}</span>
                     </span>
                     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
                       record.type === 'theoretical' 
@@ -296,13 +374,14 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
                 </div>
               </div>
             </motion.div>
-          ))}
+            );
+          })}
           </AnimatePresence>
         </div>
       ) : (
         <div className="text-center py-20 px-4">
           <div className="w-20 h-20 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-6">
-            <SearchX className="w-10 h-10 text-slate-400 dark:text-slate-500" />
+            <Search className="w-10 h-10 text-slate-400 dark:text-slate-500" />
           </div>
           <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">
             {isRtl ? 'لا توجد تسجيلات' : 'No records found'}
