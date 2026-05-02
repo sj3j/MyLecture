@@ -2,7 +2,7 @@ import React, { useReducer, useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lecture } from '../../types';
 import { MCQQuestion } from '../../types/mcq.types';
-import { Check, X, ChevronUp, ArrowUp, Loader2 } from 'lucide-react';
+import { Check, X, ChevronUp, ArrowUp, Loader2, ShieldAlert } from 'lucide-react';
 import { trackEvent } from '../../lib/analytics';
 import { auth, db } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -74,6 +74,8 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
   const [showDrawer, setShowDrawer] = useState(false);
   const [showFab, setShowFab] = useState(false);
   const [isRetake, setIsRetake] = useState<boolean | null>(null);
+  const [showAntiCheatAlert, setShowAntiCheatAlert] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const questionRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -82,7 +84,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
     const user = auth.currentUser;
     if (user) {
       enableAntiScreenshot(user.uid, lecture.id, () => {
-        alert("تم اكتشاف محاولة تصوير. هذا مخالف. قد يؤدي تكرار هذا للفصل.");
+        setShowAntiCheatAlert(true);
       });
     }
 
@@ -123,28 +125,40 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
   const [loadingQuestionId, setLoadingQuestionId] = useState<string | null>(null);
 
   const handleSelect = async (questionId: string, choiceLabel: string, expectedAnswer: string, index: number) => {
-    if (state.answers[questionId]?.answered || loadingQuestionId) return;
+    if (state.answers[questionId]?.answered || loadingQuestionId === questionId) return;
     
     let isCorrect = choiceLabel === expectedAnswer;
     
     // Only lock per-question for the first attempt
     if (isRetake === false) {
       setLoadingQuestionId(questionId);
-      const user = auth.currentUser;
-      const questionData = questions.find(q => q.id === questionId);
-      const res = await lockSingleAnswer(
-        user?.uid || '',
-        lecture.id,
-        questionId,
-        choiceLabel,
-        isCorrect,
-        questionData?.explanation || '',
-        expectedAnswer
-      );
-      setLoadingQuestionId(null);
-      // In case server overrides correct status
-      if (res && res.isCorrect !== undefined) {
-        isCorrect = res.isCorrect;
+      try {
+        const user = auth.currentUser;
+        const questionData = questions.find(q => q.id === questionId);
+        
+        const lockPromise = lockSingleAnswer(
+          user?.uid || '',
+          lecture.id,
+          questionId,
+          choiceLabel,
+          isCorrect,
+          questionData?.explanation || '',
+          expectedAnswer
+        );
+
+        // Max wait time of 4 seconds so the UI does not get stuck for the user
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 4000));
+        
+        const res: any = await Promise.race([lockPromise, timeoutPromise]);
+
+        // In case server overrides correct status
+        if (res && res.isCorrect !== undefined) {
+          isCorrect = res.isCorrect;
+        }
+      } catch (err) {
+        console.warn("Failed locking answer", err);
+      } finally {
+        setLoadingQuestionId(null);
       }
     }
 
@@ -175,13 +189,20 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
     }, 400);
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
+    setIsFinishing(true);
     let correctCount = 0;
     Object.values(state.answers).forEach((a: any) => { if (a.isCorrect) correctCount++ });
     const score = (correctCount / questions.length) * 100;
     
     trackEvent('mcq_quiz_completed', { lectureId: lecture.id, score });
-    onFinish(state.answers, correctCount, score);
+    try {
+      const waitPromise = onFinish(state.answers, correctCount, score);
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 8000));
+      await Promise.race([waitPromise, timeoutPromise]);
+    } finally {
+      setIsFinishing(false);
+    }
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -363,9 +384,10 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
                   </span>
                   <button 
                      onClick={handleFinish}
-                     className="w-full py-4 bg-sky-500 hover:bg-sky-600 text-white font-bold text-lg rounded-xl shadow-md shadow-sky-500/20 transition-transform active:scale-95"
+                     disabled={isFinishing}
+                     className={`w-full py-4 bg-sky-500 text-white font-bold text-lg rounded-xl shadow-md shadow-sky-500/20 transition-transform ${isFinishing ? 'opacity-70 cursor-wait' : 'hover:bg-sky-600 active:scale-95'}`}
                   >
-                     إنهاء وعرض النتيجة
+                     {isFinishing ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : 'إنهاء وعرض النتيجة'}
                   </button>
                </div>
             </motion.div>
@@ -433,6 +455,41 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose }:
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Anti-cheat Alert Modal */}
+      <AnimatePresence>
+        {showAntiCheatAlert && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-red-500" />
+              <div className="p-6 text-center">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-2xl flex items-center justify-center mx-auto mb-5 rotate-12">
+                  <ShieldAlert className="w-8 h-8 text-red-600 dark:text-red-400 -rotate-12" />
+                </div>
+                
+                <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">
+                  تحذير أمني
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
+                  تم اكتشاف محاولة التقاط شاشة أو تسجيل. هذا الإجراء مخالف لسياسة المنصة وقد يؤدي تكراره إلى <span className="font-bold text-red-500">حظر الحساب والفصل</span>.
+                </p>
+                
+                <button
+                  onClick={() => setShowAntiCheatAlert(false)}
+                  className="w-full py-3 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 font-bold rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                >
+                  حسناً، فهمت
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
