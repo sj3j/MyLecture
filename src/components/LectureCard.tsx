@@ -487,6 +487,16 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
                       <button
                         onClick={(e) => {
                           e.preventDefault();
+                          window.open(lecture.pdfUrl, '_blank');
+                        }}
+                        className="border border-slate-300 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 px-4 py-2 rounded-full font-bold flex items-center gap-2 transition-colors"
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span className="hidden sm:inline">{isRtl ? 'فتح في المتصفح' : 'Open in Browser'}</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
                           forceDownload(lecture.pdfUrl, lecture.title + '.pdf');
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2 transition-colors"
