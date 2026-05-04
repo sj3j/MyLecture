@@ -33,7 +33,19 @@ export default function TrueCalendarGrid({ history, isRtl }: TrueCalendarGridPro
 
   for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
-      const record = history.find(h => h.date === dateStr);
+      const record = history.find(h => {
+        // Handle YYYY-MM-DD manually to avoid UTC conversion shifts
+        if (typeof h.date === 'string' && h.date.includes('-')) {
+          const parts = h.date.split('-');
+          if (parts.length === 3) {
+            const hYear = parseInt(parts[0], 10);
+            const hMonth = parseInt(parts[1], 10) - 1; // 0-indexed
+            const hDay = parseInt(parts[2], 10);
+            return hYear === year && hMonth === month && hDay === d;
+          }
+        }
+        return h.date === dateStr;
+      });
       let bgClass = "bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300";
       if (record?.wasActive && record?.freezeUsed) bgClass = "bg-sky-400 dark:bg-sky-500 text-white shadow-sm ring-2 ring-sky-300 dark:ring-sky-600 ring-offset-1 dark:ring-offset-zinc-900";
       else if (record?.wasActive) bgClass = "bg-orange-500 dark:bg-orange-600 text-white shadow-sm ring-2 ring-orange-300 dark:ring-orange-600 ring-offset-1 dark:ring-offset-zinc-900";

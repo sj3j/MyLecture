@@ -995,6 +995,30 @@ async function startServer() {
         const pendingDoc = await t.get(pendingRef);
         if (!pendingDoc.exists) throw new Error("Pending streak reset not found");
   
+        const pendingData = pendingDoc.data();
+        if (pendingData && pendingData.dateRecorded && pendingData.missedDays) {
+          const missedDays = pendingData.missedDays;
+          let d = new Date(`${pendingData.dateRecorded}T12:00:00Z`);
+          // Go backwards from dateRecorded
+          for (let i = 0; i < missedDays; i++) {
+            d.setDate(d.getDate() - 1);
+            const gapY = d.getUTCFullYear();
+            const gapM = d.getUTCMonth() + 1;
+            const gapD = d.getUTCDate();
+            const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
+            
+            const gapHistoryRef = db.collection('streak_history').doc(`${userUid}_${gapDateStr}`);
+            // Explicitly mark them as frozen/blue for the calendar visual
+            t.set(gapHistoryRef, {
+              userId: userUid,
+              date: gapDateStr,
+              wasActive: true,
+              freezeUsed: true,
+              timestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+          }
+        }
+
         if (action === 'reset') {
           t.update(userRef, {
             streakCount: 1,
