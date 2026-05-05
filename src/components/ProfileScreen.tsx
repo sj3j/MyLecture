@@ -106,8 +106,8 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
       let errorMsg = err.message || '';
       if (err.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed')) {
          setError(isRtl 
-           ? 'تأكد من اتصالك بالإنترنت والغي تفعيل مانع الإعلانات أو الـ VPN وحاول مرة أخرى.' 
-           : 'Network error. Check your connection, disable Ad-Blocker/VPN and try again.');
+           ? 'خطأ في الاتصال: قد تحتاج للإدارة لإضافة رابط الموقع لقائمة النطاقات المسموحة في Firebase (Authorized Domains) و (API Key Restrictions).' 
+           : 'Network error. Ask admin to add this domain to Firebase Authorized Domains & API Key restrictions.');
       } else {
          setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error during login');
       }

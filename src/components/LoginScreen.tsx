@@ -96,8 +96,8 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           let errorMsg = error.message || '';
           if (error.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed')) {
             setError(isRtl 
-              ? 'تأكد من اتصالك بالإنترنت والغي تفعيل مانع الإعلانات أو الـ VPN وحاول مرة أخرى.' 
-              : 'Network error. Check your connection, disable Ad-Blocker/VPN and try again.');
+              ? 'خطأ في الاتصال: قد تحتاج لإيقاف الـ VPN/Adblocker، أو يجب على الإدارة إضافة رابط الموقع (Vercel) لقائمة النطاقات المسموحة في Firebase (Authorized Domains) و(API Key Restrictions).' 
+              : 'Network error. Disable VPN/Adblocker or ask admin to add this domain to Firebase Authorized Domains & API Key restrictions.');
           } else {
             setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
           }
@@ -188,8 +188,8 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       if (err.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed') || errorMsg.includes('Failed to fetch')) {
          errorMsg = isRtl 
-           ? 'تأكد من اتصالك بالإنترنت والغي تفعيل مانع الإعلانات أو الـ VPN وحاول مرة أخرى.' 
-           : 'Network error. Check your connection, disable Ad-Blocker/VPN and try again.';
+           ? 'خطأ في الشبكة: تأكد من تفعيل الإنترنت/إغلاق الـVPN، أو تحقق الإدارة من إضافة رابط الموقع لإعدادات Firebase (Authorized Domains & API Keys).' 
+           : 'Network error. Disable VPN/Adblocker or ask admin to add this domain to Firebase Authorized Domains & API Key restrictions.';
       } else if (errorMsg.includes('auth/invalid-credential')) {
          errorMsg = isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials';
       }
