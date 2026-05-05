@@ -101,9 +101,16 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
       await setDoc(doc(db, 'users', result.user.uid), userData, { merge: true });
       
       // If we get here, they are signed in. The auth state listener in App.tsx will handle setting the user state.
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error during login');
+      let errorMsg = err.message || '';
+      if (err.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed')) {
+         setError(isRtl 
+           ? 'تأكد من اتصالك بالإنترنت والغي تفعيل مانع الإعلانات أو الـ VPN وحاول مرة أخرى.' 
+           : 'Network error. Check your connection, disable Ad-Blocker/VPN and try again.');
+      } else {
+         setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error during login');
+      }
     } finally {
       setIsLoggingIn(false);
     }

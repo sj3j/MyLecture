@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save, Undo, ChevronDown, Search } from 'lucide-react';
-import { collection, query, getDocs, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save, Undo, ChevronDown, Search, Edit2 } from 'lucide-react';
+import { collection, query, getDocs, where, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { UserProfile, CATEGORIES, TRANSLATIONS } from '../../types';
 import { parseGradeFile, ParsedRow } from '../../services/gradeFileParser';
@@ -134,6 +134,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [confirmingBatchId, setConfirmingBatchId] = useState<string | null>(null);
+  const [editBatchId, setEditBatchId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // History State
@@ -286,11 +287,12 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
     if (!matchedResults.length) return;
     setIsSaving(true);
     try {
-       await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material);
+       await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined);
        setMatchedResults([]);
        setExamName('');
        setMaterial('');
        setMaxDegree('100');
+       setEditBatchId(null);
        setTab('history');
     } catch (err: any) {
       setErrorMsg("فشل الحفظ: " + err.message);
@@ -304,9 +306,54 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
     setErrorMsg('');
     try {
       await undoDegreeBatch(batchId);
+      if (editBatchId === batchId) setEditBatchId(null);
       setConfirmingBatchId(null);
     } catch (err: any) {
       setErrorMsg("فشل التراجع: " + err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleEditBatch = async (batch: any) => {
+    setIsDeleting(true);
+    setErrorMsg('');
+    try {
+      const examId = `exam_${batch.id}`;
+      const results: MatchedResult[] = [];
+      const studentIds = batch.studentIds || [];
+      const chunkSize = 10;
+      for (let i = 0; i < studentIds.length; i += chunkSize) {
+         const chunk = studentIds.slice(i, i + chunkSize);
+         const promises = chunk.map((uid: string) => getDoc(doc(db, `degrees/${uid}/exams/${examId}`)));
+         const docs = await Promise.all(promises);
+         
+         docs.forEach((d, idx) => {
+            if (d.exists()) {
+               const data = d.data();
+               const uid = chunk[idx];
+               const student = students.find(s => s.uid === uid);
+               results.push({
+                 rowId: `edit_${uid}`,
+                 excelName: student?.originalName || student?.name || 'طالب مجهول',
+                 degree: data.degree,
+                 matchedUserId: uid,
+                 matchedUserName: student?.name || null,
+                 matchScore: 1,
+                 originalRowData: {}
+               });
+            }
+         });
+      }
+      setMatchedResults(results);
+      setExamName(batch.examName);
+      setMaterial(batch.material || '');
+      setMaxDegree(String(batch.maxDegree || 100));
+      setEditBatchId(batch.id);
+      setTab('upload');
+    } catch (e: any) {
+      console.error(e);
+      setErrorMsg("حدث خطأ في تحميل الكشف: " + e.message);
     } finally {
       setIsDeleting(false);
     }
@@ -347,7 +394,13 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                 <div className="flex items-center gap-2 bg-gray-100 dark:bg-zinc-800 p-1 rounded-lg">
                   <button 
                     className={`px-4 py-2 rounded-md font-medium text-sm transition-colors ${tab === 'upload' ? 'bg-white dark:bg-zinc-700 shadow text-emerald-600 dark:text-emerald-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
-                    onClick={() => setTab('upload')}
+                    onClick={() => {
+                        setTab('upload');
+                        setEditBatchId(null);
+                        setMatchedResults([]);
+                        setExamName('');
+                        setMaterial('');
+                    }}
                   >
                     رفع كشف جديد
                   </button>
@@ -369,6 +422,23 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
 
       {tab === 'upload' && (
         <div className="space-y-6">
+          {editBatchId && (
+            <div className="bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300 p-4 rounded-xl flex items-center justify-between">
+              <span className="font-bold">أنت الآن تقوم بتعديل كشف محفوظ مسبقاً. سيتم استبدال الكشف القديم عند الحفظ.</span>
+              <button 
+                onClick={() => {
+                  setTab('upload');
+                  setEditBatchId(null);
+                  setMatchedResults([]);
+                  setExamName('');
+                  setMaterial('');
+                }}
+                className="text-sm font-medium hover:underline text-sky-600 dark:text-sky-400"
+              >
+                إلغاء التعديل
+              </button>
+            </div>
+          )}
           {matchedResults.length === 0 ? (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6 sm:p-10 text-center">
               <FileSpreadsheet className="w-16 h-16 text-emerald-100 dark:text-emerald-900/50 mx-auto mb-4" />
@@ -465,7 +535,10 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                      + إضافة طالب
                    </button>
                    <button 
-                     onClick={() => setMatchedResults([])}
+                     onClick={() => {
+                        setMatchedResults([]);
+                        setEditBatchId(null);
+                     }}
                      disabled={isSaving}
                      className="flex-1 sm:flex-none px-4 py-2 border border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 font-medium transition-colors"
                    >
@@ -602,13 +675,23 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                       </button>
                     </>
                   ) : (
-                    <button 
-                      onClick={() => setConfirmingBatchId(batch.id)}
-                      className="px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-xl font-medium text-sm transition-colors flex items-center gap-2"
-                    >
-                      <Undo className="w-4 h-4" />
-                      حذف الكشف والتراجع
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => handleEditBatch(batch)}
+                        disabled={isDeleting}
+                        className="px-4 py-2 text-sky-600 bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-400 dark:hover:bg-sky-900/40 rounded-xl font-medium text-sm transition-colors flex items-center gap-2"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        تعديل الكشف
+                      </button>
+                      <button 
+                        onClick={() => setConfirmingBatchId(batch.id)}
+                        className="px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-xl font-medium text-sm transition-colors flex items-center gap-2"
+                      >
+                        <Undo className="w-4 h-4" />
+                        حذف الكشف والتراجع
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

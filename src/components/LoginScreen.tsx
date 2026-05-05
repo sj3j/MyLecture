@@ -93,7 +93,14 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
         console.error('Error signing in:', error);
         if (!externalError) {
-          setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
+          let errorMsg = error.message || '';
+          if (error.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed')) {
+            setError(isRtl 
+              ? 'تأكد من اتصالك بالإنترنت والغي تفعيل مانع الإعلانات أو الـ VPN وحاول مرة أخرى.' 
+              : 'Network error. Check your connection, disable Ad-Blocker/VPN and try again.');
+          } else {
+            setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
+          }
         }
       }
     } finally {
@@ -177,7 +184,17 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
 
     } catch (err: any) {
       console.error('Email sign in error:', err);
-      setError(err.message || (isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials'));
+      let errorMsg = err.message || (isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials');
+      
+      if (err.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed') || errorMsg.includes('Failed to fetch')) {
+         errorMsg = isRtl 
+           ? 'تأكد من اتصالك بالإنترنت والغي تفعيل مانع الإعلانات أو الـ VPN وحاول مرة أخرى.' 
+           : 'Network error. Check your connection, disable Ad-Blocker/VPN and try again.';
+      } else if (errorMsg.includes('auth/invalid-credential')) {
+         errorMsg = isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials';
+      }
+
+      setError(errorMsg);
     } finally {
       setIsLoading(false);
     }

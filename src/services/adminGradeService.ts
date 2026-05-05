@@ -7,7 +7,8 @@ export async function confirmDegreeBatchClient(
   examName: string,
   confirmedResults: MatchedResult[],
   maxDegree?: number | string,
-  material?: string
+  material?: string,
+  existingBatchId?: string
 ) {
   const user = auth.currentUser;
   if (!user) throw new Error("يجب تسجيل الدخول");
@@ -16,7 +17,15 @@ export async function confirmDegreeBatchClient(
     throw new Error('بيانات غير صالحة');
   }
 
-  const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  if (existingBatchId) {
+    try {
+      await undoDegreeBatch(existingBatchId);
+    } catch (e) {
+      console.warn("Failed to undo previous batch during update", e);
+    }
+  }
+
+  const batchId = existingBatchId || `batch_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const examId = `exam_${batchId}`;
   
   let saved = 0;
