@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save, Undo } from 'lucide-react';
+import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save, Undo, ChevronDown, Search } from 'lucide-react';
 import { collection, query, getDocs, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { UserProfile, CATEGORIES, TRANSLATIONS } from '../../types';
@@ -14,6 +14,102 @@ export interface AdminGradesScreenProps {
   onClose: () => void;
   user: UserProfile | null;
 }
+
+const SearchableStudentSelect = ({ 
+  value, 
+  onChange, 
+  students, 
+  selectedStudentIds, 
+  className 
+}: { 
+  value: string | null; 
+  onChange: (val: string | null) => void; 
+  students: any[]; 
+  selectedStudentIds: Set<string>; 
+  className?: string;
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedStudent = students.find(s => s.uid === value);
+  const showAlias = selectedStudent?.name && selectedStudent?.originalName && !selectedStudent.originalName.includes(selectedStudent.name) && selectedStudent.originalName !== selectedStudent.name;
+
+  const displaySelected = selectedStudent 
+    ? `${selectedStudent.originalName} ${showAlias ? `(الاسم بحسابه: ${selectedStudent.name})` : ''} - ${selectedStudent.email || selectedStudent.uid}`
+    : 'غير متطابق (لن يتم الحفظ)';
+
+  const filteredStudents = students.filter(s => {
+    if (selectedStudentIds.has(s.uid) && s.uid !== value) return false;
+    if (!search) return true;
+    const term = search.toLowerCase();
+    return (s.originalName && s.originalName.toLowerCase().includes(term)) ||
+           (s.name && s.name.toLowerCase().includes(term)) ||
+           (s.email && s.email.toLowerCase().includes(term));
+  });
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full max-w-[250px] sm:max-w-[300px] border px-3 py-2 rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-zinc-900 border-gray-300 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${className}`}
+      >
+        <span className="truncate text-sm text-gray-900 dark:text-gray-100">{displaySelected}</span>
+        <ChevronDown className="w-4 h-4 ml-2 text-gray-500 flex-shrink-0" />
+      </div>
+      
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full sm:w-[350px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-xl max-h-60 flex flex-col right-0 overflow-hidden">
+          <div className="p-2 border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
+            <div className="relative">
+              <input
+                type="text"
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="ابحث عن اسم أو إيميل..."
+                className="w-full pl-2 pr-9 py-2 text-sm bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            </div>
+          </div>
+          <div className="overflow-y-auto p-1 py-2 flex-1">
+            <div 
+              onClick={() => { onChange(null); setIsOpen(false); }}
+              className={`px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors ${!value ? 'bg-gray-100/80 dark:bg-zinc-800/80 font-bold text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
+            >
+              غير متطابق (لن يتم الحفظ)
+            </div>
+            {filteredStudents.map(s => {
+              const showA = s.name && s.originalName && !s.originalName.includes(s.name) && s.originalName !== s.name;
+              return (
+                <div 
+                  key={s.uid}
+                  onClick={() => { onChange(s.uid); setIsOpen(false); }}
+                  className={`px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors flex flex-col gap-0.5 ${value === s.uid ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-bold' : 'text-gray-700 dark:text-gray-300'}`}
+                >
+                  <span>{s.originalName}</span>
+                  {showA && <span className="text-[10px] text-gray-500 dark:text-zinc-400 font-normal">الاسم بحسابه: {s.name}</span>}
+                  <span className="text-[10px] text-gray-400 dark:text-zinc-500 font-mono font-normal truncate mt-0.5" dir="ltr">{s.email || s.uid}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGradesScreenProps) {
   const isMasterAdmin = auth.currentUser?.email === 'almdrydyl335@gmail.com' || auth.currentUser?.email === 'fenix.admin@gmail.com';
@@ -437,24 +533,16 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                            )}
                          </td>
                          <td className="px-6 py-4">
-                           <select
-                              value={result.matchedUserId || ''}
-                              onChange={(e) => handleManualMatchToggle(result.rowId, e.target.value || null)}
-                              className={`w-full max-w-[200px] border-gray-300 dark:border-zinc-700 rounded-lg text-sm bg-white dark:bg-zinc-900 dark:text-white focus:ring-emerald-500 focus:border-emerald-500
+                           <SearchableStudentSelect
+                              value={result.matchedUserId || null}
+                              onChange={(val) => handleManualMatchToggle(result.rowId, val)}
+                              students={students}
+                              selectedStudentIds={selectedStudentIds}
+                              className={`w-full max-w-[200px] text-sm
                                 ${result.matchedUserId && result.matchScore > 0.8 ? 'border-emerald-500 ring-1 ring-emerald-500' : 
                                   result.matchedUserId ? 'border-yellow-400 ring-1 ring-yellow-400' : 'border-red-400 ring-1 ring-red-400'}
                               `}
-                           >
-                             <option value="">غير متطابق (لن يتم الحفظ)</option>
-                             {students.filter(s => !selectedStudentIds.has(s.uid) || result.matchedUserId === s.uid).map(s => {
-                               const showAlias = s.name && s.originalName && !s.originalName.includes(s.name) && s.originalName !== s.name;
-                               return (
-                                 <option key={s.uid} value={s.uid}>
-                                   {s.originalName} {showAlias ? `(الاسم بحسابه: ${s.name})` : ''} - {s.email || s.uid}
-                                 </option>
-                               );
-                             })}
-                           </select>
+                           />
                            {result.matchedUserId && result.matchScore < 1 && (
                              <div className="mt-1 text-[10px] text-yellow-600 dark:text-yellow-500">تمت مطابقة تقريبية</div>
                            )}
