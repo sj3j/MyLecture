@@ -20,21 +20,17 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
 
   const handleAnswer = async (q: BankQuestion, choiceText: string) => {
-    if (isFinished) return;
+    if (isFinished || answers[q.id]) return;
     setAnswers(prev => ({ ...prev, [q.id]: choiceText }));
+    
+    const isCorrect = choiceText === q.correctAnswer;
+    if (isCorrect) {
+      setScore(s => s + 1);
+    }
+    await saveUserBankAnswer(userId, q.id, choiceText, isCorrect, sessionId, q.tags);
   };
 
   const executeFinish = async () => {
-    let correct = 0;
-    for (const q of questions) {
-       const userAns = answers[q.id];
-       if (userAns) {
-         const isCorrect = userAns === q.correctAnswer;
-         if (isCorrect) correct++;
-         await saveUserBankAnswer(userId, q.id, userAns, isCorrect, sessionId, q.tags);
-       }
-    }
-    setScore(correct);
     setIsFinished(true);
   };
 
@@ -78,10 +74,22 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
           return (
             <div key={q.id} className="bg-white dark:bg-zinc-800 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-zinc-700">
               <div className="flex justify-between items-start mb-4">
-                 <span className="px-3 py-1 bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-slate-300 rounded font-bold text-sm">
-                   السؤال {index + 1}
-                 </span>
-                 {isFinished && userAns && (
+                 <div className="flex flex-wrap gap-2 items-center">
+                   <span className="px-3 py-1 bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-slate-300 rounded font-bold text-sm">
+                     السؤال {index + 1}
+                   </span>
+                   {q.tags && q.tags.map((tag: string) => (
+                     <span key={tag} className="px-2 py-0.5 bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 border border-sky-200 dark:border-sky-800 rounded text-xs font-bold whitespace-nowrap">
+                       {tag.replace('_', ' ')}
+                     </span>
+                   ))}
+                   {q.year && (
+                     <span className="px-2 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded text-xs font-bold whitespace-nowrap">
+                       {q.year}
+                     </span>
+                   )}
+                 </div>
+                 {userAns && (
                     <span className="font-bold flex items-center gap-1">
                       {userAns === q.correctAnswer ? (
                          <span className="text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4"/> صحيح</span>
@@ -99,8 +107,9 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
                   let btnClass = "w-full text-right p-4 rounded-2xl font-bold transition-all border-2 ";
                   const isSelected = userAns === c.text;
                   const isActualCorrect = c.text === q.correctAnswer;
+                  const hasAnswered = !!userAns;
 
-                  if (!isFinished) {
+                  if (!hasAnswered) {
                     if (isSelected) {
                       btnClass += "border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:border-sky-400 dark:text-sky-300";
                     } else {
@@ -120,7 +129,7 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
                     <button
                       key={i}
                       onClick={() => handleAnswer(q, c.text)}
-                      disabled={isFinished}
+                      disabled={hasAnswered || isFinished}
                       className={btnClass}
                       dir="auto"
                     >
@@ -130,7 +139,7 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
                 })}
               </div>
 
-              {isFinished && q.explanation && (
+              {userAns && q.explanation && (
                 <motion.div 
                   initial={{ opacity: 0, height: 0 }} 
                   animate={{ opacity: 1, height: 'auto' }} 
