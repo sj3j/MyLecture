@@ -5,7 +5,15 @@ import { MCQQuestion, LectureMCQSets } from '../types/mcq.types';
 import { trackEvent } from '../lib/analytics';
 
 // Assuming vite env variable for Gemini
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY });
+let ai: GoogleGenAI | null = null;
+try {
+  const key = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  if (key) {
+    ai = new GoogleGenAI({ apiKey: key });
+  }
+} catch (e) {
+  console.warn("Failed to initialize GoogleGenAI", e);
+}
 
 const MCQ_SYSTEM_PROMPT = `
 You are an expert pharmacy professor creating exam questions for 
@@ -85,9 +93,12 @@ function extractJson(text: string): any {
 async function callGeminiWithBackoff(contents: any, maxRetries = 3) {
   let attempt = 0;
   while (attempt < maxRetries) {
+    if (!ai) {
+      throw new Error('الرجاء إضافة مفتاح Gemini API في الإعدادات');
+    }
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-3.1-pro-preview',
         contents,
         config: { responseMimeType: 'application/json' }
       });
@@ -190,6 +201,34 @@ function smartShuffleChoices(question: any): any {
 }
 
 const pendingGenerations = new Map<string, Promise<MCQQuestion[]>>();
+
+export async function extractMCQsFromPDFFile(base64Data: string, prompt: string): Promise<any[]> {
+  const response = await callGeminiWithBackoff([
+    {
+      role: 'user',
+      parts: [
+        { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
+        { text: prompt }
+      ]
+    }
+  ]);
+
+  const responseText = response.text || '';
+  console.log("Raw Gemini JSON response:", responseText);
+  let extractedData;
+  try {
+    extractedData = JSON.parse(responseText);
+  } catch (e) {
+    const match = responseText.match(/\{[\s\S]*\}/);
+    if (match) {
+      extractedData = JSON.parse(match[0]);
+    } else {
+      throw new Error('فشل تحليل البيانات المستخرجة');
+    }
+  }
+
+  return extractedData.questions || [];
+}
 
 export function generateMCQsForLecture(lectureId: string, subjectId: string, pdfUrl: string): Promise<MCQQuestion[]> {
   if (pendingGenerations.has(lectureId)) {

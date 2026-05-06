@@ -159,6 +159,32 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     }
   };
 
+  const handleFixCalendar = async (userUid: string | undefined, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!userUid) return;
+    if (!window.confirm(isRtl ? 'هل تريد حقاً تعبئة الأيام المفقودة كأيام مجمدة؟' : 'Fill missing days as frozen?')) return;
+    setIsSubmitting(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("No auth token");
+      const res = await fetch("/api/admin/fix-calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ userUid })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const msg = isRtl ? 'تم إصلاح التقويم بنجاح' : 'Calendar fixed successfully';
+        setSuccess(msg); window.alert(msg);
+      } else throw new Error(data.error || "API error");
+    } catch (err: any) {
+      const msg = err.message || (isRtl ? 'فشل الإصلاح' : 'Failed to fix');
+      setError(msg); window.alert(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleResolvePending = async (userUid: string, action: 'reset' | 'forgive') => {
     setIsSubmitting(true);
     try {
@@ -449,6 +475,23 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                               >
                                 {isRtl ? 'استرجاع الستريك المُستحق' : 'Recover Streak'}
                             </button>
+
+                            <div className="space-y-2 pt-4 border-t border-orange-200 dark:border-orange-800/30 mt-4">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                {isRtl ? 'إصلاح التقويم (تجميد الأيام المفقودة)' : 'Fix Calendar (Freeze Missing Days)'}
+                              </label>
+                              <button
+                                type="button"
+                                onClick={(e) => handleFixCalendar(editingStudent?.userUid, e)}
+                                disabled={isSubmitting}
+                                className="w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl whitespace-nowrap disabled:opacity-50"
+                              >
+                                {isRtl ? 'تصحيح الأيام المفقودة كأيام مجمدة' : 'Fix Missing Days as Frozen'}
+                              </button>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {isRtl ? 'هذا الخيار يبحث عن الأيام المفقودة في آخر 10 أيام ويجعلها مجمدة (لون أزرق).' : 'Finds missing empty days in last 10 days and turns them into frozen (blue) days.'}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>

@@ -6,6 +6,18 @@ import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 import { AudioProvider } from './contexts/AudioContext';
 
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (typeof args[0] === 'string' && args[0].includes('Detected an update time that is in the future')) return;
+  originalConsoleError.apply(console, args);
+};
+
+const originalConsoleWarn = console.warn;
+console.warn = (...args) => {
+  if (typeof args[0] === 'string' && args[0].includes('Detected an update time that is in the future')) return;
+  originalConsoleWarn.apply(console, args);
+};
+
 // Register PWA Service Worker
 if ('serviceWorker' in navigator) {
   registerSW({ immediate: true });

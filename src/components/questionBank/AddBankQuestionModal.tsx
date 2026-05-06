@@ -4,23 +4,25 @@ import { collection, query, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { X, Save } from 'lucide-react';
 import { BankQuestion, QuestionScope, QuestionTag, QuestionType, StemFormat, Difficulty, BankChoice } from '../../types/questionBank.types';
-import { addBankQuestion } from '../../services/questionBankService';
+import { addBankQuestion, editBankQuestion } from '../../services/questionBankService';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onAdded: () => void;
+  initialData?: BankQuestion | null;
 }
 
 const CATEGORIES = ['pharmacology', 'pharmacognosy', 'organic_chemistry', 'biochemistry', 'cosmetics'];
 const ALL_TAGS: QuestionTag[] = ['وزاري', 'سنين_سابقة', 'سؤال_الدكتور', 'مهم', 'متوقع'];
 
-export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props) {
+export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initialData }: Props) {
   const [scope, setScope] = useState<QuestionScope>('global');
   const [subjectId, setSubjectId] = useState<string>(CATEGORIES[0]);
   const [lectureId, setLectureId] = useState<string>('');
   
   const [tags, setTags] = useState<Set<QuestionTag>>(new Set());
+  const [customTag, setCustomTag] = useState<string>('');
   const [year, setYear] = useState<string>('');
 
   const [type, setType] = useState<QuestionType>('mcq');
@@ -43,6 +45,48 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
 
   useEffect(() => {
     if (isOpen) {
+      if (initialData) {
+        setScope(initialData.scope);
+        setSubjectId(initialData.subjectId || CATEGORIES[0]);
+        setLectureId(initialData.lectureId || '');
+        setTags(new Set(initialData.tags || []));
+        setYear(initialData.year || '');
+        setType(initialData.type);
+        setStemFormat(initialData.stemFormat || 'standard');
+        setStem(initialData.stem);
+        setDifficulty(initialData.difficulty || 'medium');
+        
+        let newChoices = [...initialData.choices];
+        while (newChoices.length < 5) {
+            newChoices.push({ label: String.fromCharCode(65 + newChoices.length), text: '' });
+        }
+        setChoices(newChoices);
+        
+        const correctIndex = initialData.choices.findIndex(c => c.text === initialData.correctAnswer);
+        setCorrectAnswerIndex(correctIndex >= 0 ? correctIndex : 0);
+        setExplanation(initialData.explanation || '');
+      } else {
+        // Reset form
+        setScope('global');
+        setSubjectId(CATEGORIES[0]);
+        setLectureId('');
+        setTags(new Set());
+        setYear('');
+        setType('mcq');
+        setStemFormat('standard');
+        setStem('');
+        setDifficulty('medium');
+        setChoices([
+          { label: 'A', text: '' },
+          { label: 'B', text: '' },
+          { label: 'C', text: '' },
+          { label: 'D', text: '' },
+          { label: 'E', text: '' }
+        ]);
+        setCorrectAnswerIndex(0);
+        setExplanation('');
+      }
+
       getDocs(query(collection(db, 'lectures')))
         .then(snap => {
           setLectures(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -51,7 +95,7 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
           console.error("Failed to fetch lectures", err);
         });
     }
-  }, [isOpen]);
+  }, [isOpen, initialData]);
 
   const toggleTag = (tag: QuestionTag) => {
     const newTags = new Set(tags);
@@ -105,7 +149,11 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
         isActive: true
       };
 
-      await addBankQuestion(payload);
+      if (initialData) {
+        await editBankQuestion(initialData.id, payload);
+      } else {
+        await addBankQuestion(payload);
+      }
       onAdded();
       onClose();
     } catch (e: any) {
@@ -121,7 +169,9 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-zinc-800 bg-sky-50 dark:bg-sky-900/10">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">إضافة سؤال جديد</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+            {initialData ? 'تعديل السؤال' : 'إضافة سؤال جديد'}
+          </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-full transition-colors text-gray-500">
             <X className="w-6 h-6" />
           </button>
@@ -192,6 +242,45 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded }: Props
                   {tag.replace('_', ' ')}
                 </button>
               ))}
+              {Array.from(tags).filter((t: string) => !ALL_TAGS.includes(t)).map((tag: string) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className="px-3 py-1.5 rounded-full text-sm font-bold transition-colors border-2 border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-900/30"
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-3">
+              <input 
+                type="text" 
+                placeholder="إضافة تصنيف مخصص (مثال: الدور 1 2024)"
+                value={customTag}
+                onChange={e => setCustomTag(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (customTag.trim()) {
+                      toggleTag(customTag.trim());
+                      setCustomTag('');
+                    }
+                  }
+                }}
+                className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800"
+              />
+              <button
+                onClick={(e) => {
+                    e.preventDefault();
+                    if (customTag.trim()) {
+                      toggleTag(customTag.trim());
+                      setCustomTag('');
+                    }
+                }}
+                className="px-6 py-3 bg-sky-600 dark:bg-sky-500 text-white rounded-xl font-bold"
+              >
+                إضافة
+              </button>
             </div>
             {tags.has('سنين_سابقة') && (
               <input 

@@ -340,7 +340,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                  matchedUserId: uid,
                  matchedUserName: student?.name || null,
                  matchScore: 1,
-                 originalRowData: {}
+                 originalRow: {}
                });
             }
          });
@@ -359,7 +359,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
     }
   };
 
-  const selectedStudentIds = new Set(matchedResults.map(r => r.matchedUserId).filter(Boolean));
+  const selectedStudentIds = new Set(matchedResults.map(r => r.matchedUserId).filter(Boolean)) as Set<string>;
 
   const sortedMatchedResults = [...matchedResults].sort((a, b) => {
     if (sortUnmatchedFirst) {

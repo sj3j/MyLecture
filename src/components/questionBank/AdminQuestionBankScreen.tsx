@@ -6,6 +6,7 @@ import { TRANSLATIONS, Language } from '../../types';
 import { BankQuestion } from '../../types/questionBank.types';
 import { getAllBankQuestionsForAdmin, softDeleteBankQuestion } from '../../services/questionBankService';
 import AddBankQuestionModal from './AddBankQuestionModal';
+import UploadPDFModal from './UploadPDFModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
 interface AdminQuestionBankScreenProps {
@@ -20,7 +21,9 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isImportPdfOpen, setIsImportPdfOpen] = useState(false);
   const [questionToDelete, setQuestionToDelete] = useState<string | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<BankQuestion | null>(null);
 
   const tags = ['الكل', 'وزاري', 'سنين_سابقة', 'سؤال_الدكتور', 'مهم', 'متوقع'];
 
@@ -94,6 +97,12 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
                 <Plus className="w-5 h-5" /> إضافة سؤال
               </button>
               <button 
+                onClick={() => setIsImportPdfOpen(true)} 
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2"
+              >
+                استخراج من PDF (AI)
+              </button>
+              <button 
                 onClick={() => alert("استيراد Excel لاحقاً")} 
                 className="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2"
               >
@@ -140,7 +149,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
                 <div className="flex justify-between items-center text-xs text-slate-500">
                   <span>الصعوبة: {q.difficulty} • محاولات: {q.attemptCount}</span>
                   <div className="flex gap-2">
-                    <button className="text-sky-600 hover:underline">تعديل</button>
+                    <button onClick={() => setEditingQuestion(q)} className="text-sky-600 hover:underline">تعديل</button>
                     <button onClick={() => setQuestionToDelete(q.id)} className="text-red-600 hover:underline">حذف</button>
                   </div>
                 </div>
@@ -154,6 +163,24 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
         isOpen={isAddOpen} 
         onClose={() => setIsAddOpen(false)} 
         onAdded={fetchQuestions} 
+      />
+
+      {editingQuestion && (
+        <AddBankQuestionModal 
+          isOpen={true} 
+          initialData={editingQuestion}
+          onClose={() => setEditingQuestion(null)} 
+          onAdded={() => {
+            setEditingQuestion(null);
+            fetchQuestions();
+          }} 
+        />
+      )}
+      
+      <UploadPDFModal
+        isOpen={isImportPdfOpen}
+        onClose={() => setIsImportPdfOpen(false)}
+        onAdded={fetchQuestions}
       />
       
       <ConfirmModal

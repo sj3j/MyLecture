@@ -1,5 +1,5 @@
 export type QuestionScope = 'lecture' | 'subject' | 'global';
-export type QuestionTag = 'وزاري' | 'سنين_سابقة' | 'سؤال_الدكتور' | 'مهم' | 'متوقع';
+export type QuestionTag = 'وزاري' | 'سنين_سابقة' | 'سؤال_الدكتور' | 'مهم' | 'متوقع' | string;
 export type QuestionType = 'mcq' | 'true_false';
 export type StemFormat = 'standard' | 'except' | 'regarding' | 'true_false';
 export type Difficulty = 'easy' | 'medium' | 'hard';

@@ -996,35 +996,69 @@ async function startServer() {
         if (!pendingDoc.exists) throw new Error("Pending streak reset not found");
   
         const pendingData = pendingDoc.data();
-        if (pendingData && pendingData.dateRecorded && pendingData.missedDays) {
-          const missedDays = pendingData.missedDays;
-          let d = new Date(`${pendingData.dateRecorded}T12:00:00Z`);
-          // Go backwards from dateRecorded
-          for (let i = 0; i < missedDays; i++) {
-            d.setDate(d.getDate() - 1);
-            const gapY = d.getUTCFullYear();
-            const gapM = d.getUTCMonth() + 1;
-            const gapD = d.getUTCDate();
-            const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
-            
-            const gapHistoryRef = db.collection('streak_history').doc(`${userUid}_${gapDateStr}`);
-            // Explicitly mark them as frozen/blue for the calendar visual
-            t.set(gapHistoryRef, {
-              userId: userUid,
-              date: gapDateStr,
-              wasActive: true,
-              freezeUsed: true,
-              timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-          }
-        }
+        const userDoc = await t.get(userRef);
+        const currentTokens = userDoc.exists ? (userDoc.data()?.freezeTokens || 0) : 0;
 
         if (action === 'reset') {
+          let tokensToConsume = 0;
+          if (pendingData && pendingData.dateRecorded && pendingData.missedDays) {
+            const missedDays = pendingData.missedDays;
+            tokensToConsume = Math.min(missedDays, currentTokens);
+            
+            const missedDaysArr: string[] = [];
+            let d = new Date(`${pendingData.dateRecorded}T12:00:00Z`);
+            for (let i = 0; i < missedDays; i++) {
+              d.setDate(d.getDate() - 1);
+              const gapY = d.getUTCFullYear();
+              const gapM = d.getUTCMonth() + 1;
+              const gapD = d.getUTCDate();
+              missedDaysArr.push(`${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`);
+            }
+            missedDaysArr.reverse(); // oldest to newest
+
+            for (let i = 0; i < missedDaysArr.length; i++) {
+              const gapDateStr = missedDaysArr[i];
+              const gapHistoryRef = db.collection('streak_history').doc(`${userUid}_${gapDateStr}`);
+              
+              t.set(gapHistoryRef, {
+                userId: userUid,
+                date: gapDateStr,
+                wasActive: true,
+                freezeUsed: true,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+              });
+            }
+          }
+
           t.update(userRef, {
             streakCount: 1,
+            freezeTokens: Math.max(0, currentTokens - tokensToConsume),
             hasPendingStreakReset: admin.firestore.FieldValue.delete()
           });
+
         } else if (action === 'forgive') {
+          if (pendingData && pendingData.dateRecorded && pendingData.missedDays) {
+            const missedDays = pendingData.missedDays;
+            
+            let d = new Date(`${pendingData.dateRecorded}T12:00:00Z`);
+            for (let i = 0; i < missedDays; i++) {
+              d.setDate(d.getDate() - 1);
+              const gapY = d.getUTCFullYear();
+              const gapM = d.getUTCMonth() + 1;
+              const gapD = d.getUTCDate();
+              const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
+              
+              const gapHistoryRef = db.collection('streak_history').doc(`${userUid}_${gapDateStr}`);
+              t.set(gapHistoryRef, {
+                userId: userUid,
+                date: gapDateStr,
+                wasActive: true,
+                freezeUsed: true,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+              });
+            }
+          }
+
           t.update(userRef, {
             hasPendingStreakReset: admin.firestore.FieldValue.delete()
           });
@@ -1094,6 +1128,51 @@ async function startServer() {
     } catch (e) {
       console.error("Streak recovery error:", e);
       res.status(500).json({ error: "Error recovering streak" });
+    }
+  });
+
+  app.post("/api/admin/fix-calendar", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { userUid } = req.body;
+      const db = admin.firestore();
+      
+      const today = new Date();
+      const datesToCheck: string[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const d = new Date(today);
+        d.setUTCDate(d.getUTCDate() - i);
+        const y = d.getUTCFullYear();
+        const m = d.getUTCMonth() + 1;
+        const day = d.getUTCDate();
+        const dateStr = `${y}-${m.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        datesToCheck.push(dateStr);
+      }
+
+      let fixedCount = 0;
+      await db.runTransaction(async (t) => {
+        const userRef = db.collection('users').doc(userUid);
+        
+        datesToCheck.reverse(); // oldest to newest
+        
+        for (const dateStr of datesToCheck) {
+          const docRef = db.collection('streak_history').doc(`${userUid}_${dateStr}`);
+          const docSnap = await t.get(docRef);
+          if (!docSnap.exists) {
+            t.set(docRef, {
+              userId: userUid,
+              date: dateStr,
+              wasActive: true,
+              freezeUsed: true,
+              timestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+            fixedCount++;
+          }
+        }
+      });
+      res.json({ success: true, fixedCount });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Error" });
     }
   });
 
