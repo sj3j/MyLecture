@@ -94,10 +94,10 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
         console.error('Error signing in:', error);
         if (!externalError) {
           let errorMsg = error.message || '';
-          if (error.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed')) {
+          if (error.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed') || errorMsg.includes('Failed to fetch')) {
             setError(isRtl 
-              ? 'خطأ في الاتصال: قد تحتاج لإيقاف الـ VPN/Adblocker، أو يجب على الإدارة إضافة رابط الموقع (Vercel) لقائمة النطاقات المسموحة في Firebase (Authorized Domains) و(API Key Restrictions).' 
-              : 'Network error. Disable VPN/Adblocker or ask admin to add this domain to Firebase Authorized Domains & API Key restrictions.');
+              ? 'خطأ في الشبكة. لحل المشكلة (خاصة لمستخدمي الآيفون):\n١- افتح الرابط في متصفح سفاري (Safari) أو كروم وليس من داخل التليجرام أو تطبيقات أخرى.\n٢- تأكد من صحة تاريخ ووقت الجهاز.\n٣- قم بإيقاف (Private Relay) من إعدادات الـ iCloud.\n٤- جرب شبكة إنترنت مختلفة.' 
+              : 'Network error. Troubleshooting (iOS):\n1- Open directly in Safari/Chrome (not in-app browsers).\n2- Check device date/time.\n3- Disable Private Relay.\n4- Try a different network.');
           } else {
             setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
           }
@@ -188,8 +188,8 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       if (err.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed') || errorMsg.includes('Failed to fetch')) {
          errorMsg = isRtl 
-           ? 'خطأ في الشبكة: تأكد من تفعيل الإنترنت/إغلاق الـVPN، أو تحقق الإدارة من إضافة رابط الموقع لإعدادات Firebase (Authorized Domains & API Keys).' 
-           : 'Network error. Disable VPN/Adblocker or ask admin to add this domain to Firebase Authorized Domains & API Key restrictions.';
+           ? 'خطأ في الشبكة. لحل المشكلة (خاصة لمستخدمي الآيفون):\n١- افتح الرابط في متصفح سفاري (Safari) أو كروم وليس من داخل التليجرام أو تطبيقات أخرى.\n٢- تأكد من صحة تاريخ ووقت الجهاز.\n٣- قم بإيقاف (Private Relay) من إعدادات الـ iCloud.\n٤- جرب شبكة إنترنت مختلفة.' 
+           : 'Network error. Troubleshooting (iOS):\n1- Open directly in Safari/Chrome (not in-app browsers).\n2- Check device date/time.\n3- Disable Private Relay.\n4- Try a different network.';
       } else if (errorMsg.includes('auth/invalid-credential')) {
          errorMsg = isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials';
       }
@@ -215,7 +215,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
         </p>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-sm font-bold border border-red-100 dark:border-red-900/50">
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-sm font-bold border border-red-100 dark:border-red-900/50 whitespace-pre-line">
             {error}
           </div>
         )}

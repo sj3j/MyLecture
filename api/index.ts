@@ -574,9 +574,11 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
       const effectiveDate = getEffectiveDateString(gracePeriodHours);
       const historyId = `${user.uid}_${effectiveDate}`;
       const historyRef = db.collection('streak_history').doc(historyId);
+      const pendingDocRef = db.collection('pending_streak_resets').doc(user.uid);
       
       const userDoc = await t.get(userRef);
       const historyDoc = await t.get(historyRef);
+      const pendingDoc = await t.get(pendingDocRef);
       
       if (!userDoc.exists) {
         throw new Error("User not found");
@@ -652,8 +654,20 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
             const previousStreak = streakCount;
             streakCount = 1;
 
+            let canCreatePending = false;
             if (!data.hasPendingStreakReset) {
-              const pendingDocRef = db.collection('pending_streak_resets').doc(user.uid);
+                canCreatePending = true;
+            } else if (pendingDoc.exists) {
+                const pData = pendingDoc.data();
+                if (pData && pData.expiresAt) {
+                    const exp = pData.expiresAt.toDate ? pData.expiresAt.toDate() : new Date(pData.expiresAt);
+                    if (exp < new Date()) canCreatePending = true;
+                }
+            } else {
+                canCreatePending = true; // flag is true but doc doesn't exist
+            }
+
+            if (canCreatePending) {
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7);
 

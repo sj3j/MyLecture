@@ -46,11 +46,25 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
         id: doc.id,
         ...doc.data()
       }));
-      const validPendingData = pendingData.filter((p: any) => {
-        if (!p.expiresAt) return true;
-        const expiryDate = p.expiresAt.toDate ? p.expiresAt.toDate() : new Date(p.expiresAt);
-        return expiryDate > new Date();
-      });
+      const validPendingData = pendingData.map((p: any) => {
+        let expiryDate: Date | null = null;
+        if (p.expiresAt) {
+          expiryDate = p.expiresAt.toDate ? p.expiresAt.toDate() : new Date(p.expiresAt);
+        } else if (p.createdAt) {
+          const createdAt = p.createdAt.toDate ? p.createdAt.toDate() : new Date(p.createdAt);
+          expiryDate = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+        } else if (p.dateRecorded) {
+          const recordedAt = new Date(p.dateRecorded);
+          expiryDate = new Date(recordedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+        }
+        
+        if (expiryDate) {
+          const diffTime = expiryDate.getTime() - new Date().getTime();
+          const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return { ...p, expiryDate, daysLeft };
+        }
+        return { ...p, daysLeft: -1 };
+      }).filter((p: any) => p.daysLeft > 0);
       setPendingResets(validPendingData.sort((a: any, b: any) => (b.missedDays || 0) - (a.missedDays || 0)));
       
       const userMap = new Map();
@@ -327,6 +341,9 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                             </div>
                             <div className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
                               {isRtl ? 'الستريك المعرض للخسارة:' : 'Streak at risk:'} <span className="font-bold text-orange-500">{pr.streakAtRisk}</span> • {isRtl ? 'أيام الغياب:' : 'Missed days:'} <span className="font-bold">{pr.missedDays}</span>
+                              <span className="mx-2 text-rose-500 font-bold bg-rose-50 dark:bg-rose-900/30 px-2 py-0.5 rounded-full text-xs">
+                                {isRtl ? `باقي ${pr.daysLeft} أيام لانتهاء الفرصة` : `${pr.daysLeft} days left to restore`}
+                              </span>
                             </div>
                           </div>
                           <div className="flex gap-2 shrink-0">
@@ -335,14 +352,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                               disabled={isSubmitting}
                               className="px-4 py-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50 rounded-xl font-bold transition-colors text-sm"
                             >
-                              {isRtl ? 'مسامحة (إبقاء الستريك)' : 'Forgive (Keep Streak)'}
-                            </button>
-                            <button
-                              onClick={() => handleResolvePending(pr.id, 'reset')}
-                              disabled={isSubmitting}
-                              className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 rounded-xl font-bold transition-colors text-sm"
-                            >
-                              {isRtl ? 'تجاهل (إبقاء الخسارة)' : 'Ignore (Leave Lost)'}
+                              {isRtl ? 'استعادة الستريك' : 'Restore Streak'}
                             </button>
                           </div>
                         </div>
