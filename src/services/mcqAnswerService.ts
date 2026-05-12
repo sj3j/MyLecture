@@ -225,6 +225,7 @@ export async function finalizeFirstAttempt(
          const existingSubjects = existing.subjectStats || {};
          newSubjectStats = { ...existingSubjects };
          if (newSubjectStats[subjectId]) {
+            newSubjectStats[subjectId] = { ...newSubjectStats[subjectId] };
             newSubjectStats[subjectId].correct = (newSubjectStats[subjectId].correct || 0) + correctCount;
             newSubjectStats[subjectId].total = (newSubjectStats[subjectId].total || 0) + totalQuestions;
             newSubjectStats[subjectId].lecturesAttempted = (newSubjectStats[subjectId].lecturesAttempted || 0) + 1;

@@ -398,20 +398,29 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
                       />
                     </div>
                   )}
-                  <iframe
-                    src={/iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') ? `https://docs.google.com/gview?url=${encodeURIComponent(lecture.pdfUrl)}&embedded=true` : `${lecture.pdfUrl}#toolbar=0`}
-                    className="w-full flex-1 border-none bg-slate-50 dark:bg-zinc-800 relative z-10"
-                    title={lecture.title}
-                  />
-                  {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') && (
-                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-0">
-                       <div className="text-center p-4">
-                         <p className="text-slate-500 mb-4">{isRtl ? 'إذا لم يظهر كشف الـ PDF، يمكنك فتحه مباشرة:' : "If the PDF doesn't load,"}</p>
-                         <a href={lecture.pdfUrl} target="_blank" rel="noopener noreferrer" className="px-6 py-2 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl pointer-events-auto shadow-lg transition-colors">
-                            {isRtl ? 'فتح المحاضرة' : 'Open PDF'}
-                         </a>
-                       </div>
+                  {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') ? (
+                    <div className="w-full flex-1 bg-slate-50 dark:bg-zinc-800 flex flex-col items-center justify-center p-6 text-center">
+                       <FileText className="w-16 h-16 text-sky-500 mb-4 opacity-80" />
+                       <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">{lecture.title}</h3>
+                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-sm">
+                         {isRtl ? 'بسبب قيود متصفحات الهواتف المحمولة، يرجى فتح ملف الـ PDF مباشرة للقراءة او التحميل' : 'Mobile browsers limit inline PDF viewing. Please open the file directly.'}
+                       </p>
+                       <a 
+                         href={lecture.pdfUrl} 
+                         target="_blank" 
+                         rel="noopener noreferrer" 
+                         className="px-6 py-3 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"
+                       >
+                         <ExternalLink className="w-5 h-5" />
+                         {isRtl ? 'فتح المحاضرة' : 'Open PDF'}
+                       </a>
                     </div>
+                  ) : (
+                    <iframe
+                      src={`${lecture.pdfUrl}#toolbar=0`}
+                      className="w-full flex-1 border-none bg-slate-50 dark:bg-zinc-800 relative z-10"
+                      title={lecture.title}
+                    />
                   )}
                 </div>
 
