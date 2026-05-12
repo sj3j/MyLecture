@@ -137,6 +137,9 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
   const [editBatchId, setEditBatchId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [resultSearchQuery, setResultSearchQuery] = useState('');
+  const [resultSortType, setResultSortType] = useState<'default' | 'highest' | 'lowest'>('default');
+
   // History State
   const [batches, setBatches] = useState<any[]>([]);
 
@@ -361,12 +364,32 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
 
   const selectedStudentIds = new Set(matchedResults.map(r => r.matchedUserId).filter(Boolean)) as Set<string>;
 
-  const sortedMatchedResults = [...matchedResults].sort((a, b) => {
-    if (sortUnmatchedFirst) {
+  let filteredAndSortedResults = matchedResults.filter(r => {
+    if (!resultSearchQuery) return true;
+    const query = resultSearchQuery.toLowerCase();
+    return (
+      r.excelName.toLowerCase().includes(query) ||
+      (r.matchedUserName && r.matchedUserName.toLowerCase().includes(query)) ||
+      (r.matchedUserOriginalName && r.matchedUserOriginalName.toLowerCase().includes(query))
+    );
+  });
+
+  filteredAndSortedResults.sort((a, b) => {
+    if (sortUnmatchedFirst && resultSortType === 'default') {
       const aMatched = !!a.matchedUserId;
       const bMatched = !!b.matchedUserId;
       if (aMatched === bMatched) return 0;
       return aMatched ? 1 : -1;
+    }
+    if (resultSortType === 'highest') {
+       const da = parseFloat(String(a.degree)) || 0;
+       const db = parseFloat(String(b.degree)) || 0;
+       return db - da; // highest first
+    }
+    if (resultSortType === 'lowest') {
+       const da = parseFloat(String(a.degree)) || 0;
+       const db = parseFloat(String(b.degree)) || 0;
+       return da - db; // lowest first
     }
     return 0;
   });
@@ -511,19 +534,38 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-zinc-800 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                  <div>
                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">مراجعة كشف: {examName}</h2>
-                   <div className="flex items-center gap-4 mt-1">
+                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mt-2">
                      <p className="text-sm text-gray-500 dark:text-zinc-400">
                        تم العثور على {matchedResults.length} صف. المطابق: {matchedResults.filter(r => r.matchedUserId).length}
                      </p>
-                     <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                       <input 
-                         type="checkbox" 
-                         checked={sortUnmatchedFirst} 
-                         onChange={(e) => setSortUnmatchedFirst(e.target.checked)}
-                         className="rounded text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                     
+                     <div className="flex flex-wrap items-center gap-3">
+                       <input
+                         type="text"
+                         placeholder="بحث عن طالب..."
+                         value={resultSearchQuery}
+                         onChange={(e) => setResultSearchQuery(e.target.value)}
+                         className="px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-700 rounded-lg dark:bg-zinc-800 focus:ring-emerald-500 focus:border-emerald-500 w-48"
                        />
-                       <span className="text-gray-600 dark:text-gray-300 font-bold">فرز "غير مطابق" أولاً</span>
-                     </label>
+                       <select
+                         value={resultSortType}
+                         onChange={(e: any) => setResultSortType(e.target.value)}
+                         className="px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-700 rounded-lg dark:bg-zinc-800 focus:ring-emerald-500 focus:border-emerald-500"
+                       >
+                         <option value="default">الترتيب الافتراضي</option>
+                         <option value="highest">الأعلى درجة أولاً</option>
+                         <option value="lowest">الأقل درجة أولاً</option>
+                       </select>
+                       <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                         <input 
+                           type="checkbox" 
+                           checked={sortUnmatchedFirst} 
+                           onChange={(e) => setSortUnmatchedFirst(e.target.checked)}
+                           className="rounded text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                         />
+                         <span className="text-gray-600 dark:text-gray-300 font-bold">فرز "غير مطابق" أولاً</span>
+                       </label>
+                     </div>
                    </div>
                  </div>
                  <div className="flex gap-2 w-full sm:w-auto">
@@ -566,7 +608,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                      </tr>
                    </thead>
                    <tbody>
-                     {sortedMatchedResults.map((result) => (
+                     {filteredAndSortedResults.map((result) => (
                        <tr key={result.rowId} className="border-b border-gray-50 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
                          <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                            {result.rowId.startsWith('manual_') ? (

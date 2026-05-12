@@ -7,6 +7,8 @@ import RecordsScreen from './RecordsScreen';
 import LeaderboardTab from './LeaderboardTab';
 import LectureCard from './LectureCard';
 import { motion, AnimatePresence } from 'motion/react';
+import { db } from '../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 function DownloadsTab({ lectures, lang, user, onNavigateToChat, onEdit, onOpenMCQ }: any) {
   const [trigger, setTrigger] = useState(0);
@@ -83,10 +85,31 @@ export default function HomeScreen({
   const isRtl = lang === 'ar';
   
   const [activeTab, setActiveTab] = useState<InnerTab>(initialTab);
+  const [pendingDaysLeft, setPendingDaysLeft] = useState<number | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (user?.hasPendingStreakReset && user.uid) {
+      getDoc(doc(db, 'pending_streak_resets', user.uid)).then(d => {
+        if (d.exists()) {
+          const data = d.data();
+          if (data.expiresAt) {
+            const exp = data.expiresAt.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
+            const now = new Date();
+            const diffTime = exp.getTime() - now.getTime();
+            if (diffTime > 0) {
+              setPendingDaysLeft(Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+            }
+          }
+        }
+      }).catch(console.error);
+    } else {
+      setPendingDaysLeft(null);
+    }
+  }, [user]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -128,10 +151,20 @@ export default function HomeScreen({
               <span className="text-sm font-bold text-slate-700 dark:text-slate-300">أكاديمي</span>
             </div>
             {user && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-sm">
-                <Flame className="w-4 h-4 text-orange-500" />
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{user.streakCount || 0} أيام</span>
-              </div>
+              <>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-sm">
+                  <Flame className="w-4 h-4 text-orange-500" />
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{user.streakCount || 0} أيام</span>
+                </div>
+                {user.hasPendingStreakReset && pendingDaysLeft !== null && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl shadow-sm cursor-help tooltip-container relative group">
+                    <span className="text-sm font-bold text-rose-600 dark:text-rose-400">ستريك معلق ({pendingDaysLeft} أيام)</span>
+                    <div className="absolute top-full mt-2 w-48 p-2 bg-slate-800 text-white text-xs rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
+                      أمامك {pendingDaysLeft} أيام لاستعادة الستريك المفقود قبل أن يختفي العرض نهائياً.
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

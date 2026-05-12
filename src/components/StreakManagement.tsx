@@ -46,7 +46,12 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
         id: doc.id,
         ...doc.data()
       }));
-      setPendingResets(pendingData.sort((a: any, b: any) => (b.missedDays || 0) - (a.missedDays || 0)));
+      const validPendingData = pendingData.filter((p: any) => {
+        if (!p.expiresAt) return true;
+        const expiryDate = p.expiresAt.toDate ? p.expiresAt.toDate() : new Date(p.expiresAt);
+        return expiryDate > new Date();
+      });
+      setPendingResets(validPendingData.sort((a: any, b: any) => (b.missedDays || 0) - (a.missedDays || 0)));
       
       const userMap = new Map();
       usersSnapshot.docs.forEach(doc => {
@@ -337,7 +342,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                               disabled={isSubmitting}
                               className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 rounded-xl font-bold transition-colors text-sm"
                             >
-                              {isRtl ? 'تأكيد الخسارة (تصفير)' : 'Reset Streak (to 1)'}
+                              {isRtl ? 'تجاهل (إبقاء الخسارة)' : 'Ignore (Leave Lost)'}
                             </button>
                           </div>
                         </div>

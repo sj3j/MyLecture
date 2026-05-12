@@ -649,19 +649,25 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
               });
             }
           } else {
+            const previousStreak = streakCount;
+            streakCount = 1;
+
             if (!data.hasPendingStreakReset) {
               const pendingDocRef = db.collection('pending_streak_resets').doc(user.uid);
+              const expiresAt = new Date();
+              expiresAt.setDate(expiresAt.getDate() + 7);
+
               t.set(pendingDocRef, {
                  userId: user.uid,
                  email: user.email || '',
                  name: data.name || '',
                  missedDays: missedDays,
-                 streakAtRisk: streakCount,
+                 streakAtRisk: previousStreak,
                  dateRecorded: effectiveDate,
+                 expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
                  createdAt: admin.firestore.FieldValue.serverTimestamp()
               });
             }
-            streakCount += 1;
             method = 'pending_loss';
           }
         }
@@ -911,45 +917,20 @@ app.post("/api/admin/resolve-pending-streak", verifyAuth, verifyAdmin, async (re
       const currentTokens = userDoc.exists ? (userDoc.data()?.freezeTokens || 0) : 0;
 
       if (action === 'reset') {
-        let tokensToConsume = 0;
-        if (pendingData && pendingData.dateRecorded && pendingData.missedDays) {
-          const missedDays = pendingData.missedDays;
-          tokensToConsume = Math.min(missedDays, currentTokens);
-          
-          const missedDaysArr: string[] = [];
-          let d = new Date(`${pendingData.dateRecorded}T12:00:00Z`);
-          for (let i = 0; i < missedDays; i++) {
-            d.setDate(d.getDate() - 1);
-            const gapY = d.getUTCFullYear();
-            const gapM = d.getUTCMonth() + 1;
-            const gapD = d.getUTCDate();
-            missedDaysArr.push(`${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`);
-          }
-          missedDaysArr.reverse(); // oldest to newest
-
-          for (let i = 0; i < missedDaysArr.length; i++) {
-            const gapDateStr = missedDaysArr[i];
-            const gapHistoryRef = db.collection('streak_history').doc(`${userUid}_${gapDateStr}`);
-            
-            t.set(gapHistoryRef, {
-              userId: userUid,
-              date: gapDateStr,
-              wasActive: true,
-              freezeUsed: true,
-              timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-          }
-        }
-
+        // It was already reset when the opportunity was created. Just clean up.
         t.update(userRef, {
-          streakCount: 1,
-          freezeTokens: Math.max(0, currentTokens - tokensToConsume),
           hasPendingStreakReset: admin.firestore.FieldValue.delete()
         });
 
       } else if (action === 'forgive') {
+        let newStreakCount = userDoc.exists ? (userDoc.data()?.streakCount || 0) : 0;
+
         if (pendingData && pendingData.dateRecorded && pendingData.missedDays) {
           const missedDays = pendingData.missedDays;
+          const streakAtRisk = pendingData.streakAtRisk || 0;
+          
+          // Add the restored streak to their current progress
+          newStreakCount += streakAtRisk;
           
           let d = new Date(`${pendingData.dateRecorded}T12:00:00Z`);
           for (let i = 0; i < missedDays; i++) {
@@ -970,7 +951,11 @@ app.post("/api/admin/resolve-pending-streak", verifyAuth, verifyAdmin, async (re
           }
         }
 
+        const longestStreak = Math.max(userDoc.data()?.longestStreak || 0, newStreakCount);
+
         t.update(userRef, {
+          streakCount: newStreakCount,
+          longestStreak,
           hasPendingStreakReset: admin.firestore.FieldValue.delete()
         });
       } else {
