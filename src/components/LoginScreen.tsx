@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, signInWithCustomToken } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signInWithCustomToken, UserCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Language, TRANSLATIONS } from '../types';
 import { Loader2, GraduationCap, Mail, Lock, LogIn } from 'lucide-react';
@@ -11,6 +11,93 @@ interface LoginScreenProps {
   onClearError?: () => void;
 }
 
+const errorMessages: Record<string, string> = {
+  'auth/wrong-password':
+    'كلمة المرور غير صحيحة',
+  'auth/user-not-found':
+    'البريد الإلكتروني غير مسجل',
+  'auth/invalid-email':
+    'صيغة البريد الإلكتروني غير صحيحة',
+  'auth/invalid-credential':
+    'البريد الإلكتروني أو كلمة المرور غير صحيحة',
+  'auth/user-disabled':
+    'تم تعطيل هذا الحساب، تواصل مع الإدارة',
+  'auth/network-request-failed':
+    'خطأ في الشبكة — تحقق من الإنترنت وحاول مرة أخرى',
+  'auth/timeout':
+    'انتهت مهلة الاتصال — حاول مرة أخرى',
+  'auth/too-many-requests':
+    'تم تجاوز عدد المحاولات — انتظر قليلاً وحاول مرة أخرى',
+  'auth/web-storage-unsupported':
+    'متصفحك لا يدعم هذه الميزة — تحقق من إعدادات Safari',
+  'auth/operation-not-allowed':
+    'تسجيل الدخول بالبريد الإلكتروني غير مفعّل',
+  'OFFLINE':
+    'لا يوجد اتصال بالإنترنت',
+};
+
+const signInWithRetry = async (
+  email: string,
+  password: string,
+  retries = 1
+): Promise<UserCredential> => {
+  try {
+    const emailLower = email.trim().toLowerCase();
+    
+    // Check our custom backend first to get a custom token securely
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailLower, password: password.trim() })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      const errorMsg = data.error || 'Invalid credentials';
+      
+      const err = new Error(errorMsg);
+      if (response.status === 401 || response.status === 404) {
+        (err as any).code = 'auth/invalid-credential';
+      } else if (response.status === 403) {
+        (err as any).code = 'auth/user-disabled';
+      } else {
+        (err as any).code = 'auth/internal-error';
+      }
+      throw err;
+    }
+
+    const { token } = await response.json();
+    return await signInWithCustomToken(auth, token);
+  } catch (error: any) {
+    if (
+      retries > 0 &&
+      (error.code === 'auth/network-request-failed' || error.message.includes('network-request-failed') || error.message.includes('Failed to fetch'))
+    ) {
+      await new Promise(r => setTimeout(r, 1500));
+      return signInWithRetry(email, password, retries - 1);
+    }
+    if (error.message.includes('Failed to fetch')) {
+      error.code = 'auth/network-request-failed';
+    }
+    throw error;
+  }
+};
+
+const isIOSPrivateMode = async (): Promise<boolean> => {
+  try {
+    localStorage.setItem('__test__', '1');
+    localStorage.removeItem('__test__');
+    return false;
+  } catch {
+    return true;
+  }
+};
+
+const isIOS = (): boolean =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' &&
+   navigator.maxTouchPoints > 1);
+
 export default function LoginScreen({ lang, externalError, onClearError }: LoginScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -18,6 +105,16 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isPrivateMode, setIsPrivateMode] = useState(false);
+
+  React.useEffect(() => {
+    const checkPrivateMode = async () => {
+      if (isIOS() && await isIOSPrivateMode()) {
+        setIsPrivateMode(true);
+      }
+    };
+    checkPrivateMode();
+  }, []);
 
   React.useEffect(() => {
     if (externalError) {
@@ -110,30 +207,19 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     }
   };
 
-  const handleEmailSignIn = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
-
-    setIsLoading(true);
+    if (isLoading) return;
+    if (!navigator.onLine) {
+      setError(errorMessages['OFFLINE']);
+      return;
+    }
     setError(null);
+    setIsLoading(true);
     if (onClearError) onClearError();
 
     try {
-      const emailLower = email.trim().toLowerCase();
-      
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailLower, password })
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || (isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials'));
-      }
-
-      const { token } = await response.json();
-      const result = await signInWithCustomToken(auth, token);
+      const result = await signInWithRetry(email, password);
 
       // Check if user exists in users collection
       const userRef = doc(db, 'users', result.user.uid);
@@ -141,6 +227,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       let userRole = 'student';
       let studentData: any = {};
+      const emailLower = email.trim().toLowerCase();
       
       const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
       const isMasterAdmin = adminEmails.includes(emailLower);
@@ -184,17 +271,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
 
     } catch (err: any) {
       console.error('Email sign in error:', err);
-      let errorMsg = err.message || (isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials');
-      
-      if (err.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed') || errorMsg.includes('Failed to fetch')) {
-         errorMsg = isRtl 
-           ? 'خطأ في الشبكة. لحل المشكلة (خاصة لمستخدمي الآيفون):\n١- افتح الرابط في متصفح سفاري (Safari) أو كروم وليس من داخل التليجرام أو تطبيقات أخرى.\n٢- تأكد من صحة تاريخ ووقت الجهاز.\n٣- قم بإيقاف (Private Relay) من إعدادات الـ iCloud.\n٤- جرب شبكة إنترنت مختلفة.' 
-           : 'Network error. Troubleshooting (iOS):\n1- Open directly in Safari/Chrome (not in-app browsers).\n2- Check device date/time.\n3- Disable Private Relay.\n4- Try a different network.';
-      } else if (errorMsg.includes('auth/invalid-credential')) {
-         errorMsg = isRtl ? 'الباسورد أو الإيميل خطأ' : 'Invalid credentials';
-      }
-
-      setError(errorMsg);
+      setError(
+        errorMessages[err.code] ||
+        errorMessages[err.message] ||
+        `حدث خطأ غير متوقع (${err.code || 'unknown'})`
+      );
     } finally {
       setIsLoading(false);
     }
@@ -214,13 +295,23 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           {t.university} - {t.department}
         </p>
 
+        {isPrivateMode && (
+          <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-xl text-sm font-bold border border-orange-200 dark:border-orange-900/50 whitespace-pre-line text-center">
+            ⚠️ أنت في وضع التصفح الخاص.
+            <br />
+            قد لا يعمل تسجيل الدخول بشكل صحيح.
+            <br />
+            يُنصح بفتح الرابط في متصفح عادي.
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-sm font-bold border border-red-100 dark:border-red-900/50 whitespace-pre-line">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleEmailSignIn} className="mb-6 space-y-4 text-left">
+        <form onSubmit={handleLogin} className="mb-6 space-y-4 text-left">
           <div>
             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 px-1">
               {isRtl ? 'البريد الإلكتروني' : 'Email'}
@@ -234,6 +325,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onBlur={(e) => setEmail(e.target.value.trim())}
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                inputMode="email"
                 className="block w-full pl-10 pr-3 py-3 border border-slate-200 dark:border-zinc-700 rounded-xl leading-5 bg-slate-50 dark:bg-zinc-800 placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 sm:text-sm transition-colors text-slate-900 dark:text-stone-100"
                 placeholder="student@example.com"
                 dir="ltr"
@@ -254,6 +350,10 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                autoComplete="current-password"
                 className="block w-full pl-10 pr-3 py-3 border border-slate-200 dark:border-zinc-700 rounded-xl leading-5 bg-slate-50 dark:bg-zinc-800 placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 sm:text-sm transition-colors text-slate-900 dark:text-stone-100"
                 placeholder="••••••••"
                 dir="ltr"
@@ -263,15 +363,19 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !email || !password}
+            style={{ opacity: isLoading ? 0.7 : 1 }}
             className="w-full flex items-center justify-center gap-2 bg-sky-600 text-white px-6 py-3.5 rounded-xl font-bold hover:bg-sky-700 transition-all disabled:opacity-50 mt-2"
           >
             {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>جاري التحقق...</span>
+              </>
             ) : (
               <>
                 <LogIn className="w-5 h-5 shrink-0" />
-                <span>{isRtl ? 'تسجيل الدخول' : 'Sign In'}</span>
+                <span>تسجيل الدخول ←</span>
               </>
             )}
           </button>
