@@ -69,9 +69,9 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
           <Target className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> الدرجة:
         </span>
         <div className="text-xl font-black text-gray-900 dark:text-white font-mono flex items-baseline gap-1" dir="ltr">
-          <span>{degree.degree}</span>
+          <span>{!isNaN(Number(degree.degree)) && degree.degree !== '' ? parseFloat(Number(degree.degree).toFixed(4)) : degree.degree}</span>
           {degree.maxDegree && (
-            <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {degree.maxDegree}</span>
+            <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {!isNaN(Number(degree.maxDegree)) && degree.maxDegree !== '' ? parseFloat(Number(degree.maxDegree).toFixed(4)) : degree.maxDegree}</span>
           )}
         </div>
       </div>
