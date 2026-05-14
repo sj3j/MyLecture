@@ -34,7 +34,39 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
           if (vacation && lastArchiveId) {
             const archiveDoc = await getDoc(doc(db, 'semesterArchives', lastArchiveId));
             if (archiveDoc.exists()) {
-              setStreakLeaders(archiveDoc.data().topStudents || []);
+              const topStudents = archiveDoc.data().topStudents || [];
+              const userIds = topStudents.map((s: any) => s.userId || s.uid).filter(Boolean);
+              
+              if (userIds.length > 0) {
+                const userMap = new Map<string, UserProfile>();
+                const chunkSize = 10;
+                for (let i = 0; i < userIds.length; i += chunkSize) {
+                  const chunk = userIds.slice(i, i + chunkSize);
+                  if (chunk.length > 0) {
+                    const chunkQuery = query(collection(db, 'users'), where(documentId(), 'in', chunk));
+                    const chunkSnap = await getDocs(chunkQuery);
+                    chunkSnap.forEach(d => userMap.set(d.id, {uid: d.id, ...d.data()} as unknown as UserProfile));
+                  }
+                }
+                
+                const merged = topStudents.map((s: any) => {
+                  const uid = s.userId || s.uid;
+                  const liveData = userMap.get(uid);
+                  if (liveData) {
+                    return { 
+                      ...s, 
+                      name: liveData.name || s.name,
+                      photoUrl: liveData.photoUrl || s.photoUrl,
+                      hidePhotoOnLeaderboard: liveData.hidePhotoOnLeaderboard ?? s.hidePhotoOnLeaderboard,
+                      hideNameOnLeaderboard: liveData.hideNameOnLeaderboard ?? s.hideNameOnLeaderboard
+                    };
+                  }
+                  return s;
+                });
+                setStreakLeaders(merged);
+              } else {
+                setStreakLeaders(topStudents);
+              }
             }
           } else {
             const q = query(collection(db, 'users'), orderBy('streakCount', 'desc'), limit(20));
