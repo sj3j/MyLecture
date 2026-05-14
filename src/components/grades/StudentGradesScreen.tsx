@@ -45,38 +45,81 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     return acc;
   }, {} as Record<string, StudentDegree[]>);
 
-  const renderDegreeCard = (degree: StudentDegree) => (
-    <div key={degree.id} className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-      <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-      
-      <div className="flex items-start justify-between mb-4">
-        <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl flex items-center justify-center">
-          <Award className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-        </div>
-        {degree.createdAt && (
-          <div className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-zinc-500">
-            <Clock className="w-3 h-3" />
-            {new Date((degree.createdAt as any)?.toDate ? (degree.createdAt as any).toDate() : degree.createdAt).toLocaleDateString('ar-EG')}
+  const renderDegreeCard = (degree: StudentDegree) => {
+    let percentage = null;
+    let percentageColor = 'bg-gray-200';
+    let percentageTextColor = 'text-gray-500';
+    
+    const degNum = Number(degree.degree);
+    const maxDegNum = Number(degree.maxDegree);
+    
+    if (!isNaN(degNum) && !isNaN(maxDegNum) && degree.degree !== '' && degree.maxDegree !== '' && maxDegNum > 0) {
+      percentage = (degNum / maxDegNum) * 100;
+      if (percentage >= 85) {
+        percentageColor = 'bg-emerald-500';
+        percentageTextColor = 'text-emerald-600 dark:text-emerald-400';
+      } else if (percentage >= 65) {
+        percentageColor = 'bg-sky-500';
+        percentageTextColor = 'text-sky-600 dark:text-sky-400';
+      } else if (percentage >= 50) {
+        percentageColor = 'bg-amber-500';
+        percentageTextColor = 'text-amber-600 dark:text-amber-400';
+      } else {
+        percentageColor = 'bg-red-500';
+        percentageTextColor = 'text-red-600 dark:text-red-400';
+      }
+    }
+
+    return (
+      <div key={degree.id} className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+        
+        <div className="flex items-start justify-between mb-4">
+          <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl flex items-center justify-center">
+            <Award className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
           </div>
-        )}
-      </div>
-      
-      <h3 className="font-bold text-gray-900 dark:text-white mb-1 line-clamp-1">{degree.examName}</h3>
-      <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">النتيجة المعتمدة</p>
-      
-      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 flex items-center justify-between border border-gray-100 dark:border-zinc-700/50">
-        <span className="text-sm font-medium text-gray-600 dark:text-zinc-400 flex items-center gap-2">
-          <Target className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> الدرجة:
-        </span>
-        <div className="text-xl font-black text-gray-900 dark:text-white font-mono flex items-baseline gap-1" dir="ltr">
-          <span>{!isNaN(Number(degree.degree)) && degree.degree !== '' ? parseFloat(Number(degree.degree).toFixed(4)) : degree.degree}</span>
-          {degree.maxDegree && (
-            <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {!isNaN(Number(degree.maxDegree)) && degree.maxDegree !== '' ? parseFloat(Number(degree.maxDegree).toFixed(4)) : degree.maxDegree}</span>
+          {degree.createdAt && (
+            <div className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-zinc-500">
+              <Clock className="w-3 h-3" />
+              {new Date((degree.createdAt as any)?.toDate ? (degree.createdAt as any).toDate() : degree.createdAt).toLocaleDateString('ar-EG')}
+            </div>
+          )}
+        </div>
+        
+        <h3 className="font-bold text-gray-900 dark:text-white mb-1 line-clamp-1">{degree.examName}</h3>
+        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">النتيجة المعتمدة</p>
+        
+        <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 flex flex-col gap-3 border border-gray-100 dark:border-zinc-700/50">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-600 dark:text-zinc-400 flex items-center gap-2">
+              <Target className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> الدرجة:
+            </span>
+            <div className="text-xl font-black text-gray-900 dark:text-white font-mono flex items-baseline gap-1" dir="ltr">
+              <span>{!isNaN(degNum) && degree.degree !== '' ? parseFloat(degNum.toFixed(4)) : degree.degree}</span>
+              {degree.maxDegree && (
+                <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {!isNaN(maxDegNum) && degree.maxDegree !== '' ? parseFloat(maxDegNum.toFixed(4)) : degree.maxDegree}</span>
+              )}
+            </div>
+          </div>
+          
+          {percentage !== null && (
+            <div className="mt-1 space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-gray-500 dark:text-zinc-400">نسبة النجاح:</span>
+                <span className={percentageTextColor} dir="ltr">{percentage.toFixed(1)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-zinc-700 h-2 rounded-full overflow-hidden" dir="ltr">
+                <div 
+                  className={`h-full ${percentageColor} transition-all duration-1000`} 
+                  style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
+                />
+              </div>
+            </div>
           )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <AnimatePresence>
