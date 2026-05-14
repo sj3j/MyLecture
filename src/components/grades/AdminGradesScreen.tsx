@@ -324,7 +324,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
     try {
       const examId = `exam_${batch.id}`;
       const results: MatchedResult[] = [];
-      const studentIds = batch.studentIds || [];
+      const studentIds = Array.from(new Set(batch.studentIds || [])) as string[];
       const chunkSize = 10;
       for (let i = 0; i < studentIds.length; i += chunkSize) {
          const chunk = studentIds.slice(i, i + chunkSize);
@@ -535,9 +535,30 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                  <div>
                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">مراجعة كشف: {examName}</h2>
                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mt-2">
-                     <p className="text-sm text-gray-500 dark:text-zinc-400">
-                       تم العثور على {matchedResults.length} صف. المطابق: {matchedResults.filter(r => r.matchedUserId).length}
-                     </p>
+                     <div className="bg-gray-50 dark:bg-zinc-800/80 rounded-lg p-2 sm:p-3 flex flex-wrap gap-x-4 gap-y-2 text-sm border border-gray-100 dark:border-zinc-700/50">
+                       <p className="text-gray-600 dark:text-zinc-300">
+                         الصفوف: <span className="font-bold text-gray-900 dark:text-white">{matchedResults.length}</span>
+                       </p>
+                       <p className="text-emerald-700 dark:text-emerald-400">
+                         المطابقة مع النظام: <span className="font-bold">{matchedResults.filter(r => r.matchedUserId).length}</span>
+                       </p>
+                       {(() => {
+                          const maxNum = Number(maxDegree);
+                          const passedCount = matchedResults.filter(r => 
+                            r.matchedUserId && !isNaN(Number(r.degree)) && (Number(r.degree) / maxNum) >= 0.5
+                          ).length;
+                          const totalMatched = matchedResults.filter(r => r.matchedUserId).length;
+                          if (totalMatched > 0 && maxNum > 0 && !isNaN(maxNum)) {
+                            const pRate = (passedCount / totalMatched) * 100;
+                            return (
+                              <p className="text-sky-700 dark:text-sky-400 font-medium whitespace-nowrap">
+                                نسبة نجاح الطلاب بالامتحان: <span className="font-bold whitespace-nowrap" dir="ltr">{pRate.toFixed(1)}%</span>
+                              </p>
+                            );
+                          }
+                          return null;
+                       })()}
+                     </div>
                      
                      <div className="flex flex-wrap items-center gap-3">
                        <input
@@ -696,6 +717,11 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                   <div className="flex gap-4 mt-2 text-sm text-gray-500 dark:text-zinc-400">
                     <span>التاريخ: {batch.createdAt?.toDate ? new Date(batch.createdAt.toDate()).toLocaleDateString('ar-EG') : 'الآن'}</span>
                     <span>الطلاب المقيمين: {batch.stats.matched}</span>
+                    {typeof batch.passRate === 'number' && (
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                        نسبة النجاح: {batch.passRate.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

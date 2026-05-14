@@ -83,7 +83,7 @@ export async function confirmDegreeBatchClient(
           createdAt: serverTimestamp(),
           createdBy: user.uid,
           status: 'confirmed',
-          studentIds: studentIds,
+          studentIds: Array.from(new Set(studentIds)),
           stats: {
             totalRows: confirmedResults.length,
             matched: saved,
@@ -92,6 +92,7 @@ export async function confirmDegreeBatchClient(
         };
         if (maxDegree) batchDocData.maxDegree = maxDegree;
         if (material) batchDocData.material = material;
+        if (passRate !== undefined) batchDocData.passRate = passRate;
         firestoreBatch.set(batchRef, batchDocData);
       }
 
@@ -108,7 +109,7 @@ export async function confirmDegreeBatchClient(
         createdAt: serverTimestamp(),
         createdBy: user.uid,
         status: 'confirmed',
-        studentIds: studentIds,
+        studentIds: Array.from(new Set(studentIds)),
         stats: {
           totalRows: 0,
           matched: 0,
@@ -117,6 +118,7 @@ export async function confirmDegreeBatchClient(
       };
       if (maxDegree) emptyBatchData.maxDegree = maxDegree;
       if (material) emptyBatchData.material = material;
+      if (passRate !== undefined) emptyBatchData.passRate = passRate;
       firestoreBatch.set(batchRef, emptyBatchData);
       await firestoreBatch.commit();
     }

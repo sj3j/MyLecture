@@ -3,6 +3,7 @@ export interface GradeBatch {
   examName: string;
   material?: string;
   maxDegree?: number | string;
+  passRate?: number;
   createdAt: string;
   createdBy: string;
   status: 'draft' | 'confirmed';
