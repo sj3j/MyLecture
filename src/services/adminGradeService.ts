@@ -32,6 +32,18 @@ export async function confirmDegreeBatchClient(
   let failed = 0;
   const studentIds: string[] = [];
 
+  let passRate: number | undefined;
+  if (maxDegree && !isNaN(Number(maxDegree))) {
+    const maxNum = Number(maxDegree);
+    const passedCount = confirmedResults.filter(r => 
+      r.matchedUserId && !isNaN(Number(r.degree)) && (Number(r.degree) / maxNum) >= 0.5
+    ).length;
+    const totalMatched = confirmedResults.filter(r => r.matchedUserId).length;
+    if (totalMatched > 0) {
+      passRate = (passedCount / totalMatched) * 100;
+    }
+  }
+
   const chunkSize = 400; // Safe chunk size limit for Firestore batches
   
   try {
@@ -53,6 +65,7 @@ export async function confirmDegreeBatchClient(
           };
           if (maxDegree) degreeData.maxDegree = maxDegree;
           if (material) degreeData.material = material;
+          if (passRate !== undefined) degreeData.passRate = passRate;
 
           firestoreBatch.set(degreeRef, degreeData);
           saved++;

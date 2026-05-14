@@ -46,27 +46,28 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
   }, {} as Record<string, StudentDegree[]>);
 
   const renderDegreeCard = (degree: StudentDegree) => {
-    let percentage = null;
-    let percentageColor = 'bg-gray-200';
-    let percentageTextColor = 'text-gray-500';
+    let passRateColor = 'bg-gray-200';
+    let passRateTextColor = 'text-gray-500';
     
     const degNum = Number(degree.degree);
     const maxDegNum = Number(degree.maxDegree);
     
-    if (!isNaN(degNum) && !isNaN(maxDegNum) && degree.degree !== '' && degree.maxDegree !== '' && maxDegNum > 0) {
-      percentage = (degNum / maxDegNum) * 100;
-      if (percentage >= 85) {
-        percentageColor = 'bg-emerald-500';
-        percentageTextColor = 'text-emerald-600 dark:text-emerald-400';
-      } else if (percentage >= 65) {
-        percentageColor = 'bg-sky-500';
-        percentageTextColor = 'text-sky-600 dark:text-sky-400';
-      } else if (percentage >= 50) {
-        percentageColor = 'bg-amber-500';
-        percentageTextColor = 'text-amber-600 dark:text-amber-400';
+    const hasPassRate = typeof degree.passRate === 'number' && !isNaN(degree.passRate);
+    const passRate = hasPassRate ? degree.passRate! : null;
+
+    if (passRate !== null) {
+      if (passRate >= 85) {
+        passRateColor = 'bg-emerald-500';
+        passRateTextColor = 'text-emerald-600 dark:text-emerald-400';
+      } else if (passRate >= 65) {
+        passRateColor = 'bg-sky-500';
+        passRateTextColor = 'text-sky-600 dark:text-sky-400';
+      } else if (passRate >= 50) {
+        passRateColor = 'bg-amber-500';
+        passRateTextColor = 'text-amber-600 dark:text-amber-400';
       } else {
-        percentageColor = 'bg-red-500';
-        percentageTextColor = 'text-red-600 dark:text-red-400';
+        passRateColor = 'bg-red-500';
+        passRateTextColor = 'text-red-600 dark:text-red-400';
       }
     }
 
@@ -102,16 +103,16 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
             </div>
           </div>
           
-          {percentage !== null && (
+          {passRate !== null && (
             <div className="mt-1 space-y-2">
               <div className="flex justify-between items-center text-xs font-bold">
-                <span className="text-gray-500 dark:text-zinc-400">نسبة النجاح:</span>
-                <span className={percentageTextColor} dir="ltr">{percentage.toFixed(1)}%</span>
+                <span className="text-gray-500 dark:text-zinc-400">نسبة نجاح الطلاب بالامتحان:</span>
+                <span className={passRateTextColor} dir="ltr">{passRate.toFixed(1)}%</span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-zinc-700 h-2 rounded-full overflow-hidden" dir="ltr">
                 <div 
-                  className={`h-full ${percentageColor} transition-all duration-1000`} 
-                  style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
+                  className={`h-full ${passRateColor} transition-all duration-1000`} 
+                  style={{ width: `${Math.min(100, Math.max(0, passRate))}%` }}
                 />
               </div>
             </div>

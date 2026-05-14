@@ -30,6 +30,7 @@ export interface StudentDegree {
   material?: string;
   degree: number | string;
   maxDegree?: number | string;
+  passRate?: number;
   batchId: string;
   batchDate: string;
   createdAt: string;
