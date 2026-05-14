@@ -117,8 +117,18 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
-    match /settings/{document=**} {
-      allow read: if hasAccess();
+    match /app_settings/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdminOrModerator();
+    }
+
+    match /semesterArchives/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdminOrModerator();
+    }
+
+    match /users/{userId}/streakHistory/{document=**} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrModerator());
       allow write: if isAdminOrModerator();
     }
 

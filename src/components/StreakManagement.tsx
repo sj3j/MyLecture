@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, AlertCircle, History, Clock, Shield as ShieldIcon } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import StreakHistoryModal from './StreakHistoryModal';
@@ -28,6 +28,12 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'students' | 'pending'>('students');
   
+  // Vacation Mode
+  const [vacationMode, setVacationMode] = useState(false);
+  const [showVacationModal, setShowVacationModal] = useState(false);
+  const [vacationConfirmText, setVacationConfirmText] = useState('');
+  const [semesterName, setSemesterName] = useState('');
+
   // Edit
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editStreakCount, setEditStreakCount] = useState<number | ''>(0);
@@ -38,6 +44,13 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
+      const snapSettings = await getDoc(doc(db, 'app_settings', 'streak'));
+      if (snapSettings.exists() && snapSettings.data().vacationMode) {
+        setVacationMode(true);
+      } else {
+        setVacationMode(false);
+      }
+
       const snapshot = await getDocs(collection(db, 'students'));
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const pendingSnapshot = await getDocs(collection(db, 'pending_streak_resets'));
@@ -271,6 +284,43 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     }
   };
 
+  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com' || user?.email === 'fenix.admin@gmail.com';
+
+  const handleToggleVacation = async (enable: boolean) => {
+    if (!enable) {
+      if (!window.confirm(isRtl ? 'هل تريد إنهاء العطلة وبدء فصل دراسي جديد؟' : 'End vacation mode and start new term?')) return;
+    } else {
+      if (vacationConfirmText !== 'تأكيد الإعادة') return;
+      if (!semesterName.trim()) {
+        const msg = isRtl ? 'الرجاء إدخال اسم الفصل' : 'Please enter semester name';
+        setError(msg); window.alert(msg); return;
+      }
+    }
+
+    setIsSubmitting(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("No auth token");
+      const res = await fetch("/api/admin/toggle-vacation-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ enable, semesterName })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccess(isRtl ? 'تم تغيير حالة مود العطلة بنجاح' : 'Vacation mode updated');
+        setShowVacationModal(false);
+        setVacationConfirmText('');
+        setSemesterName('');
+      } else throw new Error(data.error || "API error");
+    } catch (err: any) {
+      setError(err.message || 'Failed');
+    } finally {
+      setIsSubmitting(false);
+      fetchStudents();
+    }
+  };
+
   const filteredStudents = students.filter(s => 
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     s.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -390,7 +440,76 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                       <Clock className="w-4 h-4" />
                       {isRtl ? 'استعادة المفقودين مؤخراً' : 'Recover Recently Lost'}
                     </button>
+                    {isMasterAdmin && (
+                      <button
+                        onClick={() => vacationMode ? handleToggleVacation(false) : setShowVacationModal(true)}
+                        className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors flex items-center gap-2 ${
+                          vacationMode 
+                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400' 
+                            : 'bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-400'
+                        }`}
+                      >
+                        <AlertCircle className="w-4 h-4" />
+                        {vacationMode ? (isRtl ? 'إنهاء مود العطلة' : 'Disable Vacation Mode') : (isRtl ? '🔄 إعادة تعيين ستريك الفصل الدراسي' : 'Enable Vacation Mode')}
+                      </button>
+                    )}
                   </div>
+
+                  {showVacationModal && (
+                    <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded-2xl p-6 mb-4">
+                      <h3 className="font-bold text-rose-700 dark:text-rose-400 mb-2">
+                        {isRtl ? 'هل أنت متأكد من إعادة تعيين ستريك جميع الطلاب؟' : 'Are you sure you want to reset all streaks?'}
+                      </h3>
+                      <p className="text-rose-600 dark:text-rose-300 text-sm mb-4">
+                        {isRtl ? 'سيتم الاحتفاظ بسجل الفصل الحالي.' : 'Current semester history will be archived.'}
+                      </p>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                            {isRtl ? 'اسم الفصل (أو السنة)' : 'Semester Name'}
+                          </label>
+                          <input 
+                            type="text" 
+                            placeholder={isRtl ? 'مثال: الفصل الأول 2025-2026' : 'e.g. Fall 2025'}
+                            value={semesterName}
+                            onChange={e => setSemesterName(e.target.value)}
+                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                            {isRtl ? 'اكتب "تأكيد الإعادة" للمتابعة' : 'Type "تأكيد الإعادة" to confirm'}
+                          </label>
+                          <input 
+                            type="text" 
+                            value={vacationConfirmText}
+                            onChange={e => setVacationConfirmText(e.target.value)}
+                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setShowVacationModal(false)}
+                            className="flex-1 py-2 rounded-xl bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-zinc-700 dark:text-slate-300 dark:hover:bg-zinc-600 font-bold transition-colors"
+                          >
+                            {isRtl ? 'إلغاء' : 'Cancel'}
+                          </button>
+                          <button 
+                            onClick={() => handleToggleVacation(true)}
+                            disabled={isSubmitting || vacationConfirmText !== 'تأكيد الإعادة'}
+                            className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold transition-colors flex justify-center items-center"
+                          >
+                            {isSubmitting ? (
+                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              isRtl ? 'إعادة التعيين نهائياً' : 'Reset Permanently'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="relative">
                     <Search className={`absolute ${isRtl ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5`} />

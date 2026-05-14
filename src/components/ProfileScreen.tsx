@@ -7,6 +7,7 @@ import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info, Flame, Calendar as CalendarIcon } from 'lucide-react';
 import NotificationsModal from './NotificationsModal';
 import ProfileStreakCalendar from './ProfileStreakCalendar';
+import SemesterHistoryList from './SemesterHistoryList';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -228,7 +229,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
                 onClick={() => fileInputRef.current?.click()}
               >
                 {editPhotoPreview ? (
-                  <img src={editPhotoPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src={editPhotoPreview} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <Camera className="w-8 h-8 text-sky-400 dark:text-sky-500 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors" />
                 )}
@@ -239,7 +240,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             ) : (
               <div className="w-16 h-16 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 text-2xl font-bold overflow-hidden shadow-sm">
                 {user!.photoUrl ? (
-                  <img src={user!.photoUrl} alt={user!.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src={user!.photoUrl} alt={user!.name} className="w-full h-full object-cover" />
                 ) : (
                   user!.name.charAt(0).toUpperCase()
                 )}
@@ -367,6 +368,8 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           <div className="relative z-10 bg-white/60 dark:bg-zinc-900/60 rounded-3xl p-1 backdrop-blur-sm border border-orange-100/50 dark:border-orange-800/20">
              <ProfileStreakCalendar userUid={user.uid} isRtl={isRtl} />
           </div>
+
+          <SemesterHistoryList userUid={user.uid} isRtl={isRtl} />
         </div>
 
         <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700 mb-6">

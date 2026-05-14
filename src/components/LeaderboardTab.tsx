@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, getDocs, where, documentId, getCountFromServer } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, documentId, getCountFromServer, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile, Language } from '../types';
-import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw, Palmtree } from 'lucide-react';
 import { UserMCQStats } from '../types/mcq.types';
+import Podium from './ui/Podium';
 
 interface LeaderboardTabProps {
   user: UserProfile | null;
@@ -18,16 +19,29 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
   const [userStreakRank, setUserStreakRank] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isVacationMode, setIsVacationMode] = useState(false);
 
   const fetchLeaderboard = async (force = false) => {
     setLoading(true);
     try {
+      const snapSettings = await getDoc(doc(db, 'app_settings', 'streak'));
+      const vacation = snapSettings.exists() && snapSettings.data().vacationMode === true;
+      setIsVacationMode(vacation);
+      const lastArchiveId = snapSettings.exists() ? snapSettings.data().lastArchiveId : null;
+
       if (activeTab === 'streak') {
         if (streakLeaders.length === 0 || force) {
-          const q = query(collection(db, 'users'), orderBy('streakCount', 'desc'), limit(20));
-          const snap = await getDocs(q);
-          const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
-          setStreakLeaders(data);
+          if (vacation && lastArchiveId) {
+            const archiveDoc = await getDoc(doc(db, 'semesterArchives', lastArchiveId));
+            if (archiveDoc.exists()) {
+              setStreakLeaders(archiveDoc.data().topStudents || []);
+            }
+          } else {
+            const q = query(collection(db, 'users'), orderBy('streakCount', 'desc'), limit(20));
+            const snap = await getDocs(q);
+            const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
+            setStreakLeaders(data);
+          }
         }
         if (user) {
           const myStreak = user.streakCount || 0;
@@ -41,7 +55,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
         }
       } else {
         if (mcqLeaders.length === 0 || force) {
-          const q = query(collection(db, 'userMCQStats'), orderBy('mcqLeaderboardScore', 'desc'), limit(20));
+          const q = query(collection(db, 'userMCQStats'), orderBy('mcqLeaderboardScore', 'desc'), limit(10));
           const snap = await getDocs(q);
           const rawData = snap.docs.map(doc => doc.data() as UserMCQStats);
           
@@ -119,76 +133,95 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
       </div>
 
       <div className="bg-white dark:bg-zinc-800 rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200 dark:border-zinc-700">
+        {isVacationMode && (
+           <div className="mb-4 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 px-4 py-3 rounded-2xl flex items-center gap-3 text-sm font-bold border border-sky-100 dark:border-sky-800">
+             <Palmtree className="w-5 h-5 text-sky-500" />
+             {isRtl ? 'انتهى موسم المرحلة الثالثة، شكرًا لجهودكم وتفانيكم بدراستكم انتظرونا بالرابعة، هنا أبرز الطلاب في لوحة الصدارة' : 'Vacation mode is active. Streak leaderboard shows archived semester data.'}
+           </div>
+        )}
         
         {loading && !refreshing ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
           </div>
         ) : activeTab === 'streak' ? (
-          <div className="space-y-3">
-          {streakLeaders.map((leader, index) => {
-             const isMe = user?.uid === leader.uid;
-             const hideName = leader.hideNameOnLeaderboard;
-             const hidePhoto = leader.hidePhotoOnLeaderboard;
-             
-             const displayName = hideName && !isMe ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : leader.name;
-             const displayPhoto = hidePhoto && !isMe ? null : leader.photoUrl;
-             
-             return (
-               <div 
-                 key={leader.uid || index}
-                 className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
-                   isMe 
-                     ? 'bg-[#2196F3]/10 border border-[#2196F3]/30 dark:bg-[#2196F3]/20 dark:border-[#2196F3]/40' 
-                     : 'bg-slate-50 dark:bg-zinc-900 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700'
-                 }`}
-               >
-                 <div className="flex items-center gap-3 sm:gap-4">
-                   <div className="w-8 flex justify-center shrink-0">
-                     {getRankBadge(index)}
+          <>
+            {isVacationMode ? (
+              streakLeaders.length > 0 ? (
+                <Podium topStudents={streakLeaders.slice(0, 3)} isRtl={isRtl} type="streak" />
+              ) : null
+            ) : (
+              <div className="space-y-3">
+              {streakLeaders.map((leader, index) => {
+                 const isMe = user?.uid === (leader.userId || leader.uid);
+                 const hideName = leader.hideNameOnLeaderboard;
+                 const hidePhoto = leader.hidePhotoOnLeaderboard;
+               
+               const displayName = hideName && !isMe ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : leader.name;
+               const displayPhoto = hidePhoto && !isMe ? null : (leader.photoUrl || (leader as any).photoURL);
+               
+               return (
+                 <div 
+                   key={(leader.userId || leader.uid) || index}
+                   className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
+                     isMe 
+                       ? 'bg-[#2196F3]/10 border border-[#2196F3]/30 dark:bg-[#2196F3]/20 dark:border-[#2196F3]/40' 
+                       : 'bg-slate-50 dark:bg-zinc-900 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700'
+                   }`}
+                 >
+                   <div className="flex items-center gap-3 sm:gap-4">
+                     <div className="w-8 flex justify-center shrink-0">
+                       {getRankBadge(index)}
+                     </div>
+                     
+                     <div className="relative">
+                       {displayPhoto ? (
+                         <img src={displayPhoto} alt={displayName} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm"  referrerPolicy="no-referrer" />
+                       ) : (
+                         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-400 to-[#2196F3] flex items-center justify-center text-white font-bold text-lg shadow-sm border-2 border-white dark:border-zinc-800">
+                           {hidePhoto && !isMe ? '?' : displayName?.charAt(0).toUpperCase()}
+                         </div>
+                       )}
+                     </div>
+                     
+                     <div>
+                       <h3 className={`font-bold sm:text-lg ${isMe ? 'text-[#2196F3] dark:text-sky-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                         {displayName} {isMe && (isRtl ? '(أنت)' : '(You)')} 
+                       </h3>
+                     </div>
                    </div>
                    
-                   <div className="relative">
-                     {displayPhoto ? (
-                       <img src={displayPhoto} alt={displayName} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm" />
-                     ) : (
-                       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-400 to-[#2196F3] flex items-center justify-center text-white font-bold text-lg shadow-sm border-2 border-white dark:border-zinc-800">
-                         {hidePhoto && !isMe ? '?' : displayName?.charAt(0).toUpperCase()}
-                       </div>
-                     )}
-                   </div>
-                   
-                   <div>
-                     <h3 className={`font-bold sm:text-lg ${isMe ? 'text-[#2196F3] dark:text-sky-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                       {displayName} {isMe && (isRtl ? '(أنت)' : '(You)')} 
-                     </h3>
+                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 dark:bg-orange-900/20 rounded-xl">
+                     <Flame className="w-4 h-4 text-orange-500" />
+                     <span className="font-bold text-orange-600 dark:text-orange-400">
+                       {leader.streakCount || 0} {isRtl ? 'أيام' : 'days'}
+                     </span>
                    </div>
                  </div>
-                 
-                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 dark:bg-orange-900/20 rounded-xl">
-                   <Flame className="w-4 h-4 text-orange-500" />
-                   <span className="font-bold text-orange-600 dark:text-orange-400">
-                     {leader.streakCount || 0} {isRtl ? 'أيام' : 'days'}
-                   </span>
-                 </div>
-               </div>
-             );
-          })}
-          </div>
-        ) : (
-          <div className="space-y-3">
-          {mcqLeaders.length === 0 ? (
-            <div className="text-center py-10">
-              <Target className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500 font-medium">{isRtl ? 'بعدك م حلّيت ولا MCQ، حل حتى ترفع تصنيفك' : 'No MCQ attempts yet, start solving to rank up'}</p>
+               );
+            })}
             </div>
-          ) : mcqLeaders.map((leader, index) => {
-            const isMe = user?.uid === leader.userId;
+            )}
+          </>
+        ) : (
+          <>
+            {mcqLeaders.length > 0 ? (
+              <Podium topStudents={mcqLeaders.slice(0, 3)} isRtl={isRtl} type="mcq" />
+            ) : null}
+            <div className="space-y-3">
+            {mcqLeaders.length === 0 ? (
+              <div className="text-center py-10">
+                <Target className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500 font-medium">{isRtl ? 'بعدك م حلّيت ولا MCQ، حل حتى ترفع تصنيفك' : 'No MCQ attempts yet, start solving to rank up'}</p>
+              </div>
+            ) : mcqLeaders.slice(3).map((leader, idx) => {
+              const index = idx + 3;
+              const isMe = user?.uid === leader.userId;
             const hideName = leader.profile?.hideNameOnLeaderboard;
             const hidePhoto = leader.profile?.hidePhotoOnLeaderboard;
             
             const displayName = hideName && !isMe ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : leader.profile?.name;
-            const displayPhoto = hidePhoto && !isMe ? null : leader.profile?.photoUrl;
+            const displayPhoto = hidePhoto && !isMe ? null : (leader.profile?.photoUrl || (leader.profile as any)?.photoURL);
             
             return (
               <div 
@@ -206,7 +239,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                   
                   <div className="relative">
                     {displayPhoto ? (
-                      <img src={displayPhoto} alt={displayName} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm" />
+                      <img src={displayPhoto} alt={displayName} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm"  referrerPolicy="no-referrer" />
                     ) : (
                       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-400 to-[#2196F3] flex items-center justify-center text-white font-bold text-lg shadow-sm border-2 border-white dark:border-zinc-800">
                         {hidePhoto && !isMe ? '?' : displayName?.charAt(0).toUpperCase()}
@@ -235,6 +268,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             );
           })}
           </div>
+          </>
         )}
       </div>
 

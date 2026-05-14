@@ -716,6 +716,13 @@ async function startServer() {
     try {
       const user = (req as any).user;
       const db = admin.firestore();
+      
+      const appSettingsDoc = await db.collection('app_settings').doc('streak').get();
+      const isVacationMode = appSettingsDoc.exists && appSettingsDoc.data()?.vacationMode === true;
+      if (isVacationMode) {
+        return res.json({ success: true, vacationMode: true, message: "Vacation mode is active. Streaks are paused." });
+      }
+
       const userRef = db.collection('users').doc(user.uid);
       
       await db.runTransaction(async (t) => {
@@ -1172,6 +1179,122 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Error" });
+    }
+  });
+
+  app.post("/api/admin/toggle-vacation-mode", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { enable, semesterName } = req.body;
+      const db = admin.firestore();
+      const adminUser = (req as any).user;
+
+      // Make sure admin is allowed
+      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+      if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
+        return res.status(403).json({ error: "Master Admin only" });
+      }
+
+      if (enable) {
+        // Toggle ON: Archive and Reset
+        if (!semesterName) throw new Error("Semester name required");
+
+        const usersSnapshot = await db.collection('users').get();
+        // Calculate Top Students
+        const students = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+        const topStudents = students
+          .sort((a: any, b: any) => (b.streakCount || 0) - (a.streakCount || 0))
+          .slice(0, 50) // store up to top 50
+          .map((u: any, i: number) => ({
+             rank: i + 1,
+             userId: u.uid,
+             name: u.name,
+             streakCount: u.streakCount || 0,
+             longestStreak: u.longestStreak || 0
+          }));
+
+        const semesterId = `semester_${Date.now()}`;
+        const totalStudents = students.length;
+        const totalStreaks = students.reduce((sum: number, u: any) => sum + (u.streakCount || 0), 0);
+
+        const batchArchive = db.batch();
+        const semesterRef = db.collection('semesterArchives').doc(semesterId);
+        batchArchive.set(semesterRef, {
+          semesterId,
+          semesterName,
+          archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          archivedBy: adminUser.uid,
+          topStudents,
+          totalStudents,
+          averageStreak: totalStudents > 0 ? (totalStreaks / totalStudents) : 0
+        });
+
+        const actionRef = db.collection('adminActions').doc();
+        batchArchive.set(actionRef, {
+          type: 'semester_streak_reset',
+          performedBy: adminUser.uid,
+          performedAt: admin.firestore.FieldValue.serverTimestamp(),
+          semesterId,
+          studentsAffected: totalStudents
+        });
+
+        // Set system setting
+        batchArchive.set(db.collection('app_settings').doc('streak'), {
+          vacationMode: true,
+          lastArchiveId: semesterId,
+          currentSemesterName: semesterName
+        }, { merge: true });
+
+        await batchArchive.commit();
+
+        // Batch update all users (chunk to 400)
+        let currentBatch = db.batch();
+        let countInBatch = 0;
+        let processedCount = 0;
+
+        for (const doc of usersSnapshot.docs) {
+          const udata = doc.data();
+          const pRef = db.collection('users').doc(doc.id).collection('streakHistory').doc(semesterId);
+          currentBatch.set(pRef, {
+            semesterId,
+            semesterName,
+            finalStreak: udata.streakCount || 0,
+            longestStreak: udata.longestStreak || 0,
+            freezeTokensUsed: 3 - (udata.freezeTokens ?? 3),
+            archivedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          currentBatch.update(doc.ref, {
+             streakCount: 0,
+             longestStreak: 0,
+             lastActiveDate: null,
+             freezeTokens: 3
+          });
+
+          countInBatch += 2; // two writes per user
+          processedCount++;
+
+          if (countInBatch >= 400) {
+            await currentBatch.commit();
+            currentBatch = db.batch();
+            countInBatch = 0;
+          }
+        }
+        if (countInBatch > 0) {
+          await currentBatch.commit();
+        }
+
+        return res.json({ success: true, message: `Archived ${processedCount} users` });
+      } else {
+        // Toggle OFF: Just disable vacationMode
+        await db.collection('app_settings').doc('streak').set({
+          vacationMode: false
+        }, { merge: true });
+        
+        return res.json({ success: true });
+      }
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Error toggling vacation mode" });
     }
   });
 
