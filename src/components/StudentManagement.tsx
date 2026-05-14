@@ -878,9 +878,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       />
                       <input
-                        required
                         type="text"
-                        placeholder={isRtl ? 'كود الامتحان' : 'Exam Code'}
+                        placeholder={isRtl ? 'كود الامتحان (اختياري)' : 'Exam Code (Optional)'}
                         value={editExamCode}
                         onChange={(e) => setEditExamCode(e.target.value)}
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
