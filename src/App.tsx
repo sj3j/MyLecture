@@ -347,7 +347,7 @@ export default function App() {
 
   // Announcements Listener for Notifications
   useEffect(() => {
-    if (!user) return;
+    if (!user || (!user.group && user.role === 'student')) return;
     
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -361,7 +361,7 @@ export default function App() {
         }
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'announcements');
+      console.warn("Could not listen to announcements (may lack permissions):", error);
     });
     return () => unsubscribe();
   }, [currentTab, user]);
@@ -375,7 +375,7 @@ export default function App() {
 
   // Lectures Listener
   useEffect(() => {
-    if (!user) {
+    if (!user || (!user.group && user.role === 'student')) {
       setLectures([]);
       setIsLoading(false);
       return;
@@ -387,7 +387,7 @@ export default function App() {
       setLectures(docs);
       setIsLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'lectures');
+      console.warn("Could not listen to lectures (may lack permissions):", error);
       setIsLoading(false);
     });
 

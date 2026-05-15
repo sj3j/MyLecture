@@ -117,6 +117,11 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    match /settings/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdminOrModerator();
+    }
+
     match /app_settings/{document=**} {
       allow read: if isAuthenticated();
       allow write: if isAdminOrModerator();

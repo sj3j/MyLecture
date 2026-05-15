@@ -563,6 +563,13 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const db = admin.firestore();
+    
+    const appSettingsDocCheck = await db.collection('app_settings').doc('streak').get();
+    const isVacationMode = appSettingsDocCheck.exists && appSettingsDocCheck.data()?.vacationMode === true;
+    if (isVacationMode) {
+      return res.json({ success: true, vacationMode: true, message: "Vacation mode is active. Streaks are paused." });
+    }
+
     const userRef = db.collection('users').doc(user.uid);
     
     const txResult = await db.runTransaction(async (t) => {

@@ -56,7 +56,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                     return { 
                       ...s, 
                       name: liveData.name || s.name,
-                      photoUrl: liveData.photoUrl || s.photoUrl,
+                      photoUrl: liveData.photoUrl || (liveData as any).photoURL || s.photoUrl || s.photoURL,
                       hidePhotoOnLeaderboard: liveData.hidePhotoOnLeaderboard ?? s.hidePhotoOnLeaderboard,
                       hideNameOnLeaderboard: liveData.hideNameOnLeaderboard ?? s.hideNameOnLeaderboard
                     };

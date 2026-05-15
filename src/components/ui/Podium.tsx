@@ -120,7 +120,7 @@ export default function Podium({ topStudents, isRtl, type }: PodiumProps) {
         const hideName = student.hideNameOnLeaderboard || (student.profile ? student.profile.hideNameOnLeaderboard : false);
         const displayName = hideName ? (isRtl ? 'مستخدم مجهول' : 'Anon') : formatName(rawName);
         const hidePhoto = student.hidePhotoOnLeaderboard || (student.profile ? student.profile.hidePhotoOnLeaderboard : false);
-        const displayPhoto = hidePhoto ? null : ((student.photoUrl || student.photoURL) || (student.profile ? student.profile.photoUrl : null));
+        const displayPhoto = hidePhoto ? null : ((student.photoUrl || student.photoURL) || (student.profile ? (student.profile.photoUrl || student.profile.photoURL) : null));
 
         return (
           <motion.div 
