@@ -211,6 +211,8 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
       const q = query(collection(db, 'degreeBatches'), orderBy('createdAt', 'desc'));
       const unsub = onSnapshot(q, (snap) => {
         setBatches(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      }, (error) => {
+        console.error("Admin grades batches listener error", error);
       });
       return () => unsub();
     }

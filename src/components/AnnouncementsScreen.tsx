@@ -92,6 +92,8 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       if (docSnap.exists() && docSnap.data().allowedReactions) {
         setAllowedReactions(docSnap.data().allowedReactions);
       }
+    }, (error) => {
+      console.error("Announcements settings listener error:", error);
     });
 
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));

@@ -98,5 +98,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  if (operationType === OperationType.GET || operationType === OperationType.LIST) {
+     // Use setTimeout for GET/LIST to avoid breaking Firestore's internal snapshot listener cycle
+     setTimeout(() => {
+       throw new Error(JSON.stringify(errInfo));
+     }, 0);
+  } else {
+     throw new Error(JSON.stringify(errInfo));
+  }
 }
