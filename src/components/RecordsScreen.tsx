@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
 import AdminRecordUpload from './AdminRecordUpload';
 import AudioPlayer from './AudioPlayer';
+import { ConfirmShareDialog } from './ui/ConfirmShareDialog';
 
 const CATEGORY_UI: Record<string, { emoji: string; color: string; border: string; bg: string; badge: string }> = {
   all: { emoji: '📚', color: 'text-indigo-500', border: 'border-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/20', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
@@ -37,6 +38,39 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
   const [recordToEdit, setRecordToEdit] = useState<RecordItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [localSearch, setLocalSearch] = useState('');
+  const [shareItem, setShareItem] = useState<RecordItem | null>(null);
+
+  const handleShareToChat = async () => {
+    if (!user || !shareItem) return;
+    try {
+      const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+      await addDoc(collection(db, 'chat_messages'), {
+        text: '',
+        senderName: user.name,
+        senderEmail: user.email,
+        senderId: user.uid,
+        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+        timestamp: serverTimestamp(),
+        createdAt: Date.now(),
+        reactions: { like: [], heart: [], thanks: [] },
+        isAnonymous: false,
+        originalSenderName: user.name,
+        embeddedItem: {
+          type: 'record',
+          id: shareItem.id,
+          title: shareItem.title,
+          subtitle: shareItem.description,
+          link: shareItem.audioUrl
+        }
+      });
+      if (onNavigateToChat) {
+         onNavigateToChat();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error sharing to chat');
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
@@ -333,38 +367,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
                   <AudioPlayer id={record.id} src={record.audioUrl} title={record.title} />
                   {user && (
                     <button
-                      onClick={async () => {
-                        try {
-                          const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
-                          await addDoc(collection(db, 'chat_messages'), {
-                            text: '',
-                            senderName: user.name,
-                            senderEmail: user.email,
-                            senderId: user.uid,
-                            senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
-                            timestamp: serverTimestamp(),
-                            createdAt: Date.now(),
-                            reactions: { like: [], heart: [], thanks: [] },
-                            isAnonymous: false,
-                            originalSenderName: user.name,
-                            embeddedItem: {
-                              type: 'record',
-                              id: record.id,
-                              title: record.title,
-                              subtitle: record.description,
-                              link: record.audioUrl
-                            }
-                          });
-                          if (onNavigateToChat) {
-                             onNavigateToChat();
-                          } else {
-                             alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
-                          }
-                        } catch (err) {
-                          console.error(err);
-                          alert('Error sharing to chat');
-                        }
-                      }}
+                      onClick={() => setShareItem(record)}
                       className="inline-flex items-center justify-center p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors w-full gap-2 text-sm font-bold"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
@@ -401,6 +404,14 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
         lang={lang}
         recordToEdit={recordToEdit}
         user={user}
+      />
+
+      <ConfirmShareDialog
+        isOpen={!!shareItem}
+        onClose={() => setShareItem(null)}
+        onConfirm={handleShareToChat}
+        itemName={isRtl ? 'هذا التسجيل' : 'this record'}
+        lang={lang}
       />
     </div>
   );

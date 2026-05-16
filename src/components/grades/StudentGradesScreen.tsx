@@ -29,9 +29,6 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     const unsub = onSnapshot(q, (snap) => {
       setDegrees(snap.docs.map(d => ({ ...d.data(), id: d.id } as StudentDegree)));
       setLoading(false);
-    }, (error) => {
-      console.error("Student grades listener error", error);
-      setLoading(false);
     });
 
     return () => unsub();

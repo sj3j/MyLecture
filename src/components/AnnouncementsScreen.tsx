@@ -8,6 +8,7 @@ import { db, storage, handleFirestoreError, OperationType } from '../lib/firebas
 import { forceDownload } from '../lib/utils';
 import LectureCard from './LectureCard';
 import SpotlightTooltip from './SpotlightTooltip';
+import { ConfirmShareDialog } from './ui/ConfirmShareDialog';
 
 interface TelegramPost {
   id: string;
@@ -61,6 +62,38 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
   const postsEndRef = useRef<HTMLDivElement>(null);
   const hasInitiallyScrolled = useRef(false);
   const prevPostsLength = useRef(0);
+  const [shareItem, setShareItem] = useState<{ id: string, content: string, authorName: string } | null>(null);
+
+  const handleShareToChat = async () => {
+    if (!user || !shareItem) return;
+    try {
+      const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+      await addDoc(collection(db, 'chat_messages'), {
+        text: '',
+        senderName: user.name,
+        senderEmail: user.email,
+        senderId: user.uid,
+        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+        timestamp: serverTimestamp(),
+        createdAt: Date.now(),
+        reactions: { like: [], heart: [], thanks: [] },
+        isAnonymous: false,
+        originalSenderName: user.name,
+        embeddedItem: {
+          type: 'announcement',
+          id: shareItem.id,
+          title: shareItem.content?.substring(0, 50) || 'تبليغ جديد',
+          subtitle: shareItem.authorName,
+        }
+      });
+      if (onNavigateToChat) {
+        onNavigateToChat();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error sharing to chat');
+    }
+  };
 
   const scrollToBottom = () => {
     postsEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -92,8 +125,6 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       if (docSnap.exists() && docSnap.data().allowedReactions) {
         setAllowedReactions(docSnap.data().allowedReactions);
       }
-    }, (error) => {
-      console.error("Announcements settings listener error:", error);
     });
 
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));
@@ -547,38 +578,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
 
                         {user && (
                           <button
-                            onClick={async () => {
-                              try {
-                                const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
-                                await addDoc(collection(db, 'chat_messages'), {
-                                  text: '',
-                                  senderName: user.name,
-                                  senderEmail: user.email,
-                                  senderId: user.uid,
-                                  senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
-                                  timestamp: serverTimestamp(),
-                                  createdAt: Date.now(),
-                                  reactions: { like: [], heart: [], thanks: [] },
-                                  isAnonymous: false,
-                                  originalSenderName: user.name,
-                                  embeddedItem: {
-                                    type: 'announcement',
-                                    id: post.id,
-                                    title: content?.substring(0, 50) || 'تبليغ جديد',
-                                    subtitle: post.authorName,
-                                  }
-                                });
-                                // Remove alert so we can navigate smoothly or keep it brief
-                                if (onNavigateToChat) {
-                                  onNavigateToChat();
-                                } else {
-                                  alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
-                                }
-                              } catch (err) {
-                                console.error(err);
-                                alert('Error sharing to chat');
-                              }
-                            }}
+                            onClick={() => setShareItem({ id: post.id, content: content || '', authorName: post.authorName || '' })}
                             className="w-full mt-3 p-2 flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800/50 dark:hover:bg-zinc-800 text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 rounded-xl transition-colors font-bold text-sm border border-slate-200 dark:border-zinc-700/50"
                           >
                             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -885,6 +885,14 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmShareDialog
+        isOpen={!!shareItem}
+        onClose={() => setShareItem(null)}
+        onConfirm={handleShareToChat}
+        itemName={isRtl ? 'هذا التبليغ' : 'this announcement'}
+        lang={lang}
+      />
     </div>
   );
 }

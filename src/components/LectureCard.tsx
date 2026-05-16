@@ -8,6 +8,7 @@ import { db, storage } from '../lib/firebase';
 import { useOfflinePDF } from '../hooks/useOfflinePDF';
 import { forceDownload } from '../lib/utils';
 import { useMCQStatus } from '../hooks/useMCQStatus';
+import { ConfirmShareDialog } from './ui/ConfirmShareDialog';
 
 interface LectureCardProps {
   lecture: Lecture;
@@ -26,7 +27,40 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
   const [showPreview, setShowPreview] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   
+  const handleShareToChat = async () => {
+    if (!user) return;
+    try {
+      const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+      await addDoc(collection(db, 'chat_messages'), {
+        text: '',
+        senderName: user.name,
+        senderEmail: user.email,
+        senderId: user.uid,
+        senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
+        timestamp: serverTimestamp(),
+        createdAt: Date.now(),
+        reactions: { like: [], heart: [], thanks: [] },
+        isAnonymous: false,
+        originalSenderName: user.name,
+        embeddedItem: {
+          type: 'lecture',
+          id: lecture.id,
+          title: lecture.title,
+          subtitle: `محاضرة ${lecture.number || ''} ${lecture.category}`,
+          link: lecture.pdfUrl
+        }
+      });
+      if (onNavigateToChat) {
+         onNavigateToChat();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error sharing to chat');
+    }
+  };
+
   const categoryData = CATEGORIES.find(c => c.value === lecture.category);
   const categoryLabel = categoryData ? t[categoryData.labelKey] : lecture.category;
   const date = lecture.createdAt?.toDate ? lecture.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently;
@@ -187,38 +221,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
           </button>
           {user && (
             <button
-              onClick={async () => {
-                try {
-                  const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
-                  await addDoc(collection(db, 'chat_messages'), {
-                    text: '',
-                    senderName: user.name,
-                    senderEmail: user.email,
-                    senderId: user.uid,
-                    senderAvatar: user.photoUrl || user.name.charAt(0).toUpperCase(),
-                    timestamp: serverTimestamp(),
-                    createdAt: Date.now(),
-                    reactions: { like: [], heart: [], thanks: [] },
-                    isAnonymous: false,
-                    originalSenderName: user.name,
-                    embeddedItem: {
-                      type: 'lecture',
-                      id: lecture.id,
-                      title: lecture.title,
-                      subtitle: `محاضرة ${lecture.number || ''} ${lecture.category}`,
-                      link: lecture.pdfUrl
-                    }
-                  });
-                  if (onNavigateToChat) {
-                     onNavigateToChat();
-                  } else {
-                     alert(isRtl ? 'تمت المشاركة في المحادثة!' : 'Shared to chat!');
-                  }
-                } catch (err) {
-                  console.error(err);
-                  alert('Error sharing to chat');
-                }
-              }}
+              onClick={() => setIsShareDialogOpen(true)}
               className="inline-flex items-center justify-center p-1.5 sm:p-2.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg sm:rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
               title={isRtl ? 'مشاركة في المحادثة' : 'Share to Chat'}
             >
@@ -537,6 +540,14 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmShareDialog
+        isOpen={isShareDialogOpen}
+        onClose={() => setIsShareDialogOpen(false)}
+        onConfirm={handleShareToChat}
+        itemName={isRtl ? 'هذه المحاضرة' : 'this lecture'}
+        lang={lang}
+      />
     </>
   );
 });
