@@ -1,121 +1,9 @@
 import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { GoogleGenAI } from '@google/genai';
+import { db, auth } from '../lib/firebase';
 import { MCQQuestion, LectureMCQSets } from '../types/mcq.types';
 import { trackEvent } from '../lib/analytics';
 
-// Assuming vite env variable for Gemini
-let ai: GoogleGenAI | null = null;
-try {
-  const key = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-  if (key) {
-    ai = new GoogleGenAI({ apiKey: key });
-  }
-} catch (e) {
-  console.warn("Failed to initialize GoogleGenAI", e);
-}
-
-const MCQ_SYSTEM_PROMPT = `
-You are an expert pharmacy professor creating exam questions for 
-pharmacy students at university level.
-
-Generate exactly 20 MCQ questions based on the provided lecture PDF.
-
-CRITICAL RULES:
-- ALL question stems and choices MUST be in English
-- Mix question formats:
-  * 40% standard MCQ: "Which of the following..."
-  * 25% EXCEPT format: "All of the following are true EXCEPT"
-  * 20% REGARDING format: "Regarding [topic], which of the following is False"
-  * 15% True/False
-  
-- For 5-choice MCQs (A-E):
-  * CRITICAL: Randomly distribute the correct answer position (A, B, C, D, or E) perfectly across the 20 questions. NEVER default to C.
-  * If using composite options ("A and B", "All of the above", "None of the above"), they MUST be placed at the absolute bottom (Options D and E).
-  * If "A and B" is used, ensure choices A and B actually contain those respective components logically.
-  * Correct answer length must NOT be consistently longer than wrong answers
-  * Distractors must be plausible and academically relevant
-  * Never repeat the same distractor pattern across questions
-  * Difficulty distribution: 30% easy, 50% medium, 20% hard
-  
-- For True/False:
-  * Must be definitively true or false based on lecture content only
-  
-- Explanation: Arabic language, 1-3 sentences, cite the concept from lecture
-
-Return ONLY valid JSON, no markdown, no preamble:
-{
-  "questions": [
-    {
-      "type": "mcq",
-      "stemFormat": "standard|except|regarding|true_false",
-      "stem": "English question stem",
-      "choices": [
-        {"label": "A", "text": "choice text"},
-        {"label": "B", "text": "choice text"},
-        {"label": "C", "text": "choice text"},
-        {"label": "D", "text": "choice text"},
-        {"label": "E", "text": "choice text"}
-      ],
-      "correctAnswer": "A",
-      "explanation": "شرح بالعربية",
-      "difficulty": "easy|medium|hard"
-    }
-  ]
-}
-`;
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      const base64 = result.split(',')[1] || result;
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function extractJson(text: string): any {
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      return JSON.parse(match[0]);
-    }
-    throw e;
-  }
-}
-
-async function callGeminiWithBackoff(contents: any, maxRetries = 3) {
-  let attempt = 0;
-  while (attempt < maxRetries) {
-    if (!ai) {
-      throw new Error('الرجاء إضافة مفتاح Gemini API في الإعدادات');
-    }
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents,
-        config: { responseMimeType: 'application/json' }
-      });
-      return response;
-    } catch (error: any) {
-      if (error.status === 429 && attempt < maxRetries - 1) {
-        attempt++;
-        const delay = Math.pow(2, attempt) * 2000; // 4s, 8s,...
-        console.warn(`Gemini 429 Rate Limit. Retrying in ${delay}ms...`);
-        await new Promise(res => setTimeout(res, delay));
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw new Error('Max retries reached for Gemini call');
-}
+const pendingGenerations = new Map<string, Promise<MCQQuestion[]>>();
 
 function smartShuffleChoices(question: any): any {
   if (question.type === 'true_false' || question.stemFormat === 'true_false' || !question.choices || question.choices.length <= 2) {
@@ -200,34 +88,26 @@ function smartShuffleChoices(question: any): any {
   };
 }
 
-const pendingGenerations = new Map<string, Promise<MCQQuestion[]>>();
-
 export async function extractMCQsFromPDFFile(base64Data: string, prompt: string): Promise<any[]> {
-  const response = await callGeminiWithBackoff([
-    {
-      role: 'user',
-      parts: [
-        { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
-        { text: prompt }
-      ]
-    }
-  ]);
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Unauthorized");
 
-  const responseText = response.text || '';
-  console.log("Raw Gemini JSON response:", responseText);
-  let extractedData;
-  try {
-    extractedData = JSON.parse(responseText);
-  } catch (e) {
-    const match = responseText.match(/\{[\s\S]*\}/);
-    if (match) {
-      extractedData = JSON.parse(match[0]);
-    } else {
-      throw new Error('فشل تحليل البيانات المستخرجة');
-    }
+  const response = await fetch('/api/admin/extract-pdf', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ base64Data, prompt })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || 'Failed to extract questions');
   }
 
-  return extractedData.questions || [];
+  const { questions } = await response.json();
+  return questions || [];
 }
 
 export function generateMCQsForLecture(lectureId: string, subjectId: string, pdfUrl: string): Promise<MCQQuestion[]> {
@@ -300,53 +180,34 @@ async function doGenerateMCQsForLecture(lectureId: string, subjectId: string, pd
       totalQuestions: 20
     });
 
-    // 4. Fetch PDF from URL
-    const pdfResponse = await fetch(pdfUrl);
-    if (!pdfResponse.ok) {
-      throw new Error('Failed to fetch the PDF file.');
-    }
-    const pdfBlob = await pdfResponse.blob();
-    const sizeMb = pdfBlob.size / (1024 * 1024);
-    if (sizeMb > 20) {
-      throw new Error('ملف PDF كبير جداً — الحد الأقصى 20MB');
-    }
-    
-    const base64Data = await blobToBase64(pdfBlob);
+    // 4. Call Backend API
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error("Unauthorized");
 
-    // 5. Call Gemini API
-    const response = await callGeminiWithBackoff([
-      {
-        role: 'user',
-        parts: [
-          { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
-          { text: MCQ_SYSTEM_PROMPT }
-        ]
-      }
-    ]);
+    const endpointResponse = await fetch('/api/admin/generate-mcq', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ lectureId, subjectId, pdfUrl })
+    });
 
-    // 6. Parse response JSON safely
-    const responseText = response.text || '';
-    let parsedQuestions: any[] = [];
-    
-    try {
-      const extracted = extractJson(responseText);
-      parsedQuestions = extracted.questions || [];
-      
-      // Auto-assign IDs to questions
-      parsedQuestions = parsedQuestions.map((q: any, index: number) => ({
-        ...q,
-        id: `q_${lectureId}_${index}_${Date.now()}`,
-        addedBy: 'ai',
-        createdAt: new Date().toISOString()
-      }));
-    } catch (parseError) {
-      // Save debug log securely to a private path or document
-      await setDoc(mcqRef, { 
-        status: 'failed',
-        debugLog: responseText 
-      }, { merge: true });
-      throw new Error('Invalid JSON format returned from AI');
+    if (!endpointResponse.ok) {
+      const errorData = await endpointResponse.json();
+      throw new Error(errorData.error || 'Failed to generate MCQs from backend.');
     }
+
+    const responseJSON = await endpointResponse.json();
+    let parsedQuestions = responseJSON.questions || [];
+
+    // Auto-assign IDs to questions
+    parsedQuestions = parsedQuestions.map((q: any, index: number) => ({
+      ...q,
+      id: `q_${lectureId}_${index}_${Date.now()}`,
+      addedBy: 'ai',
+      createdAt: new Date().toISOString()
+    }));
 
     // Handle incomplete generation < 20 questions
     if (parsedQuestions.length < 20) {

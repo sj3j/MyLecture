@@ -8,6 +8,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -44,7 +45,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
   
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
 
   // --- Telegram Bot Setup ---
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -1295,6 +1296,169 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Error toggling vacation mode" });
+    }
+  });
+
+  const MCQ_SYSTEM_PROMPT = `
+You are an expert pharmacy professor creating exam questions for 
+pharmacy students at university level.
+
+Generate exactly 20 MCQ questions based on the provided lecture PDF.
+
+CRITICAL RULES:
+- ALL question stems and choices MUST be in English
+- Mix question formats:
+  * 40% standard MCQ: "Which of the following..."
+  * 25% EXCEPT format: "All of the following are true EXCEPT"
+  * 20% REGARDING format: "Regarding [topic], which of the following is False"
+  * 15% True/False
+  
+- For 5-choice MCQs (A-E):
+  * CRITICAL: Randomly distribute the correct answer position (A, B, C, D, or E) perfectly across the 20 questions. NEVER default to C.
+  * If using composite options ("A and B", "All of the above", "None of the above"), they MUST be placed at the absolute bottom (Options D and E).
+  * If "A and B" is used, ensure choices A and B actually contain those respective components logically.
+  * Correct answer length must NOT be consistently longer than wrong answers
+  * Distractors must be plausible and academically relevant
+  * Never repeat the same distractor pattern across questions
+  * Difficulty distribution: 30% easy, 50% medium, 20% hard
+  
+- For True/False:
+  * Must be definitively true or false based on lecture content only
+  
+- Explanation: Arabic language, 1-3 sentences, cite the concept from lecture
+
+Return ONLY valid JSON, no markdown, no preamble:
+{
+  "questions": [
+    {
+      "type": "mcq",
+      "stemFormat": "standard|except|regarding|true_false",
+      "stem": "English question stem",
+      "choices": [
+        {"label": "A", "text": "choice text"},
+        {"label": "B", "text": "choice text"},
+        {"label": "C", "text": "choice text"},
+        {"label": "D", "text": "choice text"},
+        {"label": "E", "text": "choice text"}
+      ],
+      "correctAnswer": "A",
+      "explanation": "شرح بالعربية",
+      "difficulty": "easy|medium|hard"
+    }
+  ]
+}
+`;
+
+  function extractJson(text: string): any {
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      const match = text.match(/\\{[\\s\\S]*\\}/);
+      if (match) {
+        return JSON.parse(match[0]);
+      }
+      throw e;
+    }
+  }
+
+  app.post("/api/admin/generate-mcq", verifyAuth, verifyAdmin, async (req, res) => {
+    const { lectureId, subjectId, pdfUrl } = req.body;
+    if (!lectureId || !subjectId || !pdfUrl) {
+      return res.status(400).json({ error: "Missing parameters" });
+    }
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      return res.status(500).json({ error: "Gemini API Key is not configured on the server." });
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+         return res.status(500).json({ error: 'Failed to fetch the PDF file.' });
+      }
+      const pdfBuffer = await pdfResponse.arrayBuffer();
+      const sizeMb = pdfBuffer.byteLength / (1024 * 1024);
+      if (sizeMb > 20) {
+         return res.status(400).json({ error: 'ملف PDF كبير جداً — الحد الأقصى 20MB' });
+      }
+      const base64Data = Buffer.from(pdfBuffer).toString('base64');
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
+              { text: MCQ_SYSTEM_PROMPT }
+            ]
+          }
+        ],
+        config: { responseMimeType: 'application/json' }
+      });
+
+      const responseText = response.text || '';
+      let parsedQuestions: any[] = [];
+      try {
+        const extracted = extractJson(responseText);
+        parsedQuestions = extracted.questions || [];
+      } catch (parseError) {
+        return res.status(500).json({ error: 'Invalid JSON format returned from AI', debugLog: responseText });
+      }
+      
+      res.json({ questions: parsedQuestions });
+
+    } catch (error: any) {
+      console.error('Error in /api/admin/generate-mcq:', error);
+      res.status(500).json({ error: error.message || 'Error generating MCQs' });
+    }
+  });
+
+  app.post("/api/admin/extract-pdf", verifyAuth, verifyAdmin, async (req, res) => {
+    const { base64Data, prompt } = req.body;
+    if (!base64Data || !prompt) {
+      return res.status(400).json({ error: "Missing parameters" });
+    }
+  
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      return res.status(500).json({ error: "Gemini API Key is not configured on the server." });
+    }
+  
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
+              { text: prompt }
+            ]
+          }
+        ],
+        config: { responseMimeType: 'application/json' }
+      });
+  
+      const responseText = response.text || '';
+      let parsedQuestions: any[] = [];
+      try {
+        const extracted = extractJson(responseText);
+        parsedQuestions = extracted.questions || [];
+      } catch (parseError) {
+        return res.status(500).json({ error: 'Invalid JSON format returned from AI' });
+      }
+      
+      res.json({ questions: parsedQuestions });
+  
+    } catch (error: any) {
+      console.error('Error in /api/admin/extract-pdf:', error);
+      res.status(500).json({ error: error.message || 'Error extracting PDF' });
     }
   });
 
