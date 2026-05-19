@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { UserProfile } from '../types';
 import { LectureMCQSets, UserMCQAnswers } from '../types/mcq.types';
 
@@ -33,6 +33,7 @@ export function useMCQStatus(lectureId: string, user: UserProfile | null): MCQSt
       }
     }, (error) => {
       console.warn('Could not listen to mcqs, may lack permissions', error);
+      handleFirestoreError(error, OperationType.GET, `mcqs/${lectureId}`);
     });
 
     // Listen to user attempt status
@@ -45,6 +46,7 @@ export function useMCQStatus(lectureId: string, user: UserProfile | null): MCQSt
       }
     }, (error) => {
       console.warn('Could not listen to userMCQAnswers, may lack permissions', error);
+      handleFirestoreError(error, OperationType.GET, `userMCQAnswers/${user.uid}/lectures/${lectureId}`);
     });
 
     return () => {

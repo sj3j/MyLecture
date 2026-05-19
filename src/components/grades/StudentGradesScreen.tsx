@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Award, Target, Trophy, Clock, Search, X } from 'lucide-react';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import { db, auth } from '../../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { StudentDegree } from '../../types/grades.types';
 import { CATEGORIES, TRANSLATIONS } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -28,6 +28,9 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
 
     const unsub = onSnapshot(q, (snap) => {
       setDegrees(snap.docs.map(d => ({ ...d.data(), id: d.id } as StudentDegree)));
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `degrees/${user.uid}/exams`);
       setLoading(false);
     });
 

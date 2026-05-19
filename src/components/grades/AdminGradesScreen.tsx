@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save, Undo, ChevronDown, Search, Edit2 } from 'lucide-react';
 import { collection, query, getDocs, where, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { UserProfile, CATEGORIES, TRANSLATIONS } from '../../types';
 import { parseGradeFile, ParsedRow } from '../../services/gradeFileParser';
 import { matchGradesToStudents } from '../../services/fuzzyMatchingService';
@@ -211,6 +211,8 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
       const q = query(collection(db, 'degreeBatches'), orderBy('createdAt', 'desc'));
       const unsub = onSnapshot(q, (snap) => {
         setBatches(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'degreeBatches');
       });
       return () => unsub();
     }

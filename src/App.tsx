@@ -362,6 +362,7 @@ export default function App() {
       }
     }, (error) => {
       console.warn("Could not listen to announcements (may lack permissions):", error);
+      handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
     return () => unsubscribe();
   }, [currentTab, user]);
@@ -389,6 +390,7 @@ export default function App() {
     }, (error) => {
       console.warn("Could not listen to lectures (may lack permissions):", error);
       setIsLoading(false);
+      handleFirestoreError(error, OperationType.LIST, 'lectures');
     });
 
     return () => unsubscribe();

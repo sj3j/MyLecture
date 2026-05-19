@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart, Image as ImageIcon, FileText, Link, Eye, Users } from 'lucide-react';
 import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot, getCountFromServer, setDoc } from 'firebase/firestore';
-import { db, storage } from '../lib/firebase';
+import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { forceDownload } from '../lib/utils';
 
@@ -506,6 +506,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
        setActiveTypers(typers);
     }, (error) => {
        console.error("Typing listener permission or index error:", error);
+       handleFirestoreError(error, OperationType.LIST, 'chat_typing');
     });
     return () => unsub();
   }, [user?.uid]);
@@ -530,6 +531,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       }
     }, (e) => {
       console.error('Settings listener error:', e);
+      handleFirestoreError(e, OperationType.GET, 'chat_settings/config');
     });
     return () => unsub();
   }, [isAdminOrModerator]);
@@ -539,7 +541,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     setIsLoading(true);
     const q = query(
       collection(db, 'chat_messages'),
-      orderBy('timestamp', 'desc'),
+      orderBy('createdAt', 'desc'),
       limit(50)
     );
 
@@ -614,6 +616,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     }, (e) => {
       console.error('Chat live listener error: ', e);
       setIsLoading(false);
+      handleFirestoreError(e, OperationType.LIST, 'chat_messages');
     });
 
     return () => unsubscribe();
@@ -717,6 +720,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         senderId: user.uid,
         senderAvatar: displaySenderAvatar,
         timestamp: serverTimestamp(),
+        createdAt: Date.now(),
         replyTo: replyData,
         reactions: { like: [], heart: [], thanks: [] },
         isAnonymous: isAnon,
@@ -797,8 +801,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       
       const q = query(
         collection(db, 'chat_messages'),
-        orderBy('timestamp', 'desc'),
-        where('timestamp', '<', oldestMessage.timestamp),
+        orderBy('createdAt', 'desc'),
+        where('createdAt', '<', oldestMessage.createdAt),
         limit(50)
       );
       
@@ -876,16 +880,16 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         return;
       }
 
-      const targetTimestamp = targetDoc.data().timestamp;
+      const targetTimestamp = targetDoc.data().createdAt;
       if (!targetTimestamp) return;
 
       const oldestLoaded = messages[0];
-      if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp.toMillis()) {
+      if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp) {
         const q = query(
           collection(db, 'chat_messages'),
-          orderBy('timestamp', 'desc'),
-          where('timestamp', '<', oldestLoaded.timestamp),
-          where('timestamp', '>=', targetTimestamp),
+          orderBy('createdAt', 'desc'),
+          where('createdAt', '<', oldestLoaded.createdAt),
+          where('createdAt', '>=', targetTimestamp),
           limit(150)
         );
 

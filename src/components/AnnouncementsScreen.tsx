@@ -125,6 +125,8 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       if (docSnap.exists() && docSnap.data().allowedReactions) {
         setAllowedReactions(docSnap.data().allowedReactions);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/announcements');
     });
 
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));
