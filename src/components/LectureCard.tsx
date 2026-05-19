@@ -6,7 +6,7 @@ import { doc, deleteDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firest
 import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useOfflinePDF } from '../hooks/useOfflinePDF';
-import { forceDownload } from '../lib/utils';
+import { forceDownload, getYoutubeEmbedUrl } from '../lib/utils';
 import { useMCQStatus } from '../hooks/useMCQStatus';
 import { ConfirmShareDialog } from './ui/ConfirmShareDialog';
 
@@ -393,7 +393,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
                   {lecture.youtubeUrl && (
                     <div className="w-full aspect-video bg-black shrink-0 relative">
                        <iframe
-                        src={lecture.youtubeUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                        src={getYoutubeEmbedUrl(lecture.youtubeUrl)}
                         className="w-full h-full border-none absolute inset-0"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
