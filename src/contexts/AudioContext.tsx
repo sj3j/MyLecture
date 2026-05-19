@@ -17,6 +17,10 @@ interface AudioContextType {
   resumeTrack: () => void;
   closePlayer: () => void;
   seek: (percentage: number) => void;
+  playbackRate: number;
+  setPlaybackRate: (rate: number) => void;
+  isPlayerHidden: boolean;
+  setIsPlayerHidden: (hidden: boolean) => void;
 }
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -33,8 +37,17 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRateState] = useState(1);
+  const [isPlayerHidden, setIsPlayerHidden] = useState(false);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const setPlaybackRate = (rate: number) => {
+    setPlaybackRateState(rate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+    }
+  };
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -71,6 +84,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const playTrack = (track: AudioTrack) => {
     if (!audioRef.current) return;
     
+    setIsPlayerHidden(false); // Unhide when playing a track
+
     if (currentTrack?.id === track.id) {
        const playPromise = audioRef.current.play();
        if (playPromise !== undefined) {
@@ -120,7 +135,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, progress, duration, currentTime, playTrack, pauseTrack, resumeTrack, closePlayer, seek }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, progress, duration, currentTime, playTrack, pauseTrack, resumeTrack, closePlayer, seek, playbackRate, setPlaybackRate, isPlayerHidden, setIsPlayerHidden }}>
       {children}
     </AudioContext.Provider>
   );
