@@ -134,6 +134,22 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
               icon: ShieldAlert
             });
           });
+
+          if (user.role === 'admin' || user.role === 'master_admin' || user.role === 'moderator') {
+             const adminSysQuery = query(collection(db, 'adminAlerts'), orderBy('createdAt', 'desc'), limit(20));
+             const adminSysSnap = await getDocs(adminSysQuery);
+             adminSysSnap.forEach(docSnap => {
+               const data = docSnap.data();
+               items.push({
+                 id: docSnap.id,
+                 type: 'system',
+                 title: isRtl ? 'تنبيه نظام' : 'System Alert',
+                 body: (data.reason ? `السبب: ${data.reason}` : 'هناك تنبيه يتطلب المراجعة'),
+                 createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
+                 icon: ShieldAlert
+               });
+             });
+          }
         } catch (e) {
           console.error("System notifications fetch failed", e);
         }

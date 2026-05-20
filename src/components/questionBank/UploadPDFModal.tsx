@@ -7,8 +7,8 @@ import { extractMCQsFromPDFFile } from '../../services/mcqGenerationService';
 import { X, Upload, Loader2, Edit3, Save, CheckCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { QuestionScope, QuestionTag, QuestionType, Difficulty } from '../../types/questionBank.types';
 import { motion, AnimatePresence } from 'motion/react';
+import { CATEGORIES, TRANSLATIONS } from '../../types';
 
-const CATEGORIES = ['pharmacology', 'pharmacognosy', 'organic_chemistry', 'biochemistry', 'cosmetics'];
 const ALL_TAGS: QuestionTag[] = ['وزاري', 'سنين_سابقة', 'سؤال_الدكتور', 'مهم', 'متوقع'];
 
 const PDF_EXTRACTION_PROMPT = `
@@ -58,7 +58,7 @@ export default function UploadPDFModal({ isOpen, onClose, onAdded }: UploadPDFMo
   
   // Categorization
   const [scope, setScope] = useState<QuestionScope>('global');
-  const [subjectId, setSubjectId] = useState<string>(CATEGORIES[0]);
+  const [subjectId, setSubjectId] = useState<string>(CATEGORIES[0].value);
   const [lectureId, setLectureId] = useState<string>('');
   const [tags, setTags] = useState<Set<QuestionTag>>(new Set());
   const [customTag, setCustomTag] = useState<string>('');
@@ -78,7 +78,7 @@ export default function UploadPDFModal({ isOpen, onClose, onAdded }: UploadPDFMo
       setExtractedQuestions([]);
       setCompletedSaves(0);
       setScope('global');
-      setSubjectId(CATEGORIES[0]);
+      setSubjectId(CATEGORIES[0].value);
       setLectureId('');
       setTags(new Set());
       getDocs(query(collection(db, 'lectures')))
@@ -267,7 +267,7 @@ export default function UploadPDFModal({ isOpen, onClose, onAdded }: UploadPDFMo
                           onChange={e => setSubjectId(e.target.value)}
                           className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
                         >
-                          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{TRANSLATIONS['ar'][c.labelKey]}</option>)}
                         </select>
                       </div>
                       {scope === 'lecture' && (

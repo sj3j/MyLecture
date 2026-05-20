@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { X, Search, Filter, Plus, Edit2, Trash2, ShieldAlert } from 'lucide-react';
-import { TRANSLATIONS, Language } from '../../types';
+import { TRANSLATIONS, Language, CATEGORIES } from '../../types';
 import { BankQuestion } from '../../types/questionBank.types';
 import { getAllBankQuestionsForAdmin, softDeleteBankQuestion } from '../../services/questionBankService';
 import AddBankQuestionModal from './AddBankQuestionModal';
@@ -17,21 +17,40 @@ interface AdminQuestionBankScreenProps {
 
 export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: AdminQuestionBankScreenProps) {
   const [questions, setQuestions] = useState<BankQuestion[]>([]);
+  const [lectures, setLectures] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+  const [selectedLecture, setSelectedLecture] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isImportPdfOpen, setIsImportPdfOpen] = useState(false);
   const [questionToDelete, setQuestionToDelete] = useState<string | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<BankQuestion | null>(null);
 
   const tags = ['الكل', 'وزاري', 'سنين_سابقة', 'سؤال_الدكتور', 'مهم', 'متوقع'];
+  const t = TRANSLATIONS[lang];
 
-  const fetchQuestions = async () => {
+  const fetchQuestionsAndLectures = async () => {
     setLoading(true);
     try {
       const q = await getAllBankQuestionsForAdmin();
-      setQuestions(q);
+      
+      // Inject alert flags
+      const alertsSnap = await getDocs(query(collection(db, 'adminAlerts')));
+      const alerts = alertsSnap.docs.map(d => d.data());
+      
+      const enrichedQuestions = q.map(question => {
+        const relatedAlert = alerts.find(a => a.type === 'question_report' && a.questionId === question.id);
+        if (relatedAlert) {
+          return { ...question, isFlagged: true, flaggedReason: relatedAlert.reason };
+        }
+        return question;
+      });
+
+      setQuestions(enrichedQuestions);
+      const snap = await getDocs(query(collection(db, 'lectures')));
+      setLectures(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err: any) {
       console.error(err);
       alert('Error fetching questions: ' + err.message);
@@ -41,13 +60,13 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
   };
 
   useEffect(() => {
-    if (isOpen) fetchQuestions();
+    if (isOpen) fetchQuestionsAndLectures();
   }, [isOpen]);
 
   const handleDelete = async (id: string) => {
     try {
       await softDeleteBankQuestion(id);
-      fetchQuestions();
+      fetchQuestionsAndLectures();
     } catch (e: any) {
       alert("Error: " + e.message);
     }
@@ -57,6 +76,8 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
     if (q.isActive === false) return false;
     if (searchTerm && !q.stem.toLowerCase().includes(searchTerm.toLowerCase())) return false;
     if (selectedTag && selectedTag !== 'الكل' && !q.tags.includes(selectedTag as any)) return false;
+    if (selectedSubject && q.subjectId !== selectedSubject) return false;
+    if (selectedLecture && q.lectureId !== selectedLecture) return false;
     return true;
   });
 
@@ -125,6 +146,32 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
                </button>
              ))}
            </div>
+           
+           <div className="flex flex-col sm:flex-row gap-4 mt-4">
+             <select
+               value={selectedSubject || ''}
+               onChange={e => {
+                 setSelectedSubject(e.target.value || null);
+                 setSelectedLecture(null);
+               }}
+               className="flex-1 p-2 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-sm"
+             >
+               <option value="">جميع المواد</option>
+               {CATEGORIES.map(c => <option key={c.value} value={c.value}>{t[c.labelKey]}</option>)}
+             </select>
+
+             <select
+               value={selectedLecture || ''}
+               onChange={e => setSelectedLecture(e.target.value || null)}
+               className="flex-1 p-2 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-sm"
+               disabled={!selectedSubject}
+             >
+               <option value="">جميع المحاضرات</option>
+               {lectures.filter(l => l.category === selectedSubject).map(l => (
+                 <option key={l.id} value={l.id}>{l.title}</option>
+               ))}
+             </select>
+           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -136,6 +183,14 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
             filtered.map(q => (
               <div key={q.id} className="border border-gray-200 dark:border-zinc-700 rounded-xl p-4 bg-white dark:bg-zinc-800/50">
                 <div className="flex gap-2 flex-wrap mb-2">
+                  {q.isFlagged && (
+                    <span 
+                      className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-100 text-red-700 dark:bg-red-900/30 flex items-center gap-1 cursor-help"
+                      title={q.flaggedReason}
+                    >
+                      <ShieldAlert className="w-3 h-3" /> تم التبليغ: {q.flaggedReason}
+                    </span>
+                  )}
                   {q.tags.map(t => (
                     <span key={t} className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-slate-300">
                       {t} {t === 'سنين_سابقة' && q.year && `(${q.year})`}
@@ -162,7 +217,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
       <AddBankQuestionModal 
         isOpen={isAddOpen} 
         onClose={() => setIsAddOpen(false)} 
-        onAdded={fetchQuestions} 
+        onAdded={fetchQuestionsAndLectures} 
       />
 
       {editingQuestion && (
@@ -172,7 +227,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
           onClose={() => setEditingQuestion(null)} 
           onAdded={() => {
             setEditingQuestion(null);
-            fetchQuestions();
+            fetchQuestionsAndLectures();
           }} 
         />
       )}
@@ -180,7 +235,7 @@ export default function AdminQuestionBankScreen({ isOpen, onClose, lang }: Admin
       <UploadPDFModal
         isOpen={isImportPdfOpen}
         onClose={() => setIsImportPdfOpen(false)}
-        onAdded={fetchQuestions}
+        onAdded={fetchQuestionsAndLectures}
       />
       
       <ConfirmModal

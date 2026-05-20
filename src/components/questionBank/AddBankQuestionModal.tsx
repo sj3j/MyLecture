@@ -5,6 +5,7 @@ import { db } from '../../lib/firebase';
 import { X, Save } from 'lucide-react';
 import { BankQuestion, QuestionScope, QuestionTag, QuestionType, StemFormat, Difficulty, BankChoice } from '../../types/questionBank.types';
 import { addBankQuestion, editBankQuestion } from '../../services/questionBankService';
+import { CATEGORIES, TRANSLATIONS } from '../../types';
 
 interface Props {
   isOpen: boolean;
@@ -13,12 +14,11 @@ interface Props {
   initialData?: BankQuestion | null;
 }
 
-const CATEGORIES = ['pharmacology', 'pharmacognosy', 'organic_chemistry', 'biochemistry', 'cosmetics'];
 const ALL_TAGS: QuestionTag[] = ['وزاري', 'سنين_سابقة', 'سؤال_الدكتور', 'مهم', 'متوقع'];
 
 export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initialData }: Props) {
   const [scope, setScope] = useState<QuestionScope>('global');
-  const [subjectId, setSubjectId] = useState<string>(CATEGORIES[0]);
+  const [subjectId, setSubjectId] = useState<string>(CATEGORIES[0].value);
   const [lectureId, setLectureId] = useState<string>('');
   
   const [tags, setTags] = useState<Set<QuestionTag>>(new Set());
@@ -47,7 +47,7 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
     if (isOpen) {
       if (initialData) {
         setScope(initialData.scope);
-        setSubjectId(initialData.subjectId || CATEGORIES[0]);
+        setSubjectId(initialData.subjectId || CATEGORIES[0].value);
         setLectureId(initialData.lectureId || '');
         setTags(new Set(initialData.tags || []));
         setYear(initialData.year || '');
@@ -68,7 +68,7 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
       } else {
         // Reset form
         setScope('global');
-        setSubjectId(CATEGORIES[0]);
+        setSubjectId(CATEGORIES[0].value);
         setLectureId('');
         setTags(new Set());
         setYear('');
@@ -204,7 +204,7 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
                   onChange={e => setSubjectId(e.target.value)}
                   className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800"
                 >
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {CATEGORIES.map(c => <option key={c.value} value={c.value}>{TRANSLATIONS['ar'][c.labelKey]}</option>)}
                 </select>
               </div>
               {scope === 'lecture' && (

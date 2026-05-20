@@ -42,6 +42,12 @@ export interface BankQuestion {
   attemptCount: number;
   correctCount: number;
   accuracyRate: number;
+
+  // Flagging
+  isFlagged?: boolean;
+  flaggedReason?: string;
+  flaggedBy?: string;
+  flaggedAt?: any; // Timestamp
 }
 
 export interface UserBankAnswer {

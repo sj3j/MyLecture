@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, X, ArrowRight, Play, CheckCircle } from 'lucide-react';
+import { Check, X, ArrowRight, Play, CheckCircle, AlertTriangle } from 'lucide-react';
 import { BankQuestion } from '../../types/questionBank.types';
 import { saveUserBankAnswer } from '../../services/questionBankService';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -18,6 +18,10 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
   const [isFinished, setIsFinished] = useState(false);
   const [score, setScore] = useState(0);
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
+  const [reportQuestion, setReportQuestion] = useState<BankQuestion | null>(null);
+  const [reportReason, setReportReason] = useState('');
+  const [isReporting, setIsReporting] = useState(false);
+  const [showReportSuccess, setShowReportSuccess] = useState(false);
 
   const handleAnswer = async (q: BankQuestion, choiceText: string) => {
     if (isFinished || answers[q.id]) return;
@@ -42,19 +46,57 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
     await executeFinish();
   };
 
+  const handleReport = (q: BankQuestion) => {
+    setReportQuestion(q);
+    setReportReason('');
+  };
+
+  const submitReport = async () => {
+    if (!reportQuestion || !reportReason.trim()) return;
+    setIsReporting(true);
+    try {
+      const { reportBankQuestion } = await import('../../services/questionBankService');
+      await reportBankQuestion(reportQuestion.id, reportReason);
+      setReportQuestion(null);
+      setShowReportSuccess(true);
+      setTimeout(() => setShowReportSuccess(false), 3000);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setIsReporting(false);
+    }
+  };
+
+  const solvedCount = Object.keys(answers).length;
+  const totalCount = questions.length;
+  const progressPercent = totalCount > 0 ? (solvedCount / totalCount) * 100 : 0;
+
   return (
     <motion.div 
       initial={{ x: 20, opacity: 0 }} 
       animate={{ x: 0, opacity: 1 }} 
       exit={{ x: -20, opacity: 0 }}
-      className="flex flex-col h-full bg-stone-50 dark:bg-zinc-900"
+      className="flex flex-col h-full bg-stone-50 dark:bg-zinc-900 absolute inset-0 z-50"
     >
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-700">
-        <button onClick={onBack} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700">
-          <ArrowRight className="w-6 h-6" />
-        </button>
-        <span className="font-bold text-lg dark:text-white">اختبار مخصص</span>
-        <div className="w-10" />
+      <div className="flex flex-col bg-white dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-700 shadow-sm z-10 shrink-0 relative">
+         <div className="flex items-center justify-between p-4">
+           <button onClick={onBack} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors">
+             <ArrowRight className="w-6 h-6" />
+           </button>
+           <span className="font-bold text-lg dark:text-white">اختبار مخصص</span>
+           <div className="w-10 text-center font-bold text-sm text-slate-500">
+             {solvedCount}/{totalCount}
+           </div>
+         </div>
+         {/* Progress Bar */}
+         <div className="w-full h-1.5 bg-slate-100 dark:bg-zinc-700">
+           <motion.div 
+             className="h-full bg-emerald-500"
+             initial={{ width: 0 }}
+             animate={{ width: `${progressPercent}%` }}
+             transition={{ duration: 0.3 }}
+           />
+         </div>
       </div>
 
       <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6 pb-20">
@@ -72,8 +114,15 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
           const userAns = answers[q.id];
           
           return (
-            <div key={q.id} className="bg-white dark:bg-zinc-800 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-zinc-700">
-              <div className="flex justify-between items-start mb-4">
+            <div key={q.id} className="bg-white dark:bg-zinc-800 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-zinc-700 relative group">
+              <button 
+                onClick={() => handleReport(q)} 
+                className="absolute top-4 left-4 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:text-zinc-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                title="الإبلاغ عن خطأ"
+              >
+                <AlertTriangle className="w-5 h-5" />
+              </button>
+              <div className="flex justify-between items-start mb-4 pl-12">
                  <div className="flex flex-wrap gap-2 items-center">
                    <span className="px-3 py-1 bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-slate-300 rounded font-bold text-sm">
                      السؤال {index + 1}
@@ -175,6 +224,59 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
         cancelText="العودة للاختبار"
         isDestructive={false}
       />
+
+      {reportQuestion && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-zinc-900 rounded-3xl p-6 w-full max-w-md shadow-xl border border-slate-100 dark:border-zinc-800"
+          >
+            <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-500">
+              <AlertTriangle className="w-8 h-8" />
+              <h3 className="font-bold text-xl">الإبلاغ عن خطأ</h3>
+            </div>
+            <p className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-4 bg-slate-50 dark:bg-zinc-800 p-3 rounded-xl border border-slate-100 dark:border-zinc-700 max-h-32 overflow-y-auto" dir="auto">
+              {reportQuestion.stem}
+            </p>
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                ما هو الخطأ في هذا السؤال؟ (الرجاء التوضيح)
+              </label>
+              <textarea 
+                value={reportReason}
+                onChange={e => setReportReason(e.target.value)}
+                className="w-full p-4 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white resize-none outline-none focus:ring-2 focus:ring-red-500/50"
+                rows={3}
+                placeholder="مثال: الإجابة الصحيحة تعتبر واضحة لكنها محددة كخاطئة..."
+              />
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setReportQuestion(null)}
+                className="flex-1 py-3 px-4 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                disabled={isReporting}
+              >
+                إلغاء
+              </button>
+              <button 
+                onClick={submitReport}
+                disabled={!reportReason.trim() || isReporting}
+                className="flex-1 py-3 px-4 font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl transition-colors"
+              >
+                {isReporting ? 'جاري الإرسال...' : 'إرسال التقرير'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {showReportSuccess && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-emerald-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
+          <CheckCircle className="w-5 h-5" />
+          تم إرسال التقرير بنجاح، شكراً لك!
+        </div>
+      )}
     </motion.div>
   );
 }

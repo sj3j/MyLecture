@@ -98,6 +98,21 @@ export async function getAllBankQuestionsForAdmin(): Promise<BankQuestion[]> {
   return results;
 }
 
+export async function reportBankQuestion(questionId: string, reason: string) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not logged in');
+
+  // Instead of updating questionBank directly (which fails for students due to rules),
+  // we add an alert to adminAlerts which students have permission to create.
+  await addDoc(collection(db, 'adminAlerts'), {
+    type: 'question_report',
+    questionId,
+    reason,
+    reportedBy: user.uid,
+    createdAt: serverTimestamp()
+  });
+}
+
 export async function saveUserBankAnswer(userId: string, questionId: string, selectedAnswer: string, isCorrect: boolean, sessionId: string, tags: string[]) {
   const ref = doc(collection(db, `userBankAnswers/${userId}/questions`));
   await setDoc(ref, {
