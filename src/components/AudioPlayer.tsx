@@ -22,7 +22,9 @@ export default function AudioPlayer({ id, src, title }: AudioPlayerProps) {
   const currentCurrentTime = isThisActive ? currentTime : 0;
   const currentIsPlaying = isThisActive && isPlaying;
 
-  const togglePlay = () => {
+  const togglePlay = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (currentIsPlaying) {
       pauseTrack();
     } else {
@@ -56,9 +58,12 @@ export default function AudioPlayer({ id, src, title }: AudioPlayerProps) {
       <div className="flex items-center gap-4 mb-3">
         <button
           onClick={togglePlay}
+          onTouchEnd={togglePlay} // Added touch end for mobile responsiveness if onClick fails
+          type="button"
+          style={{ touchAction: 'manipulation' }}
           className="w-12 h-12 flex items-center justify-center bg-[#2196F3] hover:bg-[#1E88E5] text-white rounded-full transition-colors shrink-0 shadow-[0_2px_8px_rgba(33,150,243,0.3)]"
         >
-          {currentIsPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-1" />}
+          {currentIsPlaying ? <Pause className="w-5 h-5 pointer-events-none" /> : <Play className="w-5 h-5 ml-1 pointer-events-none" />}
         </button>
         
         <div className="flex-1 min-w-0 flex flex-col justify-center">
