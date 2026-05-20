@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, LogOut, BookOpen, Upload, Languages, Moon, Sun } from 'lucide-react';
+import { Search, LogOut, BookOpen, Upload, Languages, Moon, Sun, Inbox } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { UserProfile, Language, TRANSLATIONS } from '../types';
@@ -15,9 +15,11 @@ interface NavbarProps {
   currentTab: Tab;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  onShowNotifications?: () => void;
+  hasUnreadNotifications?: boolean;
 }
 
-export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload, lang, setLang, currentTab, theme, toggleTheme }: NavbarProps) {
+export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload, lang, setLang, currentTab, theme, toggleTheme, onShowNotifications, hasUnreadNotifications }: NavbarProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -54,6 +56,19 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
           )}
 
           <div className="flex items-center gap-2 sm:gap-4">
+            {user && onShowNotifications && (
+              <button
+                onClick={onShowNotifications}
+                className="relative p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"
+                title={isRtl ? 'صندوق الوارد (الإشعارات)' : 'Inbox (Notifications)'}
+              >
+                <Inbox className="w-5 h-5" />
+                {hasUnreadNotifications && (
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
+                )}
+              </button>
+            )}
+
             <button
               onClick={toggleTheme}
               className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-all"

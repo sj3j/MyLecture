@@ -26,6 +26,7 @@ import OnboardingScreen from './components/OnboardingScreen';
 import OnboardingSlides from './components/OnboardingSlides';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import MCQOverlay from './components/MCQOverlay';
+import NotificationsModal from './components/NotificationsModal';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
@@ -51,6 +52,9 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !localStorage.getItem('hasSeenOnboarding');
   });
+
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -345,6 +349,59 @@ export default function App() {
     }
   }, [user?.uid]); // Only call when user uid is available on initial mount
 
+  useEffect(() => {
+    if (!user) return;
+    
+    // Simplistic check for unread notifications (inbox)
+    // We check homeworks and system notifications
+    const checkInbox = async () => {
+      try {
+        const lastRead = parseInt(localStorage.getItem('lastReadInbox') || '0', 10);
+        let latestTime = 0;
+
+        // Check latest homework
+        if (user.role !== 'admin' && user.role !== 'master_admin') {
+           const hwQuery = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(1));
+           const hwSnap = await getDocs(hwQuery);
+           if (!hwSnap.empty) {
+             const t = hwSnap.docs[0].data().createdAt?.toMillis?.() || 0;
+             if (t > latestTime) latestTime = t;
+           }
+        }
+
+        // Check latest system notif
+        const sysQuery = query(collection(db, 'systemNotifications'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'), limit(1));
+        const sysSnap = await getDocs(sysQuery);
+        if (!sysSnap.empty) {
+          const t = sysSnap.docs[0].data().createdAt?.toMillis?.() || 0;
+          if (t > latestTime) latestTime = t;
+        }
+
+        // Check latest admin alert
+        if (user.role === 'admin' || user.role === 'master_admin' || user.role === 'moderator') {
+          const adQuery = query(collection(db, 'adminAlerts'), orderBy('createdAt', 'desc'), limit(1));
+          const adSnap = await getDocs(adQuery);
+          if (!adSnap.empty) {
+             const t = adSnap.docs[0].data().createdAt?.toMillis?.() || 0;
+             if (t > latestTime) latestTime = t;
+          }
+        }
+
+        // Chat mentions might be missed here for performance, but this covers major system/homework/alerts
+        if (latestTime > lastRead) {
+          setHasUnreadInbox(true);
+        }
+      } catch (e) {
+        console.warn("Could not check inbox:", e);
+      }
+    };
+
+    checkInbox();
+    // Optional polling every 60 seconds
+    const interval = setInterval(checkInbox, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   // Announcements Listener for Notifications
   useEffect(() => {
     if (!user || (!user.group && user.role === 'student')) return;
@@ -485,6 +542,12 @@ export default function App() {
           currentTab={currentTab}
           theme={theme}
           toggleTheme={toggleTheme}
+          onShowNotifications={() => {
+            setShowNotificationsModal(true);
+            setHasUnreadInbox(false);
+            localStorage.setItem('lastReadInbox', Date.now().toString());
+          }}
+          hasUnreadNotifications={hasUnreadInbox}
         />
       )}
 
@@ -555,6 +618,14 @@ export default function App() {
       <AntiCheatDashboard isOpen={showAntiCheat} onClose={() => setShowAntiCheat(false)} lang={lang} />
       <StudentGradesScreen isOpen={showStudentGrades} onClose={() => setShowStudentGrades(false)} />
       
+      {showNotificationsModal && user && (
+        <NotificationsModal
+          user={user}
+          lang={lang}
+          onClose={() => setShowNotificationsModal(false)}
+        />
+      )}
+
       {mcqLecture && user && (
         <MCQOverlay 
           lecture={mcqLecture} 

@@ -98,7 +98,7 @@ export async function getAllBankQuestionsForAdmin(): Promise<BankQuestion[]> {
   return results;
 }
 
-export async function reportBankQuestion(questionId: string, reason: string) {
+export async function reportBankQuestion(questionId: string, reason: string, stem: string, userName: string) {
   const user = auth.currentUser;
   if (!user) throw new Error('Not logged in');
 
@@ -107,8 +107,10 @@ export async function reportBankQuestion(questionId: string, reason: string) {
   await addDoc(collection(db, 'adminAlerts'), {
     type: 'question_report',
     questionId,
+    questionStem: stem,
     reason,
     reportedBy: user.uid,
+    reportedByName: userName,
     createdAt: serverTimestamp()
   });
 }

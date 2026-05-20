@@ -56,7 +56,9 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
     setIsReporting(true);
     try {
       const { reportBankQuestion } = await import('../../services/questionBankService');
-      await reportBankQuestion(reportQuestion.id, reportReason);
+      const { auth } = await import('../../lib/firebase');
+      const userName = auth.currentUser?.displayName || auth.currentUser?.email || 'طالب';
+      await reportBankQuestion(reportQuestion.id, reportReason, reportQuestion.stem, userName);
       setReportQuestion(null);
       setShowReportSuccess(true);
       setTimeout(() => setShowReportSuccess(false), 3000);

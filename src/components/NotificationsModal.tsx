@@ -30,11 +30,12 @@ interface NotificationsModalProps {
 
 interface NotificationItem {
   id: string;
-  type: 'mention' | 'homework' | 'system';
+  type: 'mention' | 'homework' | 'system' | 'report';
   title: string;
   body: string;
   createdAt: any;
   icon: any;
+  extraData?: any;
 }
 
 export default function NotificationsModal({ user, lang, onClose }: NotificationsModalProps) {
@@ -42,6 +43,11 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
   const t = TRANSLATIONS[lang];
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [expandedReports, setExpandedReports] = useState<Record<string, boolean>>({});
+
+  const toggleReport = (id: string) => {
+    setExpandedReports(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   useEffect(() => {
     const fetchNotifications = async () => {
@@ -140,13 +146,22 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
              const adminSysSnap = await getDocs(adminSysQuery);
              adminSysSnap.forEach(docSnap => {
                const data = docSnap.data();
+               let title = isRtl ? 'تنبيه نظام' : 'System Alert';
+               let body = data.reason ? `السبب: ${data.reason}` : 'هناك تنبيه يتطلب المراجعة';
+               
+               if (data.type === 'question_report') {
+                 title = isRtl ? 'تبليغ عن سؤال' : 'Question Report';
+                 body = `سؤال: ${data.questionStem ? data.questionStem.substring(0, 50) + '...' : 'غير معروف'}`;
+               }
+               
                items.push({
                  id: docSnap.id,
-                 type: 'system',
-                 title: isRtl ? 'تنبيه نظام' : 'System Alert',
-                 body: (data.reason ? `السبب: ${data.reason}` : 'هناك تنبيه يتطلب المراجعة'),
+                 type: data.type === 'question_report' ? 'report' : 'system',
+                 title,
+                 body,
                  createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
-                 icon: ShieldAlert
+                 icon: ShieldAlert,
+                 extraData: data
                });
              });
           }
@@ -202,7 +217,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                   item.type === 'mention' 
                     ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
-                    : item.type === 'system'
+                    : (item.type === 'system' || item.type === 'report')
                       ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
                       : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
                 }`}>
@@ -221,6 +236,30 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
                   <p className="text-sm text-slate-600 dark:text-slate-400 leading-snug">
                     {item.body}
                   </p>
+                  
+                  {item.type === 'report' && item.extraData && (
+                    <div className="mt-3">
+                      <button 
+                        onClick={() => toggleReport(item.id)}
+                        className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-400 dark:hover:text-sky-300 dark:hover:bg-sky-900/40 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        {expandedReports[item.id] ? (isRtl ? 'إخفاء التفاصيل' : 'Hide Details') : (isRtl ? 'عرض التفاصيل' : 'View Details')}
+                      </button>
+                      
+                      {expandedReports[item.id] && (
+                        <div className="mt-2 p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                          <div>
+                            <span className="font-bold text-slate-500 text-xs">{(isRtl ? 'بواسطة:' : 'By:')} </span>
+                            <span className="font-bold">{item.extraData.reportedByName || item.extraData.reportedBy}</span>
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-500 text-xs">{(isRtl ? 'السبب:' : 'Reason:')} </span>
+                            <span className="break-words">{item.extraData.reason}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))
