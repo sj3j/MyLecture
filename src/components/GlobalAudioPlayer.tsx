@@ -94,8 +94,9 @@ export default function GlobalAudioPlayer({ isRtl }: { isRtl: boolean }) {
           <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
             <div className="flex items-center gap-[2px] h-4 w-full cursor-pointer" onClick={(e) => {
                const rect = e.currentTarget.getBoundingClientRect();
+               const isElementRtl = window.getComputedStyle(e.currentTarget).direction === 'rtl';
                const x = e.clientX - rect.left;
-               const percentage = (x / rect.width) * 100;
+               const percentage = isElementRtl ? ((rect.width - x) / rect.width) * 100 : (x / rect.width) * 100;
                seek(percentage);
             }}>
                {Array.from({ length: 30 }).map((_, i) => {

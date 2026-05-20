@@ -70,8 +70,9 @@ export default function AudioPlayer({ id, src, title }: AudioPlayerProps) {
           {/* Visual Waveform Placeholder */}
           <div className="flex items-center gap-[2px] h-6 w-full mb-2 cursor-pointer" onClick={(e) => {
              const rect = e.currentTarget.getBoundingClientRect();
+             const isElementRtl = window.getComputedStyle(e.currentTarget).direction === 'rtl';
              const x = e.clientX - rect.left;
-             const percentage = (x / rect.width) * 100;
+             const percentage = isElementRtl ? ((rect.width - x) / rect.width) * 100 : (x / rect.width) * 100;
              handleSeek(percentage);
           }}>
              {Array.from({ length: 40 }).map((_, i) => {

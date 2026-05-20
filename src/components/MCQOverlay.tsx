@@ -12,11 +12,10 @@ import MCQIntroScreen from './mcq/MCQIntroScreen';
 import MCQQuizScreen from './mcq/MCQQuizScreen';
 import MCQResultScreen from './mcq/MCQResultScreen';
 import MCQReviewScreen from './mcq/MCQReviewScreen';
-import BankBrowseScreen from './questionBank/BankBrowseScreen';
 import BankQuizSetupScreen from './questionBank/BankQuizSetupScreen';
 import BankQuizScreen from './questionBank/BankQuizScreen';
 
-export type MCQStackRoute = 'loading' | 'intro' | 'quiz' | 'result' | 'review' | 'banned' | 'bank_browse' | 'bank_quiz_setup' | 'bank_quiz' | 'bank_result';
+export type MCQStackRoute = 'loading' | 'intro' | 'quiz' | 'result' | 'review' | 'banned' | 'bank_quiz_setup' | 'bank_quiz' | 'bank_result';
 
 interface MCQOverlayProps {
   lecture: Lecture;
@@ -95,16 +94,11 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
   };
 
   useEffect(() => {
-    const handleBrowse = (e: any) => {
-      setRoute('bank_browse');
-    };
     const handleQuizSetup = (e: any) => {
       setRoute('bank_quiz_setup');
     };
-    window.addEventListener('open-bank-browse', handleBrowse);
     window.addEventListener('open-bank-quiz', handleQuizSetup);
     return () => {
-      window.removeEventListener('open-bank-browse', handleBrowse);
       window.removeEventListener('open-bank-quiz', handleQuizSetup);
     }
   }, []);
@@ -200,14 +194,6 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             answers={finalResult.answers}
             onBack={() => setRoute('result')}
             lectureId={lecture.id}
-          />
-        )}
-
-        {route === 'bank_browse' && (
-          <BankBrowseScreen 
-            questions={bankQuestions}
-            onBack={() => setRoute('intro')}
-            userId={user.uid}
           />
         )}
 

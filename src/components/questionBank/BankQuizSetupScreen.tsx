@@ -10,7 +10,6 @@ interface Props {
 }
 
 export default function BankQuizSetupScreen({ bankQuestions, onStartQuiz, onBack }: Props) {
-  const [count, setCount] = useState<number>(10);
   const [selectedTags, setSelectedTags] = useState<Set<QuestionTag>>(new Set());
   const [order, setOrder] = useState<'random' | 'hardest'>('random');
 
@@ -37,8 +36,7 @@ export default function BankQuizSetupScreen({ bankQuestions, onStartQuiz, onBack
       pool.sort((a, b) => a.accuracyRate - b.accuracyRate); // lower accuracy = harder
     }
     
-    // Limit
-    const finalSet = pool.slice(0, count);
+    const finalSet = pool;
     if (finalSet.length === 0) {
       alert('لا توجد أسئلة تطابق هذه المعايير.');
       return;
@@ -63,25 +61,6 @@ export default function BankQuizSetupScreen({ bankQuestions, onStartQuiz, onBack
       </div>
 
       <div className="flex-1 p-6 overflow-y-auto space-y-8">
-        <div>
-          <h3 className="font-bold text-slate-900 dark:text-white mb-4">عدد الأسئلة</h3>
-          <div className="flex gap-3">
-             {[5, 10, 15, bankQuestions.length].map(num => (
-               <button 
-                 key={'count_'+num}
-                 onClick={() => setCount(num)}
-                 className={`flex-1 py-3 font-bold rounded-xl transition-colors border-2 ${
-                   count === num 
-                   ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30' 
-                   : 'border-transparent bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-400'
-                 }`}
-               >
-                 {num === bankQuestions.length ? 'الكل' : num}
-               </button>
-             ))}
-          </div>
-        </div>
-
         <div>
           <h3 className="font-bold text-slate-900 dark:text-white mb-4">فلتر التصنيف (اختياري)</h3>
           <div className="flex flex-wrap gap-3">
@@ -133,7 +112,7 @@ export default function BankQuizSetupScreen({ bankQuestions, onStartQuiz, onBack
           onClick={handleStart}
           className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-lg rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-emerald-500/20"
         >
-          ابدأ الاختبار ({Math.min(count, bankQuestions.length)} سؤال)
+          ابدأ الاختبار
           <Play className="w-5 h-5 fill-current" />
         </button>
       </div>

@@ -138,16 +138,10 @@ export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions 
             
             <div className="flex gap-2">
               <button 
-                onClick={() => window.dispatchEvent(new CustomEvent('open-bank-browse', { detail: { bankQuestions, lectureId: lecture.id } }))}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-slate-300 font-bold rounded-xl flex items-center justify-center transition-colors"
-               >
-                 تصفح
-              </button>
-              <button 
                 onClick={() => window.dispatchEvent(new CustomEvent('open-bank-quiz', { detail: { bankQuestions, lectureId: lecture.id } }))}
-                className="flex-[2] py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
                >
-                 ابدأ اختبار مخصص
+                 ابدأ اختبار ببنك الأسئلة
               </button>
             </div>
           </div>
