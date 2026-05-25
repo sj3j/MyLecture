@@ -6,6 +6,53 @@ export interface ParsedRow {
   originalData: any;
 }
 
+export function parseGradeText(text: string): ParsedRow[] {
+  const parsedRows: ParsedRow[] = [];
+  const lines = text.split('\n');
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    
+    // Try splitting by tab (pasting from Excel usually uses tabs)
+    let parts = trimmed.split('\t');
+    if (parts.length < 2) {
+      // Try splitting by comma
+      parts = trimmed.split(',');
+    }
+    if (parts.length < 2) {
+      // Fallback: matching text followed by a space and a number/grade
+      const match = trimmed.match(/^(.*?)\s+([0-9.]+|غائب|مؤجل|محجوبة|درجة محجوبة)$/i);
+      if (match) {
+        parts = [match[1], match[2]];
+      }
+    }
+    
+    if (parts.length >= 2) {
+      let nameStr = parts[0].trim();
+      let degreeVal: string | number = parts[1].trim();
+      
+      // If the first part is a degree and second is text:
+      if (!isNaN(Number(nameStr)) && isNaN(Number(degreeVal as string))) {
+         const temp = nameStr;
+         nameStr = String(degreeVal);
+         degreeVal = temp;
+      }
+
+      // remove quotes if any
+      nameStr = nameStr.replace(/^"|"$/g, '').trim();
+
+      parsedRows.push({
+        name: nameStr,
+        degree: isNaN(Number(degreeVal)) ? degreeVal : Number(degreeVal),
+        originalData: { raw: trimmed }
+      });
+    }
+  }
+
+  return parsedRows;
+}
+
 export async function parseGradeFile(file: File): Promise<ParsedRow[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

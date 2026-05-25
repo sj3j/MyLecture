@@ -3,7 +3,7 @@ import { Upload, FileSpreadsheet, Check, X, AlertCircle, RefreshCw, Trash2, Save
 import { collection, query, getDocs, where, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { UserProfile, CATEGORIES, TRANSLATIONS } from '../../types';
-import { parseGradeFile, ParsedRow } from '../../services/gradeFileParser';
+import { parseGradeFile, parseGradeText, ParsedRow } from '../../services/gradeFileParser';
 import { matchGradesToStudents } from '../../services/fuzzyMatchingService';
 import { MatchedResult, GradeBatch } from '../../types/grades.types';
 import { confirmDegreeBatchClient, undoDegreeBatch, patchDegreeBatchClient } from '../../services/adminGradeService';
@@ -126,6 +126,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
   const [examName, setExamName] = useState('');
   const [material, setMaterial] = useState('');
   const [maxDegree, setMaxDegree] = useState('100');
+  const [patchText, setPatchText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [students, setStudents] = useState<UserProfile[]>([]);
@@ -248,6 +249,29 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
       setIsParsing(false);
       setIsMatching(false);
       e.target.value = ''; // Reset file input
+    }
+  };
+
+  const handleTextMatch = async () => {
+    if (!patchText.trim()) {
+      setErrorMsg("يرجى لصق الدرجات أولاً");
+      return;
+    }
+    
+    setErrorMsg('');
+    setIsParsing(true);
+    try {
+      const parsedStats = parseGradeText(patchText);
+      setIsParsing(false);
+      setIsMatching(true);
+      
+      const results = matchGradesToStudents(parsedStats, students);
+      setMatchedResults(results);
+    } catch (err: any) {
+      setErrorMsg("فشل تحليل النص: " + err.message);
+    } finally {
+      setIsParsing(false);
+      setIsMatching(false);
     }
   };
 
@@ -475,69 +499,95 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
           {matchedResults.length === 0 ? (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6 sm:p-10 text-center">
               <FileSpreadsheet className="w-16 h-16 text-emerald-100 dark:text-emerald-900/50 mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">رفع نتائج وسعيّات جديدة</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                {patchAppealsBatchId ? 'رفع وتعديل درجات المعترضين' : 'رفع نتائج وسعيّات جديدة'}
+              </h2>
               <p className="text-gray-500 dark:text-zinc-400 max-w-md mx-auto mb-8">
-                قم بتسمية الاختبار، ثم ارفع ملف إكسيل أو CSV. سيحاول النظام تلقائياً مطابقة أسماء الطلاب مع قاعدة البيانات.
+                {patchAppealsBatchId ? 'قم بلصق الدرجات أو أسماء الطلاب مع الدرجات الجديدة (اسم الطالب، تاب/فاصلة، ثم الدرجة).' : 'قم بتسمية الاختبار، ثم ارفع ملف إكسيل أو CSV. سيحاول النظام تلقائياً مطابقة أسماء الطلاب مع قاعدة البيانات.'}
               </p>
 
-              <div className="max-w-md mx-auto mb-6 flex flex-col sm:flex-row gap-4">
-                <div className="flex-1 text-right">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">اسم الاختبار أو التقييم *</label>
-                  <input 
-                    type="text"
-                    value={examName}
-                    onChange={(e) => setExamName(e.target.value)}
-                    placeholder="مثال: سعي الفصل الأول، امتحان الميدترم..."
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white"
-                  />
-                </div>
-                <div className="w-full sm:w-32 text-right">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الدرجة السقف</label>
-                  <input 
-                    type="number"
-                    value={maxDegree}
-                    onChange={(e) => setMaxDegree(e.target.value)}
-                    placeholder="100"
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white"
-                  />
-                </div>
-              </div>
+              {!patchAppealsBatchId && (
+                <>
+                  <div className="max-w-md mx-auto mb-6 flex flex-col sm:flex-row gap-4">
+                    <div className="flex-1 text-right">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">اسم الاختبار أو التقييم *</label>
+                      <input 
+                        type="text"
+                        value={examName}
+                        onChange={(e) => setExamName(e.target.value)}
+                        placeholder="مثال: سعي الفصل الأول، امتحان الميدترم..."
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white"
+                      />
+                    </div>
+                    <div className="w-full sm:w-32 text-right">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الدرجة السقف</label>
+                      <input 
+                        type="number"
+                        value={maxDegree}
+                        onChange={(e) => setMaxDegree(e.target.value)}
+                        placeholder="100"
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white"
+                      />
+                    </div>
+                  </div>
 
-              <div className="max-w-md mx-auto mb-8 text-right">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">المادة الدراسية *</label>
-                <select
-                  value={material}
-                  onChange={(e) => setMaterial(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white appearance-none"
-                >
-                  <option value="" disabled>اختر المادة الدراسية...</option>
-                  {CATEGORIES.map(c => (
-                    <option key={c.value} value={c.value}>
-                      {TRANSLATIONS.ar[c.labelKey]}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div className="max-w-md mx-auto mb-8 text-right">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">المادة الدراسية *</label>
+                    <select
+                      value={material}
+                      onChange={(e) => setMaterial(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white appearance-none"
+                    >
+                      <option value="" disabled>اختر المادة الدراسية...</option>
+                      {CATEGORIES.map(c => (
+                        <option key={c.value} value={c.value}>
+                          {TRANSLATIONS.ar[c.labelKey]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
 
-              <div className="max-w-md mx-auto relative group">
-                <input 
-                  type="file" 
-                  accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-                  onChange={handleFileUpload}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  disabled={isParsing || isMatching}
-                />
-                <div className="bg-emerald-50 border-2 border-dashed border-emerald-300 dark:border-emerald-900/50 dark:bg-emerald-900/10 rounded-2xl p-8 transition-colors group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/20 flex flex-col items-center justify-center">
-                  {(isParsing || isMatching) ? (
-                    <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
-                  ) : (
-                    <Upload className="w-8 h-8 text-emerald-500 mb-3" />
-                  )}
-                  <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                    {isParsing ? 'جاري تحليل الملف...' : isMatching ? 'جاري مطابقة الأسماء...' : 'اضغط لاختيار ملف Excel / CSV'}
-                  </span>
+              {patchAppealsBatchId ? (
+                <div className="max-w-md mx-auto relative group">
+                  <textarea 
+                    value={patchText}
+                    onChange={(e) => setPatchText(e.target.value)}
+                    placeholder={'علي أحمد\t10\nمحمد عبد\t8.5'}
+                    className="w-full h-40 px-4 py-3 bg-gray-50 dark:bg-zinc-800 border-2 border-dashed border-emerald-300 dark:border-emerald-700/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 dark:text-white text-right leading-relaxed"
+                    dir="auto"
+                  />
+                  <button 
+                    onClick={handleTextMatch}
+                    disabled={isParsing || isMatching || !patchText.trim()}
+                    className="mt-4 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                  >
+                   {(isParsing || isMatching) && <RefreshCw className="w-5 h-5 animate-spin" />}
+                   معالجة ومطابقة الدرجات
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <div className="max-w-md mx-auto relative group">
+                  <input 
+                    type="file" 
+                    accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    disabled={isParsing || isMatching}
+                  />
+                  <div className="bg-emerald-50 border-2 border-dashed border-emerald-300 dark:border-emerald-900/50 dark:bg-emerald-900/10 rounded-2xl p-8 transition-colors group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/20 flex flex-col items-center justify-center">
+                    {(isParsing || isMatching) ? (
+                      <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
+                    ) : (
+                      <Upload className="w-8 h-8 text-emerald-500 mb-3" />
+                    )}
+                    <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                      {isParsing ? 'جاري تحليل الملف...' : isMatching ? 'جاري مطابقة الأسماء...' : 'اضغط لاختيار ملف Excel / CSV'}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 overflow-hidden">
