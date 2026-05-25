@@ -8,7 +8,8 @@ export async function confirmDegreeBatchClient(
   confirmedResults: MatchedResult[],
   maxDegree?: number | string,
   material?: string,
-  existingBatchId?: string
+  existingBatchId?: string,
+  allStudentIds?: string[]
 ) {
   const user = auth.currentUser;
   if (!user) throw new Error("يجب تسجيل الدخول");
@@ -30,14 +31,16 @@ export async function confirmDegreeBatchClient(
   
   let saved = 0;
   let failed = 0;
-  const studentIds: string[] = [];
+  const processedStudentIds = new Set<string>();
 
   let passRate: number | undefined;
   if (maxDegree && !isNaN(Number(maxDegree))) {
     const maxNum = Number(maxDegree);
-    const passedCount = confirmedResults.filter(r => 
-      r.matchedUserId && !isNaN(Number(r.degree)) && (Number(r.degree) / maxNum) >= 0.5
-    ).length;
+    const passedCount = confirmedResults.filter(r => {
+      if (!r.matchedUserId) return false;
+      const degNum = Number(r.degree);
+      return !isNaN(degNum) && (degNum / maxNum) >= 0.5;
+    }).length;
     const totalMatched = confirmedResults.filter(r => r.matchedUserId).length;
     if (totalMatched > 0) {
       passRate = (passedCount / totalMatched) * 100;
@@ -47,35 +50,61 @@ export async function confirmDegreeBatchClient(
   const chunkSize = 400; // Safe chunk size limit for Firestore batches
   
   try {
-    for (let i = 0; i < confirmedResults.length; i += chunkSize) {
-      const chunk = confirmedResults.slice(i, i + chunkSize);
+    // Collect all data to write
+    const recordsToWrite: { studentId: string, degree: string | number }[] = [];
+
+    // 1. Add students from the file
+    for (const result of confirmedResults) {
+      if (result.matchedUserId) {
+        processedStudentIds.add(result.matchedUserId);
+        
+        let finalDegree: string | number = result.degree;
+        if (finalDegree === '' || finalDegree === null || finalDegree === undefined || String(finalDegree).trim() === '') {
+           finalDegree = 'درجة محجوبة';
+        }
+        
+        recordsToWrite.push({ studentId: result.matchedUserId, degree: finalDegree });
+      } else {
+        failed++;
+      }
+    }
+
+    // 2. Add students not in the file (if allStudentIds is provided)
+    if (allStudentIds && allStudentIds.length > 0) {
+      for (const sId of allStudentIds) {
+        if (!processedStudentIds.has(sId)) {
+          processedStudentIds.add(sId);
+          recordsToWrite.push({ studentId: sId, degree: 'ما متكوّز أو اسمك مو بالملف' });
+        }
+      }
+    }
+
+    const studentIdsArr = Array.from(processedStudentIds);
+
+    for (let i = 0; i < recordsToWrite.length; i += chunkSize) {
+      const chunk = recordsToWrite.slice(i, i + chunkSize);
       const firestoreBatch = writeBatch(db);
       
-      for (const result of chunk) {
-        if (result.matchedUserId) {
-          const studentId = result.matchedUserId;
-          studentIds.push(studentId);
-          const degreeRef = doc(db, `degrees/${studentId}/exams/${examId}`);
-          
-          const degreeData: any = {
-            examName,
-            degree: result.degree || 0,
-            batchId: batchId,
-            createdAt: serverTimestamp()
-          };
-          if (maxDegree) degreeData.maxDegree = maxDegree;
-          if (material) degreeData.material = material;
-          if (passRate !== undefined) degreeData.passRate = passRate;
+      for (const record of chunk) {
+        const degreeRef = doc(db, `degrees/${record.studentId}/exams/${examId}`);
+        const degreeData: any = {
+          examName,
+          degree: record.degree,
+          batchId: batchId,
+          createdAt: serverTimestamp()
+        };
+        if (maxDegree) degreeData.maxDegree = maxDegree;
+        if (material) degreeData.material = material;
+        if (passRate !== undefined) degreeData.passRate = passRate;
 
-          firestoreBatch.set(degreeRef, degreeData);
-          saved++;
-        } else {
-          failed++;
+        firestoreBatch.set(degreeRef, degreeData);
+        if (confirmedResults.some(r => r.matchedUserId === record.studentId)) {
+           saved++;
         }
       }
       
       // On the last chunk, attach the main degreeBatches manifest
-      if (i + chunkSize >= confirmedResults.length) {
+      if (i + chunkSize >= recordsToWrite.length) {
         const batchRef = doc(db, 'degreeBatches', batchId);
         const batchDocData: any = {
           id: batchId,
@@ -83,9 +112,10 @@ export async function confirmDegreeBatchClient(
           createdAt: serverTimestamp(),
           createdBy: user.uid,
           status: 'confirmed',
-          studentIds: Array.from(new Set(studentIds)),
+          studentIds: studentIdsArr,
           stats: {
             totalRows: confirmedResults.length,
+            // saved here tracks matched in the file
             matched: saved,
             unmatched: failed
           }
@@ -99,8 +129,8 @@ export async function confirmDegreeBatchClient(
       await firestoreBatch.commit();
     }
 
-    // Handle empty batches
-    if (confirmedResults.length === 0) {
+    // Handle empty batches (e.g. if we have zero records)
+    if (recordsToWrite.length === 0) {
       const firestoreBatch = writeBatch(db);
       const batchRef = doc(db, 'degreeBatches', batchId);
       const emptyBatchData: any = {
@@ -109,7 +139,7 @@ export async function confirmDegreeBatchClient(
         createdAt: serverTimestamp(),
         createdBy: user.uid,
         status: 'confirmed',
-        studentIds: Array.from(new Set(studentIds)),
+        studentIds: [],
         stats: {
           totalRows: 0,
           matched: 0,
@@ -128,6 +158,67 @@ export async function confirmDegreeBatchClient(
     console.error("Firestore Client Batch Error:", err);
     throw new Error(err.message || "حدث خطأ أثناء حفظ درجات الطلاب");
   }
+}
+
+export async function patchDegreeBatchClient(
+  batchId: string,
+  updates: MatchedResult[]
+) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("يجب تسجيل الدخول");
+  
+  if (!updates || updates.length === 0) return;
+
+  const batchRef = doc(db, 'degreeBatches', batchId);
+  const batchSnap = await getDoc(batchRef);
+  if (!batchSnap.exists()) throw new Error("الكشف غير موجود");
+
+  const batchData = batchSnap.data();
+  const examId = `exam_${batchId}`;
+  
+  const existingStudentIds = new Set<string>(batchData.studentIds || []);
+  
+  let validUpdates = 0;
+  
+  const chunkSize = 400;
+  for (let i = 0; i < updates.length; i += chunkSize) {
+    const chunk = updates.slice(i, i + chunkSize);
+    const firestoreBatch = writeBatch(db);
+    
+    for (const update of chunk) {
+      if (update.matchedUserId) {
+        let finalDegree: string | number = update.degree;
+        if (finalDegree === '' || finalDegree === null || finalDegree === undefined || String(finalDegree).trim() === '') {
+           finalDegree = 'درجة محجوبة';
+        }
+        
+        const degreeRef = doc(db, `degrees/${update.matchedUserId}/exams/${examId}`);
+        firestoreBatch.set(degreeRef, {
+          examName: batchData.examName,
+          degree: finalDegree,
+          batchId: batchId || '',
+          material: batchData.material || '',
+          maxDegree: batchData.maxDegree || '',
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        
+        existingStudentIds.add(update.matchedUserId);
+        validUpdates++;
+      }
+    }
+    
+    await firestoreBatch.commit();
+  }
+
+  // Update the batch manifest
+  const studentIdsArr = Array.from(existingStudentIds);
+  await writeBatch(db).update(batchRef, {
+    studentIds: studentIdsArr,
+    'stats.totalRows': studentIdsArr.length,
+    'stats.matched': studentIdsArr.length, // assuming all valid in records 
+  }).commit();
+  
+  return validUpdates;
 }
 
 export async function undoDegreeBatch(batchId: string) {

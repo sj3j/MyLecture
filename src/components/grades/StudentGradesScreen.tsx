@@ -75,7 +75,7 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     }
 
     return (
-      <div key={degree.id} className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+      <div key={degree.id} className="shrink-0 w-[280px] sm:w-[320px] bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group snap-start">
         <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
         
         <div className="flex items-start justify-between mb-4">
@@ -98,10 +98,12 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
             <span className="text-sm font-medium text-gray-600 dark:text-zinc-400 flex items-center gap-2">
               <Target className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> الدرجة:
             </span>
-            <div className="text-xl font-black text-gray-900 dark:text-white font-mono flex items-baseline gap-1" dir="ltr">
-              <span>{!isNaN(degNum) && degree.degree !== '' ? parseFloat(degNum.toFixed(4)) : degree.degree}</span>
-              {degree.maxDegree && (
-                <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium">/ {!isNaN(maxDegNum) && degree.maxDegree !== '' ? parseFloat(maxDegNum.toFixed(4)) : degree.maxDegree}</span>
+            <div className="flex items-baseline gap-1" dir="auto">
+              <span className={`font-black ${!isNaN(degNum) && degree.degree !== '' ? 'font-mono text-xl text-gray-900 dark:text-white' : 'font-sans text-sm sm:text-base text-red-500 dark:text-red-400'}`}>
+                {!isNaN(degNum) && degree.degree !== '' ? parseFloat(degNum.toFixed(4)) : degree.degree}
+              </span>
+              {!isNaN(degNum) && degree.degree !== '' && degree.maxDegree && (
+                <span className="text-sm text-gray-400 dark:text-zinc-500 font-medium font-mono ml-1" dir="ltr">/ {!isNaN(maxDegNum) && degree.maxDegree !== '' ? parseFloat(maxDegNum.toFixed(4)) : degree.maxDegree}</span>
               )}
             </div>
           </div>
@@ -160,9 +162,9 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="flex flex-nowrap overflow-x-auto pb-4 gap-4 aesthetic-scrollbar">
           {[1, 2, 3].map(i => (
-            <div key={i} className="animate-pulse bg-white dark:bg-zinc-900 h-32 rounded-2xl border border-gray-100 dark:border-zinc-800"></div>
+            <div key={i} className="shrink-0 w-[280px] sm:w-[320px] animate-pulse bg-white dark:bg-zinc-900 h-40 rounded-2xl border border-gray-100 dark:border-zinc-800"></div>
           ))}
         </div>
       ) : filteredDegrees.length === 0 ? (
@@ -185,7 +187,7 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
                   <div className="w-2 h-6 bg-emerald-500 rounded-full"></div>
                   {materialName}
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <div className="flex flex-nowrap overflow-x-auto pb-4 gap-4 sm:gap-6 snap-x aesthetic-scrollbar scroll-smooth">
                   {(matDegrees as StudentDegree[]).map(degree => renderDegreeCard(degree))}
                 </div>
               </div>

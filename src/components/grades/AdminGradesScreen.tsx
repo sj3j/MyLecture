@@ -6,7 +6,7 @@ import { UserProfile, CATEGORIES, TRANSLATIONS } from '../../types';
 import { parseGradeFile, ParsedRow } from '../../services/gradeFileParser';
 import { matchGradesToStudents } from '../../services/fuzzyMatchingService';
 import { MatchedResult, GradeBatch } from '../../types/grades.types';
-import { confirmDegreeBatchClient, undoDegreeBatch } from '../../services/adminGradeService';
+import { confirmDegreeBatchClient, undoDegreeBatch, patchDegreeBatchClient } from '../../services/adminGradeService';
 import { motion, AnimatePresence } from 'motion/react';
 
 export interface AdminGradesScreenProps {
@@ -135,6 +135,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
   const [errorMsg, setErrorMsg] = useState('');
   const [confirmingBatchId, setConfirmingBatchId] = useState<string | null>(null);
   const [editBatchId, setEditBatchId] = useState<string | null>(null);
+  const [patchAppealsBatchId, setPatchAppealsBatchId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [resultSearchQuery, setResultSearchQuery] = useState('');
@@ -292,7 +293,13 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
     if (!matchedResults.length) return;
     setIsSaving(true);
     try {
-       await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined);
+       if (patchAppealsBatchId) {
+         await patchDegreeBatchClient(patchAppealsBatchId, matchedResults);
+         setPatchAppealsBatchId(null);
+       } else {
+         const allStudentIds = students.map(s => s.uid);
+         await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined, allStudentIds);
+       }
        setMatchedResults([]);
        setExamName('');
        setMaterial('');
@@ -422,6 +429,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                     onClick={() => {
                         setTab('upload');
                         setEditBatchId(null);
+                        setPatchAppealsBatchId(null);
                         setMatchedResults([]);
                         setExamName('');
                         setMaterial('');
@@ -603,6 +611,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                      onClick={() => {
                         setMatchedResults([]);
                         setEditBatchId(null);
+                        setPatchAppealsBatchId(null);
                      }}
                      disabled={isSaving}
                      className="flex-1 sm:flex-none px-4 py-2 border border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 font-medium transition-colors"
@@ -614,8 +623,8 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                      disabled={isSaving}
                      className="flex-1 sm:flex-none px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                    >
-                     {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                     اعتماد وحفظ
+                     {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : (patchAppealsBatchId ? <RefreshCw className="w-5 h-5" /> : <Save className="w-5 h-5" />)}
+                     {patchAppealsBatchId ? 'دمج وتحديث المعترضين' : 'اعتماد وحفظ'}
                    </button>
                  </div>
                </div>
@@ -746,6 +755,22 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
                     </>
                   ) : (
                     <>
+                      <button 
+                        onClick={() => {
+                          setPatchAppealsBatchId(batch.id);
+                          setEditBatchId(null);
+                          setExamName(batch.examName);
+                          setMaterial(batch.material || '');
+                          setMaxDegree(String(batch.maxDegree || 100));
+                          setMatchedResults([]);
+                          setTab('upload');
+                        }}
+                        disabled={isDeleting}
+                        className="px-4 py-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40 rounded-xl font-medium text-sm transition-colors flex items-center gap-2"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        رفع درجات المحجوبين والاعتراض
+                      </button>
                       <button 
                         onClick={() => handleEditBatch(batch)}
                         disabled={isDeleting}

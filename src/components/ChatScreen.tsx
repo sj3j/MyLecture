@@ -357,7 +357,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const [isSending, setIsSending] = useState(false);
   const [lastMessageTime, setLastMessageTime] = useState<number>(0);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
-  const [onlineStudentsCount, setOnlineStudentsCount] = useState<number>(1);
   const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -425,25 +424,8 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     };
   }, [user]);
 
-  // Poll Online and Total Students Count
+  // Fetch Total Students Count
   useEffect(() => {
-    const fetchCounts = async () => {
-      try {
-        const threeMinsAgo = new Date(Date.now() - 3 * 60000).toISOString();
-        const qOnline = query(
-          collection(db, 'users'),
-          where('lastActiveDate', '>', threeMinsAgo) // Active in last 3 mins
-        );
-        const onlineSnapshot = await getCountFromServer(qOnline);
-        // Ensure it's at least 1 since the current user is online viewing the chat
-        setOnlineStudentsCount(Math.max(1, onlineSnapshot.data().count));
-      } catch (err) {
-        console.error('Failed to fetch online presence count:', err);
-        // Fallback to 1 if the query fails (e.g. index issue or permission issue)
-        setOnlineStudentsCount(prev => Math.max(1, prev));
-      }
-    };
-    
     const fetchTotalUsers = async () => {
       try {
         // Only count students
@@ -454,10 +436,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       }
     };
     
-    fetchCounts();
     fetchTotalUsers();
-    const interval = setInterval(fetchCounts, 15000); // Check every 15s
-    return () => clearInterval(interval);
   }, []);
 
   // Typing State Tracking & Sync
@@ -1144,15 +1123,6 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                 <>
                   <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
                   <span>{totalUsersCount} {isRtl ? 'طالب' : 'students'}</span>
-                </>
-              )}
-              {onlineStudentsCount >= 0 && (
-                <>
-                  <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                    <Users className="w-3 h-3" />
-                    <span>{onlineStudentsCount} {isRtl ? 'متصل' : 'online'}</span>
-                  </span>
                 </>
               )}
             </p>

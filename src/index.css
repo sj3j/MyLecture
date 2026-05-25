@@ -12,5 +12,36 @@
   .notranslate {
     /* Prevents translation plugins from modifying these elements */
   }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  
+  .aesthetic-scrollbar::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .aesthetic-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .aesthetic-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.4);
+    border-radius: 10px;
+  }
+  .aesthetic-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.6);
+  }
+  .dark .aesthetic-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(82, 82, 91, 0.6);
+  }
+  .dark .aesthetic-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(113, 113, 122, 0.8);
+  }
+  .aesthetic-scrollbar {
+    scrollbar-width: thin;
+  }
 }
 
