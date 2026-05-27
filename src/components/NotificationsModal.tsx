@@ -141,7 +141,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
             });
           });
 
-          if (user.role === 'admin' || user.role === 'master_admin' || user.role === 'moderator') {
+          if (user.role === 'admin' || user.isMasterAdmin || user.role === 'moderator') {
              const adminSysQuery = query(collection(db, 'adminAlerts'), orderBy('createdAt', 'desc'), limit(20));
              const adminSysSnap = await getDocs(adminSysQuery);
              adminSysSnap.forEach(docSnap => {

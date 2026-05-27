@@ -214,8 +214,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
           description,
           youtubeUrl: youtubeUrl || null,
           pdfUrl: downloadUrl,
-          uploadedBy: auth.currentUser.uid,
-          uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
+          uploadedBy: lectureToEdit?.uploadedBy || auth.currentUser.uid,
+          uploaderName: lectureToEdit?.uploaderName || user?.name || auth.currentUser?.displayName || 'Admin',
           version,
           isWeekly,
         };

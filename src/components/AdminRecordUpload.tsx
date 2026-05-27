@@ -226,8 +226,8 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
           audioUrl: downloadUrl,
           duration,
           size,
-          uploadedBy: auth.currentUser?.uid,
-          uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
+          uploadedBy: recordToEdit?.uploadedBy || auth.currentUser?.uid,
+          uploaderName: recordToEdit?.uploaderName || user?.name || auth.currentUser?.displayName || 'Admin',
         };
         
         if (recordNumber) recordData.number = parseInt(recordNumber, 10);

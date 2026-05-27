@@ -85,6 +85,7 @@ export interface UserProfile {
     manageGrades?: boolean;
     manageAdmins?: boolean;
   };
+  hasPendingStreakReset?: boolean;
   memberSince?: any;
   hideNameOnLeaderboard?: boolean;
   hidePhotoOnLeaderboard?: boolean;

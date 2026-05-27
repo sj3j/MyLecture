@@ -91,7 +91,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
        if (playPromise !== undefined) {
          playPromise.then(() => {
            setIsPlaying(true);
-           if (audioRef.current) audioRef.current.playbackRate = playbackRateState;
+           if (audioRef.current) audioRef.current.playbackRate = playbackRate;
          }).catch(console.warn);
        }
        return;
@@ -104,7 +104,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (playPromise !== undefined) {
       playPromise.then(() => {
         setIsPlaying(true);
-        if (audioRef.current) audioRef.current.playbackRate = playbackRateState;
+        if (audioRef.current) audioRef.current.playbackRate = playbackRate;
       }).catch((error) => {
         console.warn('Playback failed', error);
       });
@@ -123,7 +123,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (playPromise !== undefined) {
       playPromise.then(() => {
         setIsPlaying(true);
-        if (audioRef.current) audioRef.current.playbackRate = playbackRateState;
+        if (audioRef.current) audioRef.current.playbackRate = playbackRate;
       }).catch(console.warn);
     }
   };
