@@ -725,10 +725,10 @@ export default function ChatScreen({
   // Mention states
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [mentionUsersPool, setMentionUsersPool] = useState<
-    { name: string; photoUrl?: string; hidePhoto?: boolean }[]
+    { id: string; name: string; photoUrl?: string; hidePhoto?: boolean }[]
   >([]);
   const [mentionFiltered, setMentionFiltered] = useState<
-    { name: string; photoUrl?: string; hidePhoto?: boolean }[]
+    { id: string; name: string; photoUrl?: string; hidePhoto?: boolean }[]
   >([]);
 
   // Typing Indicator states
@@ -1024,6 +1024,7 @@ export default function ChatScreen({
         getDocs(collection(db, "users"))
           .then((snap) => {
             const users = snap.docs.map((d) => ({
+              id: d.id,
               name: (d.data().hideNameOnLeaderboard
                 ? isRtl
                   ? "مستخدم مجهول"
@@ -1973,7 +1974,7 @@ export default function ChatScreen({
                     >
                       <option value="">{isRtl ? "اختر الحساب..." : "Select Account..."}</option>
                       {appUsers.map(u => (
-                         <option key={u.email} value={u.email}>{u.name} ({u.email})</option>
+                         <option key={u.id} value={u.email}>{u.name} ({u.email})</option>
                       ))}
                     </select>
                     <button
@@ -2186,7 +2187,7 @@ export default function ChatScreen({
                   <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-lg overflow-hidden pointer-events-auto">
                     {mentionFiltered.map((u) => (
                       <button
-                        key={u.name}
+                        key={u.id}
                         type="button"
                         onClick={() => {
                           const newMsg = newMessage.replace(
