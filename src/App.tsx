@@ -142,6 +142,20 @@ export default function App() {
         
         let studentData: any = null;
 
+        if (adminEmails.includes(userEmail?.toLowerCase() || '')) {
+          try {
+             const token = await firebaseUser.getIdToken();
+             await fetch('/api/bootstrap-admin', {
+               method: 'POST',
+               headers: { 'Authorization': `Bearer ${token}` }
+             });
+             // Force refresh so claims take effect
+             await firebaseUser.getIdToken(true);
+          } catch(e) {
+             console.error('Failed to bootstrap admin access', e);
+          }
+        }
+
         if (!isMasterAdmin && userEmail) {
           try {
             const emailLower = userEmail.toLowerCase();

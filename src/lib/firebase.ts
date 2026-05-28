@@ -29,13 +29,13 @@ export const auth = initializeAuth(app, {
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Enable offline persistence for Firestore
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code == 'failed-precondition') {
-    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
-  } else if (err.code == 'unimplemented') {
-    console.warn('The current browser does not support all of the features required to enable persistence');
-  }
-});
+// enableIndexedDbPersistence(db).catch((err) => {
+//   if (err.code == 'failed-precondition') {
+//     console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
+//   } else if (err.code == 'unimplemented') {
+//     console.warn('The current browser does not support all of the features required to enable persistence');
+//   }
+// });
 
 // Initialize Storage using the exact bucket from config
 export const storage = getStorage(app, firebaseConfig.storageBucket);
@@ -100,5 +100,5 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // Do not throw the error to prevent the app from completely crashing on permission denied
 }
