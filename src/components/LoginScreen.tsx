@@ -137,22 +137,29 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       if (result.user.email) {
         const emailLower = result.user.email.toLowerCase();
         
-        // Check allowed_admins
-        const adminDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
-        if (adminDoc.exists()) {
-          const data = adminDoc.data();
-          userRole = data.role || 'admin';
+        const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+        const isMasterAdmin = adminEmails.includes(emailLower);
+        
+        if (isMasterAdmin) {
+           userRole = 'admin'; // Will become master_admin by cloud function
         } else {
-          // Check students collection
-          const studentDoc = await getDoc(doc(db, 'students', emailLower));
-          if (studentDoc.exists()) {
-            const data = studentDoc.data();
-            if (!data.isActive) {
+          // Check allowed_admins
+          const adminDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
+          if (adminDoc.exists()) {
+            const data = adminDoc.data();
+            userRole = data.role || 'admin';
+          } else {
+            // Check students collection
+            const studentDoc = await getDoc(doc(db, 'students', emailLower));
+            if (studentDoc.exists()) {
+              const data = studentDoc.data();
+              if (!data.isActive) {
+                return; // App.tsx will handle sign out
+              }
+              userRole = data.role || 'student';
+            } else {
               return; // App.tsx will handle sign out
             }
-            userRole = data.role || 'student';
-          } else {
-            return; // App.tsx will handle sign out
           }
         }
       }
@@ -227,7 +234,13 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       const emailLower = email.trim().toLowerCase();
       
       const allowedDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
-      if (allowedDoc.exists()) {
+      
+      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+      const isMasterAdmin = adminEmails.includes(emailLower);
+      
+      if (isMasterAdmin) {
+        userRole = 'admin';
+      } else if (allowedDoc.exists()) {
         userRole = allowedDoc.data().role || 'admin';
       } else {
         const studentDoc = await getDoc(doc(db, 'students', emailLower));

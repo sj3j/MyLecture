@@ -222,6 +222,14 @@ service cloud.firestore {
       allow write: if isOwner(userId) || isAdminOrModerator();
     }
 
+    match /inbox_sessions/{sessionId} {
+      allow read, write: if hasAccess();
+    }
+
+    match /private_chats/{chatId}/{document=**} {
+      allow read, write: if hasAccess();
+    }
+
     match /records/{recordId} {
       allow read: if hasAccess();
       allow create, update, delete: if isAdminOrModerator();

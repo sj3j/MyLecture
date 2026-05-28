@@ -137,7 +137,8 @@ export default function App() {
       if (firebaseUser) {
         const userEmail = firebaseUser.email || firebaseUser.uid;
         const tokenResult = await firebaseUser.getIdTokenResult();
-        const isMasterAdmin = tokenResult.claims.role === 'master_admin';
+        const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+        const isMasterAdmin = tokenResult.claims.role === 'master_admin' || adminEmails.includes(userEmail?.toLowerCase() || '');
         
         let studentData: any = null;
 

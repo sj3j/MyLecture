@@ -91,6 +91,23 @@ interface ChatMessage {
   error?: string;
 }
 
+interface PrivateAccount {
+  id: string;
+  title: string; // e.g. "حساب الممثل"
+  name: string; // admin's name
+  email: string; // admin's email
+}
+
+type ChatType = 'group' | 'private';
+
+interface ActiveChat {
+  type: ChatType;
+  id: string;
+  name?: string;
+  title?: string;
+  otherEmail?: string;
+}
+
 interface ChatSettings {
   isChatOpen: boolean;
   messageCooldown: number;
@@ -101,6 +118,7 @@ interface ChatSettings {
     text: string;
     senderName: string;
   } | null;
+  privateAccounts?: PrivateAccount[];
 }
 
 interface ChatScreenProps {
@@ -651,10 +669,46 @@ export default function ChatScreen({
   const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showAccountsManage, setShowAccountsManage] = useState(false);
+  const [newAccount, setNewAccount] = useState<Partial<PrivateAccount>>({});
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  
+  const [activeChat, setActiveChat] = useState<ActiveChat>({ type: 'group', id: 'group', name: isRtl ? 'شات الدفعة' : 'Group Chat' });
+  const [inboxSessions, setInboxSessions] = useState<any[]>([]);
+  const [appUsers, setAppUsers] = useState<any[]>([]);
+
+  // Fetch app users for account selection
+  useEffect(() => {
+    if (showAccountsManage && appUsers.length === 0) {
+      const fetchUsers = async () => {
+        try {
+          const q = query(collection(db, "users"));
+          const snapshot = await getDocs(q);
+          const usersData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          setAppUsers(usersData);
+        } catch (e) {
+          console.error("Failed to load users", e);
+        }
+      };
+      fetchUsers();
+    }
+  }, [showAccountsManage, db]);
+
+  // Load inbox sessions if admin
+  useEffect(() => {
+     if (!isAdminOrModerator || !user?.email) return;
+     const unsub = onSnapshot(
+        query(collection(db, "inbox_sessions"), where("adminEmail", "==", user.email)),
+        (snap) => {
+           const sorted = snap.docs.map(d => d.data()).sort((a: any, b: any) => b.updatedAt - a.updatedAt);
+           setInboxSessions(sorted);
+        }
+     );
+     return () => unsub();
+  }, [isAdminOrModerator, user?.email]);
 
   // Attachments & Embds
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -842,11 +896,13 @@ export default function ChatScreen({
     return () => unsub();
   }, [isAdminOrModerator]);
 
+  const currentChatCollectionPath = activeChat.type === 'group' ? 'chat_messages' : `private_chats/${activeChat.id}/messages`;
+
   // Listen for Live Messages (Replacing Polling)
   useEffect(() => {
     setIsLoading(true);
     const q = query(
-      collection(db, "chat_messages"),
+      collection(db, currentChatCollectionPath),
       orderBy("createdAt", "desc"),
       limit(50),
     );
@@ -954,7 +1010,7 @@ export default function ChatScreen({
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [activeChat.id]);
 
   // Mention handling
   useEffect(() => {
@@ -1033,7 +1089,7 @@ export default function ChatScreen({
 
     setIsUploadingAttachment(!!attachmentFile);
 
-    const docRef = doc(collection(db, "chat_messages"));
+    const docRef = doc(collection(db, currentChatCollectionPath));
 
     try {
       if (attachmentFile) {
@@ -1101,6 +1157,18 @@ export default function ChatScreen({
 
       if (isAnon) {
         setIsAnonymous(false);
+      }
+
+      if (activeChat.type === 'private') {
+         await setDoc(doc(db, "inbox_sessions", activeChat.id), {
+            id: activeChat.id,
+            adminEmail: isAdminOrModerator ? user.email : activeChat.otherEmail,
+            studentEmail: isAdminOrModerator ? activeChat.otherEmail : user.email,
+            studentName: isAdminOrModerator ? activeChat.name : user.name,
+            adminName: isAdminOrModerator ? user.name : activeChat.name,
+            lastMessage: payload.text || 'Attachment',
+            updatedAt: Date.now()
+         }, { merge: true });
       }
 
       // Optimistic UI update instantly before network wait
@@ -1206,7 +1274,7 @@ export default function ChatScreen({
       const oldestMessage = messages[0];
 
       const q = query(
-        collection(db, "chat_messages"),
+        collection(db, currentChatCollectionPath),
         orderBy("createdAt", "desc"),
         where("createdAt", "<", oldestMessage.createdAt),
         limit(50),
@@ -1319,7 +1387,7 @@ export default function ChatScreen({
       const oldestLoaded = messages[0];
       if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp) {
         const q = query(
-          collection(db, "chat_messages"),
+          collection(db, currentChatCollectionPath),
           orderBy("createdAt", "desc"),
           where("createdAt", "<", oldestLoaded.createdAt),
           where("createdAt", ">=", targetTimestamp),
@@ -1461,7 +1529,7 @@ export default function ChatScreen({
     setIsClearing(true);
     try {
       let documentCount = 0;
-      let q = query(collection(db, "chat_messages"), limit(500));
+      let q = query(collection(db, currentChatCollectionPath), limit(500));
       let snapshot = await getDocs(q);
 
       while (!snapshot.empty) {
@@ -1473,7 +1541,7 @@ export default function ChatScreen({
         await batch.commit();
 
         // fetch the next 500
-        q = query(collection(db, "chat_messages"), limit(500));
+        q = query(collection(db, currentChatCollectionPath), limit(500));
         snapshot = await getDocs(q);
       }
       setMessages([]);
@@ -1630,19 +1698,72 @@ export default function ChatScreen({
 
   return (
     <div
-      className="flex flex-col z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950"
+      className="flex z-30 max-w-7xl w-full mx-auto px-0"
       dir={isRtl ? "rtl" : "ltr"}
       style={{
-        height: "100dvh",
-        paddingTop: "64px",
-        paddingBottom: "96px",
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        margin: "0 auto",
+        height: "calc(100dvh - 65px)",
+        paddingBottom: "80px",
       }}
     >
+      {/* Sidebar - Chat List */}
+      <div className={`flex flex-col w-20 sm:w-72 shrink-0 border-${isRtl ? 'l' : 'r'} border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-y-auto`}>
+        <div className="p-2 sm:p-4 space-y-2">
+           {/* Group Chat Item */}
+           <button
+             onClick={() => setActiveChat({ type: 'group', id: 'group', name: isRtl ? 'شات الدفعة' : 'Group Chat' })}
+             className={`flex items-center gap-3 w-full p-2 sm:p-3 rounded-xl transition-colors ${activeChat.type === 'group' ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
+           >
+              <div className="w-10 h-10 shrink-0 rounded-full bg-sky-200 dark:bg-sky-900 flex items-center justify-center text-sky-700 dark:text-sky-300">
+                 <Users className="w-5 h-5" />
+              </div>
+              <div className="hidden sm:block text-start flex-1 overflow-hidden">
+                 <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{isRtl ? 'شات الدفعة' : 'Group Chat'}</div>
+                 <div className="text-xs text-slate-500 truncate">{isRtl ? 'الدردشة العامة' : 'General Chat'}</div>
+              </div>
+           </button>
+           
+           <div className="h-px bg-slate-200 dark:bg-zinc-800 w-full my-4"></div>
+
+           {/* Private Chats for Admins */}
+           {isAdminOrModerator && inboxSessions.map(session => (
+              <button
+                 key={session.id}
+                 onClick={() => setActiveChat({ type: 'private', id: session.id, name: session.studentName, otherEmail: session.studentEmail })}
+                 className={`flex items-center gap-3 w-full p-2 sm:p-3 rounded-xl transition-colors ${activeChat.id === session.id ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
+              >
+                  <div className="w-10 h-10 shrink-0 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300">
+                     {(session.studentName || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="hidden sm:block text-start flex-1 overflow-hidden">
+                     <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{session.studentName}</div>
+                     <div className="text-xs text-slate-500 truncate" dir="auto">{session.lastMessage}</div>
+                  </div>
+              </button>
+           ))}
+
+           {/* Private Chats for Students */}
+           {!isAdminOrModerator && (settings.privateAccounts || []).map(acc => {
+              const chatId = [user?.email, acc.email].sort().join('_');
+              return (
+                 <button
+                    key={acc.id}
+                    onClick={() => setActiveChat({ type: 'private', id: chatId, name: acc.name, title: acc.title, otherEmail: acc.email })}
+                    className={`flex items-center gap-3 w-full p-2 sm:p-3 rounded-xl transition-colors ${activeChat.id === chatId ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
+                 >
+                     <div className="w-10 h-10 shrink-0 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600 font-bold">
+                        {acc.name.charAt(0).toUpperCase()}
+                     </div>
+                     <div className="hidden sm:block text-start flex-1 overflow-hidden">
+                        <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{acc.title}</div>
+                        <div className="text-xs text-slate-500 truncate">{acc.name}</div>
+                     </div>
+                 </button>
+              );
+           })}
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col relative w-full h-full border-x border-slate-200 dark:border-zinc-800/50 bg-slate-50 dark:bg-zinc-950 overflow-hidden shadow-sm">
       {/* Header and Pinned Message */}
       <div className="flex-none z-40 flex flex-col shadow-sm">
         <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex justify-between items-center">
@@ -1660,31 +1781,37 @@ export default function ChatScreen({
             </div>
             <div>
               <h1 className="font-bold text-lg text-slate-800 dark:text-stone-100 leading-tight">
-                شات الدفعة
+                {activeChat.name}
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 flex-wrap">
-                <span>
-                  {settings.isChatOpen
-                    ? isRtl
-                      ? "مفتوح"
-                      : "Open"
-                    : isRtl
-                      ? "مغلق"
-                      : "Closed"}
-                </span>
-                {totalUsersCount > 0 && (
-                  <>
-                    <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                    <span>
-                      {totalUsersCount} {isRtl ? "طالب" : "students"}
-                    </span>
-                  </>
-                )}
-              </p>
+              {activeChat.type === 'group' ? (
+                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 flex-wrap">
+                   <span>
+                     {settings.isChatOpen
+                       ? isRtl
+                         ? "مفتوح"
+                         : "Open"
+                       : isRtl
+                         ? "مغلق"
+                         : "Closed"}
+                   </span>
+                   {totalUsersCount > 0 && (
+                     <>
+                       <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                       <span>
+                         {totalUsersCount} {isRtl ? "طالب" : "students"}
+                       </span>
+                     </>
+                   )}
+                 </p>
+              ) : (
+                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    {activeChat.title || (isRtl ? 'تواصل خاص' : 'Private Message')}
+                 </p>
+              )}
             </div>
           </div>
 
-          {isAdminOrModerator && (
+          {isAdminOrModerator && activeChat.type === 'group' && (
             <button
               onClick={() => setShowAdminControls(!showAdminControls)}
               className={`p-2 rounded-xl transition-colors ${showAdminControls ? "bg-sky-100 dark:bg-sky-900/50 text-sky-600" : "text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800"}`}
@@ -1695,7 +1822,7 @@ export default function ChatScreen({
         </div>
 
         {/* Pinned Message */}
-        {settings.pinnedMessage && (
+        {settings.pinnedMessage && activeChat.type === 'group' && (
           <div
             className="bg-white/95 backdrop-blur dark:bg-zinc-900/95 border-b border-slate-200 dark:border-zinc-800 p-2 sm:px-4 cursor-pointer flex items-center gap-2"
             onClick={() => handleViewPinnedMessage(settings.pinnedMessage!.id)}
@@ -1737,7 +1864,7 @@ export default function ChatScreen({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 shadow-inner z-20"
+            className="overflow-y-auto max-h-[40vh] border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 shadow-inner z-20"
           >
             <div className="p-4 space-y-4">
               <div className="flex items-center justify-between">
@@ -1778,7 +1905,15 @@ export default function ChatScreen({
                 </button>
               </div>
 
-              <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap gap-2">
+              <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap justify-between gap-2">
+                <button
+                  onClick={() => setShowAccountsManage(!showAccountsManage)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400 rounded-xl text-xs font-bold hover:bg-sky-100 dark:hover:bg-sky-900/40"
+                >
+                  <Users className="w-4 h-4" />
+                  {isRtl ? "إدارة حسابات التواصل" : "Manage Contact Accounts"}
+                </button>
+
                 <button
                   onClick={() => setShowClearConfirm(true)}
                   className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/40"
@@ -1787,6 +1922,78 @@ export default function ChatScreen({
                   {isRtl ? "مسح كل الرسائل" : "Clear All"}
                 </button>
               </div>
+              
+              {/* Manage Accounts Panel */}
+              {showAccountsManage && (
+                <div className="pt-3 border-t border-slate-200 dark:border-zinc-800">
+                  <div className="mb-4 space-y-2">
+                    {(settings.privateAccounts || []).map((acc, idx) => (
+                      <div key={acc.id} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center bg-white dark:bg-zinc-800 p-3 rounded-lg border border-slate-100 dark:border-zinc-700">
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div className="text-xs font-bold text-sky-600">{acc.title}</div>
+                          <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{acc.name}</div>
+                          <div className="text-xs text-slate-500 truncate" title={acc.email}>{acc.email}</div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const updated = settings.privateAccounts!.filter(a => a.id !== acc.id);
+                            setSettings({ ...settings, privateAccounts: updated });
+                            await updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+                              privateAccounts: updated
+                            });
+                          }}
+                          className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="bg-slate-100 dark:bg-zinc-800/50 p-3 rounded-xl border border-slate-200 dark:border-zinc-700 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder={isRtl ? "المسمى (مثال: حساب الممثل)" : "Title"}
+                      value={newAccount.title || ""}
+                      onChange={(e) => setNewAccount({ ...newAccount, title: e.target.value })}
+                      className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm sm:col-span-2"
+                    />
+                    <select
+                      value={newAccount.email || ""}
+                      onChange={(e) => {
+                         const u = appUsers.find(user => user.email === e.target.value);
+                         if (u) {
+                            setNewAccount({ ...newAccount, email: u.email, name: u.name });
+                         } else {
+                            setNewAccount({ ...newAccount, email: "", name: "" });
+                         }
+                      }}
+                      className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm sm:col-span-2 mt-1"
+                    >
+                      <option value="">{isRtl ? "اختر الحساب..." : "Select Account..."}</option>
+                      {appUsers.map(u => (
+                         <option key={u.email} value={u.email}>{u.name} ({u.email})</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={async () => {
+                        if (newAccount.title && newAccount.name && newAccount.email) {
+                          const acc = { ...newAccount, id: Date.now().toString() } as PrivateAccount;
+                          const updated = [...(settings.privateAccounts || []), acc];
+                          setSettings({ ...settings, privateAccounts: updated });
+                          await updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+                            privateAccounts: updated
+                          });
+                          setNewAccount({});
+                        }
+                      }}
+                      className="sm:col-span-2 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition"
+                    >
+                      {isRtl ? "إضافة حساب" : "Add Account"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -2401,6 +2608,7 @@ export default function ChatScreen({
           </div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
