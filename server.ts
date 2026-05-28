@@ -127,6 +127,40 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // Bootstrap admin permissions
+  app.post("/api/bootstrap-admin", verifyAuth, async (req, res) => {
+    const user = (req as any).user;
+    if (!user || (!user.email)) return res.status(401).json({ error: 'Unauthorized' });
+
+    const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+    if (!adminEmails.includes(user.email.toLowerCase())) {
+        return res.status(403).json({ error: 'Not an admin email' });
+    }
+
+    try {
+      const db = admin.firestore();
+      const emailLower = user.email.toLowerCase();
+      
+      const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
+      if (!adminDoc.exists) {
+        await db.collection('allowed_admins').doc(emailLower).set({
+          email: emailLower,
+          role: 'admin',
+          name: 'Master Admin'
+        }, { merge: true });
+        console.log(`Bootstrapped allowed_admins for ${emailLower}`);
+      }
+
+      await admin.auth().setCustomUserClaims(user.uid, { role: 'master_admin' });
+      console.log(`Bootstrapped custom claims for ${emailLower}`);
+      
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Failed to bootstrap admin:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Generate Presigned URL for Cloudflare R2 Upload
   app.get("/api/get-upload-url", verifyAuth, verifyAdmin, async (req, res) => {
     if (!s3Client) {

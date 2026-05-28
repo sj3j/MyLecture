@@ -705,7 +705,8 @@ export default function ChatScreen({
         (snap) => {
            const sorted = snap.docs.map(d => d.data()).sort((a: any, b: any) => b.updatedAt - a.updatedAt);
            setInboxSessions(sorted);
-        }
+        },
+        (error) => { console.warn("Cannot listen to inbox_sessions:", error); }
      );
      return () => unsub();
   }, [isAdminOrModerator, user?.email]);

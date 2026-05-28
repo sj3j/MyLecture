@@ -40,21 +40,28 @@ service cloud.firestore {
     }
 
     function isMasterAdmin() {
-      return isAuthenticated() && request.auth.token.role == 'master_admin';
+      return isAuthenticated() && (
+        (request.auth.token.email != null && (request.auth.token.email.lower() == 'almdrydyl335@gmail.com' || request.auth.token.email.lower() == 'fenix.admin@gmail.com')) ||
+        ('role' in request.auth.token && request.auth.token.role == 'master_admin')
+      );
     }
 
     function isAdmin() {
-      return isAuthenticated() && (request.auth.token.role == 'master_admin' || request.auth.token.role == 'admin');
+      return isAuthenticated() && (
+        isMasterAdmin() ||
+        ('role' in request.auth.token && request.auth.token.role == 'admin')
+      );
     }
 
     function isModerator() {
-      return isAuthenticated() && request.auth.token.role == 'moderator';
+      return isAuthenticated() && ('role' in request.auth.token && request.auth.token.role == 'moderator');
     }
 
     function isAdminOrModerator() {
-      return isAuthenticated() && 
-             (request.auth.token.role in ['master_admin', 'admin', 'moderator']) && 
-             request.auth.token.manageChat != false;
+      return isAuthenticated() && (
+        isMasterAdmin() ||
+        ('role' in request.auth.token && request.auth.token.role in ['admin', 'moderator'])
+      );
     }
 
     function isValidLecture(data) {
