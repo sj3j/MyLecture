@@ -169,6 +169,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             questions={questions}
             onFinish={handleFinishQuiz}
             onClose={onClose}
+            user={user}
           />
         )}
 
@@ -214,6 +215,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             onFinish={() => {}} // finishes internally
             onBack={() => setRoute('intro')}
             userId={user.uid}
+            userName={user.name}
           />
         )}
       </AnimatePresence>

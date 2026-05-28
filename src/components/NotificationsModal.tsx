@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit, where, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { X, Bell, MessageSquare, BookOpen, Clock, ShieldAlert } from 'lucide-react';
 import { Language, TRANSLATIONS, UserProfile, Homework } from '../types';
@@ -43,10 +43,51 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
   const t = TRANSLATIONS[lang];
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [expandedReports, setExpandedReports] = useState<Record<string, boolean>>({});
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  const [reportReplies, setReportReplies] = useState<Record<string, string>>({});
+  const [isReplying, setIsReplying] = useState<Record<string, boolean>>({});
 
-  const toggleReport = (id: string) => {
-    setExpandedReports(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleItem = (id: string) => {
+    setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleReplyToReport = async (notificationId: string, reportedBy: string) => {
+    const text = reportReplies[notificationId];
+    if (!text || !text.trim()) return;
+
+    setIsReplying(prev => ({ ...prev, [notificationId]: true }));
+    try {
+      await addDoc(collection(db, 'systemNotifications'), {
+        userId: reportedBy,
+        title: isRtl ? 'رد على التبليغ' : 'Report Reply',
+        body: text,
+        createdAt: serverTimestamp(),
+      });
+      
+      // Instead of deleting, mark it as replied
+      try {
+        const { updateDoc } = await import('firebase/firestore');
+        await updateDoc(doc(db, 'adminAlerts', notificationId), {
+          replied: true,
+          replyText: text,
+          repliedAt: serverTimestamp()
+        });
+        
+        setNotifications(prev => prev.map(n => 
+          n.id === notificationId 
+            ? { ...n, extraData: { ...n.extraData, replied: true, replyText: text } }
+            : n
+        ));
+      } catch (e) {
+        console.error("Could not update report", e);
+      }
+
+      setReportReplies(prev => ({ ...prev, [notificationId]: '' }));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsReplying(prev => ({ ...prev, [notificationId]: false }));
+    }
   };
 
   useEffect(() => {
@@ -212,8 +253,14 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
               <p className="text-sm font-medium animate-pulse">{isRtl ? 'جاري تحميل الإشعارات...' : 'Loading notifications...'}</p>
             </div>
           ) : notifications.length > 0 ? (
-            notifications.map(item => (
-              <div key={item.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 flex gap-4 items-start shadow-sm hover:shadow-md transition-shadow group">
+            notifications.map(item => {
+              const isExpanded = expandedItems[item.id];
+              return (
+              <div 
+                key={item.id} 
+                onClick={() => toggleItem(item.id)}
+                className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 flex gap-4 items-start shadow-sm hover:shadow-md transition-all cursor-pointer group"
+              >
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                   item.type === 'mention' 
                     ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
@@ -223,7 +270,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
                 }`}>
                   <item.icon className="w-5 h-5" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 w-full">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <h3 className="font-bold text-slate-800 dark:text-slate-200 text-[15px] leading-tight">
                       {item.title}
@@ -233,36 +280,63 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
                       {formatTimeAgo(item.createdAt, isRtl)}
                     </div>
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-snug">
+                  <p className={`text-sm text-slate-600 dark:text-slate-400 leading-snug whitespace-pre-wrap ${!isExpanded ? 'line-clamp-2' : ''}`}>
                     {item.body}
                   </p>
                   
-                  {item.type === 'report' && item.extraData && (
-                    <div className="mt-3">
-                      <button 
-                        onClick={() => toggleReport(item.id)}
-                        className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-400 dark:hover:text-sky-300 dark:hover:bg-sky-900/40 px-3 py-1.5 rounded-lg transition-colors"
-                      >
-                        {expandedReports[item.id] ? (isRtl ? 'إخفاء التفاصيل' : 'Hide Details') : (isRtl ? 'عرض التفاصيل' : 'View Details')}
-                      </button>
-                      
-                      {expandedReports[item.id] && (
-                        <div className="mt-2 p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                          <div>
-                            <span className="font-bold text-slate-500 text-xs">{(isRtl ? 'بواسطة:' : 'By:')} </span>
-                            <span className="font-bold">{item.extraData.reportedByName || item.extraData.reportedBy}</span>
-                          </div>
-                          <div>
-                            <span className="font-bold text-slate-500 text-xs">{(isRtl ? 'السبب:' : 'Reason:')} </span>
-                            <span className="break-words">{item.extraData.reason}</span>
-                          </div>
+                  {item.type === 'report' && item.extraData && isExpanded && (
+                    <div 
+                      className="mt-3 opacity-100 transition-opacity"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="mt-2 p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-700 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                        <div>
+                          <span className="font-bold text-slate-500 text-xs">{(isRtl ? 'بواسطة:' : 'By:')} </span>
+                          <span className="font-bold">{item.extraData.reportedByName || item.extraData.reportedBy}</span>
                         </div>
-                      )}
+                        <div>
+                          <span className="font-bold text-slate-500 text-xs">{(isRtl ? 'السبب:' : 'Reason:')} </span>
+                          <span className="break-words">{item.extraData.reason}</span>
+                        </div>
+                        
+                        {(user.role === 'admin' || user.isMasterAdmin || user.role === 'moderator') && (
+                          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-zinc-700">
+                            {item.extraData.replied ? (
+                              <div className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 p-2 text-xs rounded-lg font-medium border border-emerald-100 dark:border-emerald-800/30">
+                                {isRtl ? 'تم الرد:' : 'Replied:'} <span className="font-bold">{item.extraData.replyText}</span>
+                              </div>
+                            ) : (
+                              <>
+                                <label className="block text-xs font-bold text-slate-500 mb-2">
+                                  {isRtl ? 'إرسال رد للطالب:' : 'Send reply to student:'}
+                                </label>
+                                <div className="flex gap-2">
+                                  <input 
+                                    type="text"
+                                    value={reportReplies[item.id] || ''}
+                                    onChange={(e) => setReportReplies({...reportReplies, [item.id]: e.target.value})}
+                                    placeholder={isRtl ? 'اكتب ردك هنا...' : 'Type your reply...'}
+                                    className="flex-1 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-sky-500"
+                                  />
+                                  <button 
+                                    onClick={() => handleReplyToReport(item.id, item.extraData.reportedBy)}
+                                    disabled={isReplying[item.id] || !reportReplies[item.id]?.trim()}
+                                    className="px-3 py-2 bg-sky-500 hover:bg-sky-600 text-white font-bold text-sm rounded-lg disabled:opacity-50 transition-colors"
+                                  >
+                                    {isReplying[item.id] ? '...' : (isRtl ? 'إرسال' : 'Send')}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
              <div className="text-center py-12 px-4 flex flex-col items-center justify-center">
                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-400 mb-4">

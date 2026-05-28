@@ -10,9 +10,10 @@ interface Props {
   onFinish: () => void;
   onBack: () => void;
   userId: string;
+  userName?: string;
 }
 
-export default function BankQuizScreen({ questions, onFinish, onBack, userId }: Props) {
+export default function BankQuizScreen({ questions, onFinish, onBack, userId, userName }: Props) {
   const [sessionId] = useState(() => Math.random().toString(36).substring(7));
   const [answers, setAnswers] = useState<Record<string, string>>({}); 
   const [isFinished, setIsFinished] = useState(false);
@@ -57,8 +58,8 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId }: 
     try {
       const { reportBankQuestion } = await import('../../services/questionBankService');
       const { auth } = await import('../../lib/firebase');
-      const userName = auth.currentUser?.displayName || auth.currentUser?.email || 'طالب';
-      await reportBankQuestion(reportQuestion.id, reportReason, reportQuestion.stem, userName);
+      const finalUserName = userName || auth.currentUser?.displayName || auth.currentUser?.email || 'طالب';
+      await reportBankQuestion(reportQuestion.id, reportReason, reportQuestion.stem, finalUserName);
       setReportQuestion(null);
       setShowReportSuccess(true);
       setTimeout(() => setShowReportSuccess(false), 3000);
