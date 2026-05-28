@@ -182,9 +182,6 @@ const MessageBubble = React.memo(({
             <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{renderMessageText(msg.text)}</p>
             
             <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
-              {msg.isPending && (
-                  <Clock className="w-2.5 h-2.5 opacity-80" />
-              )}
               <span className="text-[10px] font-medium">{timeStr}</span>
             </div>
           </div>
@@ -524,7 +521,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       limit(50)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
       setMessages(prev => {
         let newArray = [...prev];
         snapshot.docChanges().forEach(change => {
@@ -757,15 +754,19 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         }
       }
 
-      // Perform setDoc
-      await setDoc(docRef, payload);
+      // Perform setDoc asynchronously to unblock UI immediately
+      setDoc(docRef, payload).catch((e: any) => {
+        console.error('Failed to send message', e);
+        setAlertMessage(e instanceof Error ? e.message : String(e));
+        // Revert optimistic UI
+        setMessages(prev => prev.filter(m => m.id !== docRef.id));
+      });
 
+      setIsSending(false);
+      setIsUploadingAttachment(false);
     } catch (e: any) {
-      console.error('Failed to send message', e);
+      console.error('Failed to prepare message', e);
       setAlertMessage(e instanceof Error ? e.message : String(e));
-      // Revert optimistic UI
-      setMessages(prev => prev.filter(m => m.id !== docRef.id));
-    } finally {
       setIsSending(false);
       setIsUploadingAttachment(false);
     }
