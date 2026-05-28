@@ -1,10 +1,56 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { Send, Settings, Trash2, Power, Clock, StopCircle, RefreshCw, Archive, Bell, MessageSquare, Paperclip, X, ThumbsUp, Heart, Image as ImageIcon, FileText, Link, Eye, Users } from 'lucide-react';
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, writeBatch, limit, where, arrayUnion, arrayRemove, onSnapshot, getCountFromServer, setDoc } from 'firebase/firestore';
-import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
-import { motion, AnimatePresence } from 'motion/react';
-import { forceDownload } from '../lib/utils';
+import React, { useState, useEffect, useRef } from "react";
+import { Language, TRANSLATIONS, UserProfile } from "../types";
+import {
+  Send,
+  Settings,
+  Trash2,
+  Power,
+  Clock,
+  StopCircle,
+  RefreshCw,
+  Archive,
+  Bell,
+  MessageSquare,
+  Paperclip,
+  X,
+  ThumbsUp,
+  Heart,
+  Image as ImageIcon,
+  FileText,
+  Link,
+  Eye,
+  Users,
+} from "lucide-react";
+import {
+  collection,
+  query,
+  orderBy,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  deleteDoc,
+  doc,
+  getDoc,
+  updateDoc,
+  writeBatch,
+  limit,
+  where,
+  arrayUnion,
+  arrayRemove,
+  onSnapshot,
+  getCountFromServer,
+  setDoc,
+} from "firebase/firestore";
+import {
+  db,
+  storage,
+  functions,
+  handleFirestoreError,
+  OperationType,
+} from "../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import { motion, AnimatePresence } from "motion/react";
+import { forceDownload } from "../lib/utils";
 
 interface ChatMessage {
   id: string;
@@ -33,14 +79,16 @@ interface ChatMessage {
   originalSenderExamCode?: string;
   fileUrl?: string;
   fileName?: string;
-  fileType?: 'image' | 'file';
+  fileType?: "image" | "file";
   embeddedItem?: {
-    type: 'lecture' | 'record' | 'announcement';
+    type: "lecture" | "record" | "announcement";
     id: string;
     title: string;
     subtitle?: string;
     link?: string;
   } | null;
+  status?: "pending" | "failed" | "sent";
+  error?: string;
 }
 
 interface ChatSettings {
@@ -61,299 +109,545 @@ interface ChatScreenProps {
   setCurrentTab?: (tab: string) => void;
 }
 
-const MessageBubble = React.memo(({
-  msg, isMe, showHeader, timeStr, isRtl, 
-  user, isMasterAdmin, isAdminOrModerator, 
-  revealedMessages, showReactionPickerFor, setShowReactionPickerFor,
-  handleReaction, setReplyingTo, setMessageToDelete, setRevealedMessages,
-  setCurrentTab, CHAT_DOC_ID, renderMessageText
-}: any) => {
-  return (
-    <div 
-      id={`msg-${msg.id}`} 
-      data-message-id={msg.id}
-      data-sender-id={msg.senderId}
-      className={`message-bubble-container flex w-full transition-colors duration-500 rounded-lg ${isMe ? 'justify-end' : 'justify-start'}`}
-    >
-      <div className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-        
-        {/* Avatar */}
-        {showHeader && !isMe && (
-          <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border ${msg.isAnonymous ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-zinc-800' : 'bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-zinc-800'}`}>
-            {msg.isAnonymous ? (
-              '?'
-            ) : (
-              msg.senderAvatar?.startsWith('http') ? (
-                <img src={msg.senderAvatar} alt={msg.senderName} loading="lazy" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+const MessageBubble = React.memo(
+  ({
+    msg,
+    isMe,
+    showHeader,
+    timeStr,
+    isRtl,
+    user,
+    isMasterAdmin,
+    isAdminOrModerator,
+    revealedMessages,
+    showReactionPickerFor,
+    setShowReactionPickerFor,
+    handleReaction,
+    setReplyingTo,
+    setMessageToDelete,
+    setRevealedMessages,
+    setCurrentTab,
+    CHAT_DOC_ID,
+    renderMessageText,
+  }: any) => {
+    return (
+      <div
+        id={`msg-${msg.id}`}
+        data-message-id={msg.id}
+        data-sender-id={msg.senderId}
+        className={`message-bubble-container flex w-full transition-colors duration-500 rounded-lg ${isMe ? "justify-end" : "justify-start"}`}
+      >
+        <div
+          className={`flex max-w-[85%] sm:max-w-[75%] gap-2 ${isMe ? "flex-row-reverse" : "flex-row"}`}
+        >
+          {/* Avatar */}
+          {showHeader && !isMe && (
+            <div
+              className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 font-bold text-sm overflow-hidden border ${msg.isAnonymous ? "bg-amber-200 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-zinc-800" : "bg-sky-200 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-zinc-800"}`}
+            >
+              {msg.isAnonymous ? (
+                "?"
+              ) : msg.senderAvatar?.startsWith("http") ? (
+                <img
+                  src={msg.senderAvatar}
+                  alt={msg.senderName}
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
               ) : (
                 msg.senderAvatar || msg.senderName.charAt(0).toUpperCase()
-              )
-            )}
-          </div>
-        )}
-        {!showHeader && !isMe && <div className="w-8 flex-shrink-0" />}
-
-        {/* Bubble */}
-        <div className={`group relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-          {showHeader && (
-            <span className={`text-xs font-bold ${isMe ? 'mr-1 rtl:mr-0 rtl:ml-1 text-right' : 'ml-1 rtl:ml-0 rtl:mr-1'} mb-1 ${msg.isAnonymous ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`}>
-              {msg.isAnonymous && isMe ? (isRtl ? 'أنت (مجهول)' : 'You (Anonymous)') : msg.senderName} 
-              {msg.senderEmail === 'almdrydyl335@gmail.com' && !msg.isAnonymous && <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">Admin</span>}
-            </span>
+              )}
+            </div>
           )}
+          {!showHeader && !isMe && <div className="w-8 flex-shrink-0" />}
 
-          <div 
-            className={`relative px-4 py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
-              isMe 
-                ? (msg.isAnonymous ? 'bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm' : 'bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm') 
-                : (msg.isAnonymous ? 'bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50' : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700')
-            }`}
-            onClick={() => {
-              setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setShowReactionPickerFor(showReactionPickerFor === msg.id ? null : msg.id);
-            }}
+          {/* Bubble */}
+          <div
+            className={`group relative flex flex-col ${isMe ? "items-end" : "items-start"}`}
           >
-            {revealedMessages.has(msg.id) && isMasterAdmin && msg.isAnonymous && (
-              <div className="absolute -top-6 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-700 min-w-max" style={{[isRtl ? 'right' : 'left']: '0'}}>
-                {msg.senderEmail || msg.senderId || 'Unknown'} (Email)
-              </div>
+            {showHeader && (
+              <span
+                className={`text-xs font-bold ${isMe ? "mr-1 rtl:mr-0 rtl:ml-1 text-right" : "ml-1 rtl:ml-0 rtl:mr-1"} mb-1 ${msg.isAnonymous ? "text-amber-500" : "text-slate-500 dark:text-slate-400"}`}
+              >
+                {msg.isAnonymous && isMe
+                  ? isRtl
+                    ? "أنت (مجهول)"
+                    : "You (Anonymous)"
+                  : msg.senderName}
+                {msg.senderEmail === "almdrydyl335@gmail.com" &&
+                  !msg.isAnonymous && (
+                    <span className="text-sky-500 text-[10px] bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 rounded ml-1">
+                      Admin
+                    </span>
+                  )}
+              </span>
             )}
-            
-            {msg.replyTo && (
-              <div 
+
+            <div
+              className={`relative px-4 py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
+                isMe
+                  ? msg.isAnonymous
+                    ? "bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm"
+                    : "bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm"
+                  : msg.isAnonymous
+                    ? "bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50"
+                    : "bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700"
+              }`}
+              onClick={() => {
+                setShowReactionPickerFor(
+                  showReactionPickerFor === msg.id ? null : msg.id,
+                );
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setShowReactionPickerFor(
+                  showReactionPickerFor === msg.id ? null : msg.id,
+                );
+              }}
+            >
+              {revealedMessages.has(msg.id) &&
+                isMasterAdmin &&
+                msg.isAnonymous && (
+                  <div
+                    className="absolute -top-6 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-700 min-w-max"
+                    style={{ [isRtl ? "right" : "left"]: "0" }}
+                  >
+                    {msg.senderEmail || msg.senderId || "Unknown"} (Email)
+                  </div>
+                )}
+
+              {msg.replyTo && (
+                <div
                   onClick={(e) => {
                     e.stopPropagation();
-                    const el = document.getElementById(`msg-${msg.replyTo!.messageId}`);
+                    const el = document.getElementById(
+                      `msg-${msg.replyTo!.messageId}`,
+                    );
                     if (el) {
-                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      el.classList.add('bg-sky-100', 'dark:bg-sky-900/40');
-                      setTimeout(() => el.classList.remove('bg-sky-100', 'dark:bg-sky-900/40'), 2000);
+                      el.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center",
+                      });
+                      el.classList.add("bg-sky-100", "dark:bg-sky-900/40");
+                      setTimeout(
+                        () =>
+                          el.classList.remove(
+                            "bg-sky-100",
+                            "dark:bg-sky-900/40",
+                          ),
+                        2000,
+                      );
                     }
                   }}
-                  className={`mb-1.5 p-2 rounded-lg text-xs border-l-2 rtl:border-l-0 rtl:border-r-2 cursor-pointer hover:opacity-80 transition-opacity ${isMe ? 'bg-sky-700/50 border-sky-300' : 'bg-slate-100 dark:bg-zinc-700/50 border-sky-500'}`}
-              >
-                <div className="font-bold mb-0.5 opacity-90">{msg.replyTo.senderName}</div>
-                <div className="opacity-80 truncate" dir="auto">{msg.replyTo.text}</div>
-              </div>
-            )}
-            
-            {msg.fileUrl && (
-              <div className="mb-2">
-                {msg.fileType === 'image' ? (
-                  <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                    <img src={msg.fileUrl} alt="attachment" loading="lazy" className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in" />
-                  </a>
-                ) : (
-                  <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); forceDownload(msg.fileUrl!, msg.fileName || 'Attachment'); }} className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? 'bg-sky-700/30 border-sky-500/50 text-white hover:bg-sky-700/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800/80'} transition-colors text-left`}>
-                    <Paperclip className="w-5 h-5" />
-                    <span className="text-sm font-medium truncate max-w-[200px]">{msg.fileName || 'Attachment'}</span>
-                  </button>
-                )}
-              </div>
-            )}
-            
-            {msg.embeddedItem && (
-                <div 
+                  className={`mb-1.5 p-2 rounded-lg text-xs border-l-2 rtl:border-l-0 rtl:border-r-2 cursor-pointer hover:opacity-80 transition-opacity ${isMe ? "bg-sky-700/50 border-sky-300" : "bg-slate-100 dark:bg-zinc-700/50 border-sky-500"}`}
+                >
+                  <div className="font-bold mb-0.5 opacity-90">
+                    {msg.replyTo.senderName}
+                  </div>
+                  <div className="opacity-80 truncate" dir="auto">
+                    {msg.replyTo.text}
+                  </div>
+                </div>
+              )}
+
+              {msg.fileUrl && (
+                <div className="mb-2">
+                  {msg.fileType === "image" ? (
+                    <a
+                      href={msg.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <img
+                        src={msg.fileUrl}
+                        alt="attachment"
+                        loading="lazy"
+                        className="max-w-full max-h-64 rounded-lg object-contain cursor-zoom-in"
+                      />
+                    </a>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        forceDownload(
+                          msg.fileUrl!,
+                          msg.fileName || "Attachment",
+                        );
+                      }}
+                      className={`flex items-center gap-2 p-3 rounded-xl border ${isMe ? "bg-sky-700/30 border-sky-500/50 text-white hover:bg-sky-700/50" : "bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700 text-sky-600 dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800/80"} transition-colors text-left`}
+                    >
+                      <Paperclip className="w-5 h-5" />
+                      <span className="text-sm font-medium truncate max-w-[200px]">
+                        {msg.fileName || "Attachment"}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {msg.embeddedItem && (
+                <div
                   onClick={(e) => {
                     e.stopPropagation();
                     if (setCurrentTab) {
-                      if (msg.embeddedItem!.type === 'lecture') setCurrentTab('lectures');
-                      else if (msg.embeddedItem!.type === 'record') setCurrentTab('records');
-                      else if (msg.embeddedItem!.type === 'announcement') setCurrentTab('announcements');
+                      if (msg.embeddedItem!.type === "lecture")
+                        setCurrentTab("lectures");
+                      else if (msg.embeddedItem!.type === "record")
+                        setCurrentTab("records");
+                      else if (msg.embeddedItem!.type === "announcement")
+                        setCurrentTab("announcements");
                     }
-                  }} 
-                  className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 cursor-pointer hover:opacity-90 ${isMe ? 'bg-sky-700/30 border-sky-500/50' : 'bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700'}`}
+                  }}
+                  className={`mb-2 p-3 rounded-xl border flex flex-col gap-1 cursor-pointer hover:opacity-90 ${isMe ? "bg-sky-700/30 border-sky-500/50" : "bg-slate-50 dark:bg-zinc-800/50 border-slate-200 dark:border-zinc-700"}`}
                 >
                   <div className="flex items-center gap-1.5 opacity-80 text-[10px] uppercase font-bold tracking-wider">
-                    {msg.embeddedItem.type === 'lecture' && <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">Lecture</span>}
-                    {msg.embeddedItem.type === 'record' && <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">Record</span>}
-                    {msg.embeddedItem.type === 'announcement' && <span className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded">Announcement</span>}
+                    {msg.embeddedItem.type === "lecture" && (
+                      <span className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                        Lecture
+                      </span>
+                    )}
+                    {msg.embeddedItem.type === "record" && (
+                      <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded">
+                        Record
+                      </span>
+                    )}
+                    {msg.embeddedItem.type === "announcement" && (
+                      <span className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded">
+                        Announcement
+                      </span>
+                    )}
                   </div>
                   <div className="font-bold hover:underline line-clamp-2 text-sm">
                     {msg.embeddedItem.title}
                   </div>
-                  {msg.embeddedItem.subtitle && <span className="text-xs opacity-70 truncate">{msg.embeddedItem.subtitle}</span>}
+                  {msg.embeddedItem.subtitle && (
+                    <span className="text-xs opacity-70 truncate">
+                      {msg.embeddedItem.subtitle}
+                    </span>
+                  )}
                 </div>
-            )}
-
-            <p className="whitespace-pre-wrap break-words leading-relaxed" dir="auto">{renderMessageText(msg.text)}</p>
-            
-            <div className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
-              <span className="text-[10px] font-medium">{timeStr}</span>
-            </div>
-          </div>
-
-          {/* Reactions Display */}
-          {msg.reactions && (msg.reactions.like?.length > 0 || msg.reactions.heart?.length > 0 || msg.reactions.thanks?.length > 0) && (
-            <div className={`flex flex-wrap gap-1 mt-1 z-10 ${isMe ? 'justify-end' : 'justify-start'}`}>
-              {msg.reactions.like?.length > 0 && (
-                <button title={msg.reactions.like.join(', ')} onClick={() => handleReaction(msg.id, 'like', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.like.includes(user?.email || '') ? 'bg-sky-50 dark:bg-sky-900 border-sky-200 text-sky-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
-                  👍 {msg.reactions.like.length}
-                </button>
               )}
-              {msg.reactions.heart?.length > 0 && (
-                <button title={msg.reactions.heart.join(', ')} onClick={() => handleReaction(msg.id, 'heart', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.heart.includes(user?.email || '') ? 'bg-rose-50 dark:bg-rose-900 border-rose-200 text-rose-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
-                  ❤️ {msg.reactions.heart.length}
-                </button>
-              )}
-              {msg.reactions.thanks?.length > 0 && (
-                <button title={msg.reactions.thanks.join(', ')} onClick={() => handleReaction(msg.id, 'thanks', msg.reactions)} className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.thanks.includes(user?.email || '') ? 'bg-emerald-50 dark:bg-emerald-900 border-emerald-200 text-emerald-700' : 'bg-white dark:bg-zinc-800 border-slate-200 text-slate-600'}`}>
-                  🙏 {msg.reactions.thanks.length}
-                </button>
-              )}
-            </div>
-          )}
 
-          {/* Reaction / Action Picker */}
-          <AnimatePresence>
-            {showReactionPickerFor === msg.id && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                className={`absolute -top-16 z-[100] bg-white dark:bg-zinc-800 shadow-2xl rounded-2xl px-3 py-2 flex items-center gap-2 border border-slate-200 dark:border-zinc-700 whitespace-nowrap ${isMe ? (isRtl ? 'left-0' : 'right-0') : (isRtl ? 'right-0' : 'left-0')}`}
-                onClick={(e) => e.stopPropagation()}
+              <p
+                className="whitespace-pre-wrap break-words leading-relaxed"
+                dir="auto"
               >
-                <div className="flex items-center gap-1.5 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l">
-                  <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">👍</button>
-                  <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'heart', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">❤️</button>
-                  <button onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'thanks', msg.reactions); setShowReactionPickerFor(null); }} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl">🙏</button>
-                </div>
-                
-                <div className="flex items-center gap-1 px-2 text-xs font-bold text-slate-500 dark:text-slate-400 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l" title={isRtl ? 'المشاهدات' : 'Views'}>
-                  <Eye className="w-4 h-4" />
-                  <span>{(msg.reactions?.viewers || msg.viewers) ? (msg.reactions?.viewers || msg.viewers)!.length : 0}</span>
-                </div>
+                {renderMessageText(msg.text)}
+              </p>
 
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setReplyingTo({ messageId: msg.id, senderName: msg.senderName, text: msg.text.substring(0, 50), senderId: msg.senderId }); setShowReactionPickerFor(null); }} 
-                  className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
+              <div
+                className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? "text-sky-100" : "text-slate-400"}`}
+              >
+                <span className="text-[10px] font-medium">{timeStr}</span>
+              </div>
+            </div>
+
+            {/* Reactions Display */}
+            {msg.reactions &&
+              (msg.reactions.like?.length > 0 ||
+                msg.reactions.heart?.length > 0 ||
+                msg.reactions.thanks?.length > 0) && (
+                <div
+                  className={`flex flex-wrap gap-1 mt-1 z-10 ${isMe ? "justify-end" : "justify-start"}`}
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-                  {isRtl ? 'رد' : 'Reply'}
-                </button>
+                  {msg.reactions.like?.length > 0 && (
+                    <button
+                      title={msg.reactions.like.join(", ")}
+                      onClick={() =>
+                        handleReaction(msg.id, "like", msg.reactions)
+                      }
+                      className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.like.includes(user?.email || "") ? "bg-sky-50 dark:bg-sky-900 border-sky-200 text-sky-700" : "bg-white dark:bg-zinc-800 border-slate-200 text-slate-600"}`}
+                    >
+                      👍 {msg.reactions.like.length}
+                    </button>
+                  )}
+                  {msg.reactions.heart?.length > 0 && (
+                    <button
+                      title={msg.reactions.heart.join(", ")}
+                      onClick={() =>
+                        handleReaction(msg.id, "heart", msg.reactions)
+                      }
+                      className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.heart.includes(user?.email || "") ? "bg-rose-50 dark:bg-rose-900 border-rose-200 text-rose-700" : "bg-white dark:bg-zinc-800 border-slate-200 text-slate-600"}`}
+                    >
+                      ❤️ {msg.reactions.heart.length}
+                    </button>
+                  )}
+                  {msg.reactions.thanks?.length > 0 && (
+                    <button
+                      title={msg.reactions.thanks.join(", ")}
+                      onClick={() =>
+                        handleReaction(msg.id, "thanks", msg.reactions)
+                      }
+                      className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border hover:scale-105 transition-transform ${msg.reactions.thanks.includes(user?.email || "") ? "bg-emerald-50 dark:bg-emerald-900 border-emerald-200 text-emerald-700" : "bg-white dark:bg-zinc-800 border-slate-200 text-slate-600"}`}
+                    >
+                      🙏 {msg.reactions.thanks.length}
+                    </button>
+                  )}
+                </div>
+              )}
 
-                {(isAdminOrModerator || isMe) && (
-                  <button 
+            {/* Reaction / Action Picker */}
+            <AnimatePresence>
+              {showReactionPickerFor === msg.id && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                  className={`absolute -top-16 z-[100] bg-white dark:bg-zinc-800 shadow-2xl rounded-2xl px-3 py-2 flex items-center gap-2 border border-slate-200 dark:border-zinc-700 whitespace-nowrap ${isMe ? (isRtl ? "left-0" : "right-0") : isRtl ? "right-0" : "left-0"}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center gap-1.5 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReaction(msg.id, "like", msg.reactions);
+                        setShowReactionPickerFor(null);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl"
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReaction(msg.id, "heart", msg.reactions);
+                        setShowReactionPickerFor(null);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl"
+                    >
+                      ❤️
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReaction(msg.id, "thanks", msg.reactions);
+                        setShowReactionPickerFor(null);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors text-xl"
+                    >
+                      🙏
+                    </button>
+                  </div>
+
+                  <div
+                    className="flex items-center gap-1 px-2 text-xs font-bold text-slate-500 dark:text-slate-400 border-r dark:border-zinc-700 pr-2 rtl:pr-0 rtl:pl-2 rtl:border-r-0 rtl:border-l"
+                    title={isRtl ? "المشاهدات" : "Views"}
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>
+                      {msg.reactions?.viewers || msg.viewers
+                        ? (msg.reactions?.viewers || msg.viewers)!.length
+                        : 0}
+                    </span>
+                  </div>
+
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setMessageToDelete(msg.id);
+                      setReplyingTo({
+                        messageId: msg.id,
+                        senderName: msg.senderName,
+                        text: msg.text.substring(0, 50),
+                        senderId: msg.senderId,
+                      });
                       setShowReactionPickerFor(null);
                     }}
-                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 rounded-full transition-colors"
-                    title={isRtl ? 'حذف' : 'Delete'}
+                    className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold text-sky-600 flex items-center gap-1.5"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="9 17 4 12 9 7" />
+                      <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+                    </svg>
+                    {isRtl ? "رد" : "Reply"}
+                  </button>
+
+                  {(isAdminOrModerator || isMe) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMessageToDelete(msg.id);
+                        setShowReactionPickerFor(null);
+                      }}
+                      className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 rounded-full transition-colors"
+                      title={isRtl ? "حذف" : "Delete"}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {isMasterAdmin && msg.isAnonymous && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRevealedMessages((prev: any) => {
+                          const next = new Set(prev);
+                          if (next.has(msg.id)) next.delete(msg.id);
+                          else next.add(msg.id);
+                          return next;
+                        });
+                        setShowReactionPickerFor(null);
+                      }}
+                      title={
+                        isRtl ? "كشف/إخفاء الهوية" : "Toggle Reveal Identity"
+                      }
+                      className={`p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-500 rounded-full transition-colors ${revealedMessages.has(msg.id) ? "bg-amber-100 dark:bg-amber-900/50" : ""}`}
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowReactionPickerFor(null);
+                    }}
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 group"
+                  >
+                    <X className="w-4 h-4 group-hover:text-red-500 transition-colors" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Desktop Hover Actions (Optional, kept but integrated with tap logic above) */}
+            {(isAdminOrModerator || isMe) && (
+              <div
+                className={`absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 hidden sm:flex ${isMe ? "-left-10 rtl:left-auto rtl:-right-10 flex-row" : "-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse"}`}
+              >
+                <button
+                  onClick={() => {
+                    setMessageToDelete(msg.id);
+                  }}
+                  className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
+                  title={isRtl ? "حذف الرسالة" : "Delete"}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+
+                {isAdminOrModerator && (
+                  <button
+                    onClick={() => {
+                      updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+                        pinnedMessage: {
+                          id: msg.id,
+                          text: msg.text,
+                          senderName: msg.senderName,
+                        },
+                      });
+                    }}
+                    className="p-1.5 bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-400 rounded-full shadow-sm hover:scale-110"
+                    title={isRtl ? "تثبيت الرسالة" : "Pin Message"}
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 17v5" />
+                      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                    </svg>
                   </button>
                 )}
 
                 {isMasterAdmin && msg.isAnonymous && (
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       setRevealedMessages((prev: any) => {
                         const next = new Set(prev);
                         if (next.has(msg.id)) next.delete(msg.id);
                         else next.add(msg.id);
                         return next;
                       });
-                      setShowReactionPickerFor(null);
                     }}
-                    title={isRtl ? 'كشف/إخفاء الهوية' : 'Toggle Reveal Identity'}
-                    className={`p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-500 rounded-full transition-colors ${revealedMessages.has(msg.id) ? 'bg-amber-100 dark:bg-amber-900/50' : ''}`}
+                    title={
+                      isRtl ? "كشف/إخفاء الهوية" : "Toggle Reveal Identity"
+                    }
+                    className={`p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110 ${revealedMessages.has(msg.id) ? "ring-2 ring-amber-400" : ""}`}
                   >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <svg
+                      className="w-3.5 h-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
                   </button>
                 )}
-
-                <button onClick={(e) => { e.stopPropagation(); setShowReactionPickerFor(null); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full text-slate-400 group">
-                  <X className="w-4 h-4 group-hover:text-red-500 transition-colors"/>
-                </button>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
-
-          {/* Desktop Hover Actions (Optional, kept but integrated with tap logic above) */}
-          {(isAdminOrModerator || isMe) && (
-            <div className={`absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 hidden sm:flex ${isMe ? '-left-10 rtl:left-auto rtl:-right-10 flex-row' : '-right-10 rtl:right-auto rtl:-left-10 flex-row-reverse'}`}>
-              <button 
-                onClick={() => {
-                  setMessageToDelete(msg.id);
-                }}
-                className={`p-1.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full shadow-sm hover:scale-110`}
-                title={isRtl ? 'حذف الرسالة' : 'Delete'}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-
-              {isAdminOrModerator && (
-                <button 
-                  onClick={() => {
-                    updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), {
-                      pinnedMessage: {
-                        id: msg.id,
-                        text: msg.text,
-                        senderName: msg.senderName
-                      }
-                    });
-                  }}
-                  className="p-1.5 bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-400 rounded-full shadow-sm hover:scale-110"
-                  title={isRtl ? 'تثبيت الرسالة' : 'Pin Message'}
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-                </button>
-              )}
-
-              {isMasterAdmin && msg.isAnonymous && (
-                <button
-                  onClick={() => {
-                    setRevealedMessages((prev: any) => {
-                      const next = new Set(prev);
-                      if (next.has(msg.id)) next.delete(msg.id);
-                      else next.add(msg.id);
-                      return next;
-                    });
-                  }}
-                  title={isRtl ? 'كشف/إخفاء الهوية' : 'Toggle Reveal Identity'}
-                  className={`p-1.5 bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full shadow-sm hover:scale-110 ${revealedMessages.has(msg.id) ? 'ring-2 ring-amber-400' : ''}`}
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              )}
-            </div>
-          )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
-export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProps) {
+export default function ChatScreen({
+  user,
+  lang,
+  setCurrentTab,
+}: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
-  const isRtl = lang === 'ar';
-  const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageChat !== false;
-  const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-  const isMasterAdmin = user?.email && adminEmails.includes(user.email.toLowerCase());
-  const CHAT_DOC_ID = 'config';
+  const isRtl = lang === "ar";
+  const isAdminOrModerator =
+    (user?.role === "admin" || user?.role === "moderator") &&
+    user?.permissions?.manageChat !== false;
+  const isMasterAdmin = user?.isMasterAdmin;
+  const CHAT_DOC_ID = "config";
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [settings, setSettings] = useState<ChatSettings>({
     isChatOpen: false,
     messageCooldown: 30,
-    closedMessage: 'الشات مغلق حالياً'
+    closedMessage: "الشات مغلق حالياً",
   });
-  
-  const [newMessage, setNewMessage] = useState('');
-  const [replyingTo, setReplyingTo] = useState<{messageId: string; senderName: string; text: string; senderId?: string} | null>(null);
-  const [showReactionPickerFor, setShowReactionPickerFor] = useState<string | null>(null);
+
+  const [newMessage, setNewMessage] = useState("");
+  const [replyingTo, setReplyingTo] = useState<{
+    messageId: string;
+    senderName: string;
+    text: string;
+    senderId?: string;
+  } | null>(null);
+  const [showReactionPickerFor, setShowReactionPickerFor] = useState<
+    string | null
+  >(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const isSendingRef = useRef(false);
   const [lastMessageTime, setLastMessageTime] = useState<number>(0);
-  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
   const [showAdminControls, setShowAdminControls] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -361,61 +655,71 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const [isClearing, setIsClearing] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
-  
+
   // Attachments & Embds
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [attachmentType, setAttachmentType] = useState<'image' | 'file' | null>(null);
+  const [attachmentType, setAttachmentType] = useState<"image" | "file" | null>(
+    null,
+  );
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
-  const [embeddedItem, setEmbeddedItem] = useState<ChatMessage['embeddedItem'] | null>(null);
+  const [embeddedItem, setEmbeddedItem] = useState<
+    ChatMessage["embeddedItem"] | null
+  >(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
-  
+
   // Mention states
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
-  const [mentionUsersPool, setMentionUsersPool] = useState<{name: string, photoUrl?: string, hidePhoto?: boolean}[]>([]);
-  const [mentionFiltered, setMentionFiltered] = useState<{name: string, photoUrl?: string, hidePhoto?: boolean}[]>([]);
-  
+  const [mentionUsersPool, setMentionUsersPool] = useState<
+    { name: string; photoUrl?: string; hidePhoto?: boolean }[]
+  >([]);
+  const [mentionFiltered, setMentionFiltered] = useState<
+    { name: string; photoUrl?: string; hidePhoto?: boolean }[]
+  >([]);
+
   // Typing Indicator states
   const [isTyping, setIsTyping] = useState(false);
   const [activeTypers, setActiveTypers] = useState<string[]>([]);
-  
+
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [revealedMessages, setRevealedMessages] = useState<Set<string>>(new Set());
-  
+  const [revealedMessages, setRevealedMessages] = useState<Set<string>>(
+    new Set(),
+  );
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
+
   // Track last visible document for pagination
-  const [lastVisibleMessageId, setLastVisibleMessageId] = useState<string | null>(null);
+  const [lastVisibleMessageId, setLastVisibleMessageId] = useState<
+    string | null
+  >(null);
   const [hasMore, setHasMore] = useState(true);
 
   // Ghost sender bug fix & rendering cleanup
   const getIsMe = (msg: ChatMessage) => {
-    return !!(user && ((msg.senderEmail && user.email === msg.senderEmail) || (msg.senderId && user.uid === msg.senderId)));
+    return !!(
+      user &&
+      ((msg.senderEmail && user.email === msg.senderEmail) ||
+        (msg.senderId && user.uid === msg.senderId))
+    );
   };
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
-
-  // Cooldown timer
-  useEffect(() => {
-    if (cooldownRemaining > 0) {
-      const timer = setTimeout(() => setCooldownRemaining(c => c - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [cooldownRemaining]);
 
   // Presence Tracking
   useEffect(() => {
     if (!user) return;
     const updatePresence = () => {
-      updateDoc(doc(db, 'users', user.uid), { lastActiveDate: new Date().toISOString() }).catch(() => {});
+      updateDoc(doc(db, "users", user.uid), {
+        lastActiveDate: new Date().toISOString(),
+      }).catch(() => {});
     };
     updatePresence();
     const interval = setInterval(updatePresence, 60000); // Heartbeat every 1 minute
-    
+
     return () => {
       clearInterval(interval);
     };
@@ -426,13 +730,15 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     const fetchTotalUsers = async () => {
       try {
         // Only count students
-        const qStudents = query(collection(db, 'users'), where('role', '==', 'student'));
+        const qStudents = query(
+          collection(db, "users"),
+          where("role", "==", "student"),
+        );
         const totalUsersSnapshot = await getCountFromServer(qStudents);
         setTotalUsersCount(totalUsersSnapshot.data().count);
-      } catch (err) {
-      }
+      } catch (err) {}
     };
-    
+
     fetchTotalUsers();
   }, []);
 
@@ -449,11 +755,16 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
 
   useEffect(() => {
     if (!user) return;
-    const typingRef = doc(db, 'chat_typing', user.uid);
+    const typingRef = doc(db, "chat_typing", user.uid);
     if (isTyping) {
       setDoc(typingRef, {
-        name: (user.hideNameOnLeaderboard && !isAdminOrModerator) ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : user.name,
-        timestamp: new Date().toISOString()
+        name:
+          user.hideNameOnLeaderboard && !isAdminOrModerator
+            ? isRtl
+              ? "مستخدم مجهول"
+              : "Anonymous User"
+            : user.name,
+        timestamp: new Date().toISOString(),
       }).catch(() => {});
     } else {
       deleteDoc(typingRef).catch(() => {});
@@ -466,49 +777,68 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   // Listen to other users typing
   useEffect(() => {
     if (!user) return;
-    const qTyping = query(collection(db, 'chat_typing'));
-    const unsub = onSnapshot(qTyping, (snapshot) => {
-       const now = Date.now();
-       const typers: string[] = [];
-       snapshot.forEach(docSnap => {
+    const qTyping = query(collection(db, "chat_typing"));
+    const unsub = onSnapshot(
+      qTyping,
+      (snapshot) => {
+        const now = Date.now();
+        const typers: string[] = [];
+        snapshot.forEach((docSnap) => {
           if (docSnap.id === user.uid) return; // ignore self
           const data = docSnap.data();
           const ts = new Date(data.timestamp).getTime();
           // Keep active if updated within last 10 seconds
           if (now - ts < 10000 && data.name) {
-              typers.push(data.name);
+            typers.push(data.name);
           }
-       });
-       setActiveTypers(typers);
-    }, (error) => {
-       console.error("Typing listener permission or index error:", error);
-       handleFirestoreError(error, OperationType.LIST, 'chat_typing');
-    });
+        });
+        setActiveTypers(typers);
+      },
+      (error) => {
+        console.error("Typing listener permission or index error:", error);
+        handleFirestoreError(error, OperationType.LIST, "chat_typing");
+      },
+    );
     return () => unsub();
   }, [user?.uid]);
 
   // Real-time Settings Listener
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'chat_settings', CHAT_DOC_ID), (docSnap) => {
-      const defaultSettings: ChatSettings = { isChatOpen: true, messageCooldown: 0, closedMessage: 'الشات مغلق حالياً', allowAttachments: true };
-      
-      if (docSnap.exists()) {
-        const data = docSnap.data() as Partial<ChatSettings>;
-        setSettings(prev => ({ ...prev, ...data }));
-        
-        // Failsafe: if the document exists but is missing 'isChatOpen', write it to the DB so live rules don't crash.
-        if (isAdminOrModerator && data.isChatOpen === undefined) {
-          setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { isChatOpen: true }, { merge: true }).catch(console.error);
+    const unsub = onSnapshot(
+      doc(db, "chat_settings", CHAT_DOC_ID),
+      (docSnap) => {
+        const defaultSettings: ChatSettings = {
+          isChatOpen: true,
+          messageCooldown: 0,
+          closedMessage: "الشات مغلق حالياً",
+          allowAttachments: true,
+        };
+
+        if (docSnap.exists()) {
+          const data = docSnap.data() as Partial<ChatSettings>;
+          setSettings((prev) => ({ ...prev, ...data }));
+
+          // Failsafe: if the document exists but is missing 'isChatOpen', write it to the DB so live rules don't crash.
+          if (isAdminOrModerator && data.isChatOpen === undefined) {
+            setDoc(
+              doc(db, "chat_settings", CHAT_DOC_ID),
+              { isChatOpen: true },
+              { merge: true },
+            ).catch(console.error);
+          }
+        } else if (isAdminOrModerator) {
+          // Initialize if not exists
+          setDoc(doc(db, "chat_settings", CHAT_DOC_ID), defaultSettings, {
+            merge: true,
+          }).catch(() => {});
+          setSettings(defaultSettings);
         }
-      } else if (isAdminOrModerator) {
-        // Initialize if not exists
-        setDoc(doc(db, 'chat_settings', CHAT_DOC_ID), defaultSettings, { merge: true }).catch(() => {});
-        setSettings(defaultSettings);
-      }
-    }, (e) => {
-      console.error('Settings listener error:', e);
-      handleFirestoreError(e, OperationType.GET, 'chat_settings/config');
-    });
+      },
+      (e) => {
+        console.error("Settings listener error:", e);
+        handleFirestoreError(e, OperationType.GET, "chat_settings/config");
+      },
+    );
     return () => unsub();
   }, [isAdminOrModerator]);
 
@@ -516,102 +846,115 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   useEffect(() => {
     setIsLoading(true);
     const q = query(
-      collection(db, 'chat_messages'),
-      orderBy('createdAt', 'desc'),
-      limit(50)
+      collection(db, "chat_messages"),
+      orderBy("createdAt", "desc"),
+      limit(50),
     );
 
-    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-      setMessages(prev => {
-        let newArray = [...prev];
-        snapshot.docChanges().forEach(change => {
+    const unsubscribe = onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        setMessages((prev) => {
+          let newArray = [...prev];
+          snapshot.docChanges().forEach((change) => {
             const data = change.doc.data();
             const msg: ChatMessage = {
               id: change.doc.id,
-              text: data.text || '',
-              senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'مستخدم محذوف'),
-              senderEmail: data.senderEmail || '',
-              senderId: data.senderId || '',
-              senderAvatar: data.senderAvatar || '',
+              text: data.text || "",
+              senderName:
+                data.senderName ||
+                (data.senderEmail
+                  ? data.senderEmail.split("@")[0]
+                  : "مستخدم محذوف"),
+              senderEmail: data.senderEmail || "",
+              senderId: data.senderId || "",
+              senderAvatar: data.senderAvatar || "",
               timestamp: data.timestamp,
-              createdAt: data.timestamp?.toMillis() || Date.now(),
+              createdAt: data.timestamp
+                ? data.timestamp.toMillis()
+                : data.createdAt || Date.now(),
               replyTo: data.replyTo || null,
               reactions: data.reactions || { like: [], heart: [], thanks: [] },
               isAnonymous: data.isAnonymous || false,
               isPending: change.doc.metadata.hasPendingWrites,
-              originalSenderName: data.originalSenderName || '',
+              originalSenderName: data.originalSenderName || "",
               fileUrl: data.fileUrl || undefined,
               fileName: data.fileName || undefined,
               fileType: data.fileType || undefined,
-              embeddedItem: data.embeddedItem || undefined
+              embeddedItem: data.embeddedItem || undefined,
             };
 
-            if (change.type === 'added') {
-               const idx = newArray.findIndex(m => m.id === msg.id);
-               if (idx >= 0) {
-                 newArray[idx] = msg;
-               } else {
-                 newArray.push(msg);
-               }
+            if (change.type === "added") {
+              const idx = newArray.findIndex((m) => m.id === msg.id);
+              if (idx >= 0) {
+                if (!data.timestamp && newArray[idx].createdAt) {
+                  msg.createdAt = newArray[idx].createdAt; // Prevent Date.now() drift
+                }
+                newArray[idx] = msg;
+              } else {
+                newArray.push(msg);
+              }
             }
-            if (change.type === 'modified') {
-               const idx = newArray.findIndex(m => m.id === msg.id);
-               if (idx >= 0) {
-                 newArray[idx] = msg;
-               }
+            if (change.type === "modified") {
+              const idx = newArray.findIndex((m) => m.id === msg.id);
+              if (idx >= 0) {
+                if (!data.timestamp && newArray[idx].createdAt) {
+                  msg.createdAt = newArray[idx].createdAt;
+                }
+                newArray[idx] = msg;
+              }
             }
-            if (change.type === 'removed') {
-               newArray = newArray.filter(m => m.id !== msg.id);
+            if (change.type === "removed") {
+              newArray = newArray.filter((m) => m.id !== msg.id);
             }
-        });
-        
-        // Return chronologically sorted array
-        newArray.sort((a, b) => a.createdAt - b.createdAt);
-        return newArray;
-      });
-      
-      if (!snapshot.empty) {
-        setLastVisibleMessageId(snapshot.docs[snapshot.docs.length - 1].id);
-      }
-      setIsLoading(false);
+          });
 
-      // Auto scroll down if user is near bottom
-      const container = containerRef.current;
-      if (container) {
-        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-        if (isNearBottom) {
-          setTimeout(() => scrollToBottom(), 100);
-          setUnreadCount(0);
-        } else {
-          // Check if there are real added messages from other people
-          if (snapshot.docChanges().some(c => c.type === 'added' && c.doc.data().senderId !== user?.uid)) {
-            setUnreadCount(prev => prev + 1);
+          // Return chronologically sorted array
+          newArray.sort((a, b) => a.createdAt - b.createdAt);
+          return newArray;
+        });
+
+        if (!snapshot.empty) {
+          setLastVisibleMessageId(snapshot.docs[snapshot.docs.length - 1].id);
+        }
+        setIsLoading(false);
+
+        // Auto scroll down if user is near bottom
+        const container = containerRef.current;
+        if (container) {
+          const isNearBottom =
+            container.scrollHeight -
+              container.scrollTop -
+              container.clientHeight <
+            150;
+          if (isNearBottom) {
+            setTimeout(() => scrollToBottom(), 100);
+            setUnreadCount(0);
+          } else {
+            // Check if there are real added messages from other people
+            if (
+              snapshot
+                .docChanges()
+                .some(
+                  (c) =>
+                    c.type === "added" && c.doc.data().senderId !== user?.uid,
+                )
+            ) {
+              setUnreadCount((prev) => prev + 1);
+            }
           }
         }
-      }
-    }, (e) => {
-      console.error('Chat live listener error: ', e);
-      setIsLoading(false);
-      handleFirestoreError(e, OperationType.LIST, 'chat_messages');
-    });
+      },
+      (e) => {
+        console.error("Chat live listener error: ", e);
+        setIsLoading(false);
+        handleFirestoreError(e, OperationType.LIST, "chat_messages");
+      },
+    );
 
     return () => unsubscribe();
   }, []);
-
-  // Check Local Storage Cooldown matching user
-  useEffect(() => {
-    if (!user) return;
-    const saveKey = `chat_cooldown_${user.uid}`;
-    const savedTime = localStorage.getItem(saveKey);
-    if (savedTime) {
-      const elapsed = Math.floor((Date.now() - parseInt(savedTime)) / 1000);
-      if (elapsed < settings.messageCooldown) {
-        setCooldownRemaining(settings.messageCooldown - elapsed);
-      } else {
-        localStorage.removeItem(saveKey);
-      }
-    }
-  }, [user, settings.messageCooldown]);
 
   // Mention handling
   useEffect(() => {
@@ -619,65 +962,101 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     if (match) {
       const search = match[1].toLowerCase();
       setMentionSearch(search);
-      
+
       if (mentionUsersPool.length === 0) {
-        getDocs(collection(db, 'users')).then(snap => {
-          const users = snap.docs.map(d => ({
-            name: (d.data().hideNameOnLeaderboard ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : d.data().name) as string,
-            photoUrl: d.data().photoUrl as string | undefined,
-            hidePhoto: (d.data().hidePhotoOnLeaderboard || d.data().hideNameOnLeaderboard) as boolean | undefined
-          }));
-          setMentionUsersPool(users);
-          setMentionFiltered(users.filter(u => u.name && u.name.toLowerCase().startsWith(search)).slice(0, 5));
-        }).catch(() => {});
+        getDocs(collection(db, "users"))
+          .then((snap) => {
+            const users = snap.docs.map((d) => ({
+              name: (d.data().hideNameOnLeaderboard
+                ? isRtl
+                  ? "مستخدم مجهول"
+                  : "Anonymous User"
+                : d.data().name) as string,
+              photoUrl: d.data().photoUrl as string | undefined,
+              hidePhoto: (d.data().hidePhotoOnLeaderboard ||
+                d.data().hideNameOnLeaderboard) as boolean | undefined,
+            }));
+            setMentionUsersPool(users);
+            setMentionFiltered(
+              users
+                .filter(
+                  (u) => u.name && u.name.toLowerCase().startsWith(search),
+                )
+                .slice(0, 5),
+            );
+          })
+          .catch(() => {});
       } else {
-        setMentionFiltered(mentionUsersPool.filter(u => u.name && u.name.toLowerCase().startsWith(search)).slice(0, 5));
+        setMentionFiltered(
+          mentionUsersPool
+            .filter((u) => u.name && u.name.toLowerCase().startsWith(search))
+            .slice(0, 5),
+        );
       }
     } else {
       setMentionSearch(null);
     }
   }, [newMessage, mentionUsersPool]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSending) return;
-    if ((!newMessage.trim() && !attachmentFile && !embeddedItem) || (!settings.isChatOpen && !isAdminOrModerator) || (cooldownRemaining > 0 && !isAdminOrModerator) || !user || isUploadingAttachment || isSending) return;
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (isSendingRef.current || isSending) return;
+    if (
+      (!newMessage.trim() && !attachmentFile && !embeddedItem) ||
+      (!settings.isChatOpen && !isAdminOrModerator) ||
+      !user ||
+      isUploadingAttachment
+    )
+      return;
+
+    isSendingRef.current = true;
+    setIsSending(true);
+
     if (!isAdminOrModerator) {
-      if (cooldownRemaining > 0) return;
       if (attachmentFile && settings.allowAttachments === false) {
-         setAlertMessage(isRtl ? 'المرفقات معطلة للطلاب' : 'Attachments disabled for students');
-         setAttachmentFile(null);
-         return;
+        setAlertMessage(
+          isRtl ? "المرفقات معطلة للطلاب" : "Attachments disabled for students",
+        );
+        setAttachmentFile(null);
+        isSendingRef.current = false;
+        setIsSending(false);
+        return;
       }
     }
 
     const messageText = newMessage.trim();
     const replyData = replyingTo ? { ...replyingTo } : null;
     const embedData = embeddedItem ? { ...embeddedItem } : null;
-    let finalFileUrl = '';
-    let finalFileName = '';
+    let finalFileUrl = "";
+    let finalFileName = "";
     let finalFileType = attachmentType;
 
-    setIsSending(true);
     setIsUploadingAttachment(!!attachmentFile);
 
-    const docRef = doc(collection(db, 'chat_messages'));
+    const docRef = doc(collection(db, "chat_messages"));
 
     try {
       if (attachmentFile) {
-        const { ref: storageRef, uploadBytes, getDownloadURL } = await import('firebase/storage');
-        const ext = attachmentFile.name.split('.').pop();
+        const {
+          ref: storageRef,
+          uploadBytes,
+          getDownloadURL,
+        } = await import("firebase/storage");
+        const ext = attachmentFile.name.split(".").pop();
         const safeName = Math.random().toString(36).substring(2, 10);
-        const fileRef = storageRef(storage, `chat_attachments/${user.uid}_${Date.now()}_${safeName}.${ext}`);
-        
+        const fileRef = storageRef(
+          storage,
+          `chat_attachments/${user.uid}_${Date.now()}_${safeName}.${ext}`,
+        );
+
         await uploadBytes(fileRef, attachmentFile);
         finalFileUrl = await getDownloadURL(fileRef);
         finalFileName = attachmentFile.name;
       }
 
-      setNewMessage('');
+      setNewMessage("");
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = "auto";
       }
       setReplyingTo(null);
       setAttachmentFile(null);
@@ -685,9 +1064,15 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       setEmbeddedItem(null);
       setShowAttachmentMenu(false);
 
-      const isAnon = (!isAdminOrModerator && isAnonymous);
-      const displaySenderName = isAnon ? (isRtl ? 'مجهول' : 'Anonymous') : user.name;
-      const displaySenderAvatar = isAnon ? '?' : (user.photoUrl || user.name.charAt(0).toUpperCase());
+      const isAnon = !isAdminOrModerator && isAnonymous;
+      const displaySenderName = isAnon
+        ? isRtl
+          ? "مجهول"
+          : "Anonymous"
+        : user.name;
+      const displaySenderAvatar = isAnon
+        ? "?"
+        : user.photoUrl || user.name.charAt(0).toUpperCase();
 
       const payload: any = {
         text: messageText,
@@ -701,72 +1086,113 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         reactions: { like: [], heart: [], thanks: [] },
         isAnonymous: isAnon,
         originalSenderName: user.name,
-        originalSenderExamCode: user.examCode || '',
+        originalSenderExamCode: user.examCode || "",
       };
 
       if (finalFileUrl) {
-         payload.fileUrl = finalFileUrl;
-         payload.fileName = finalFileName;
-         payload.fileType = finalFileType;
+        payload.fileUrl = finalFileUrl;
+        payload.fileName = finalFileName;
+        payload.fileType = finalFileType;
       }
 
       if (embedData) {
-         payload.embeddedItem = embedData;
+        payload.embeddedItem = embedData;
       }
 
       if (isAnon) {
-         setIsAnonymous(false);
+        setIsAnonymous(false);
       }
 
       // Optimistic UI update instantly before network wait
-      setMessages(prev => {
-        if (prev.some(m => m.id === docRef.id)) return prev;
-        return [...prev, {
-          id: docRef.id,
-          text: messageText,
-          senderName: displaySenderName,
-          senderEmail: user.email,
-          senderId: user.uid,
-          senderAvatar: displaySenderAvatar,
-          timestamp: new Date() as any,
-          createdAt: Date.now(),
-          replyTo: replyData,
-          reactions: { like: [], heart: [], thanks: [] },
-          isAnonymous: isAnon,
-          isPending: true,
-          originalSenderName: user.name,
-          originalSenderExamCode: user.examCode || '',
-          fileUrl: finalFileUrl || undefined,
-          fileName: finalFileName || undefined,
-          fileType: finalFileUrl ? finalFileType! : undefined,
-          embeddedItem: embedData || undefined
-        }];
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === docRef.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: docRef.id,
+            text: messageText,
+            senderName: displaySenderName,
+            senderEmail: user.email,
+            senderId: user.uid,
+            senderAvatar: displaySenderAvatar,
+            timestamp: new Date() as any,
+            createdAt: payload.createdAt,
+            replyTo: replyData,
+            reactions: { like: [], heart: [], thanks: [] },
+            isAnonymous: isAnon,
+            isPending: true,
+            status: "pending",
+            originalSenderName: user.name,
+            originalSenderExamCode: user.examCode || "",
+            fileUrl: finalFileUrl || undefined,
+            fileName: finalFileName || undefined,
+            fileType: finalFileUrl ? finalFileType! : undefined,
+            embeddedItem: embedData || undefined,
+          },
+        ];
       });
-      setTimeout(() => scrollToBottom(), 100);
+      // Fire scroll instantly, then again to guarantee layout recalculation
+      scrollToBottom();
+      setTimeout(() => scrollToBottom(), 50);
       setUnreadCount(0);
 
-      // Instantly start cooldown for students
-      if (!isAdminOrModerator) {
-        const cooldown = settings.messageCooldown !== undefined ? settings.messageCooldown : 0;
-        setCooldownRemaining(cooldown);
-        if (cooldown > 0) {
-          localStorage.setItem(`chat_cooldown_${user.uid}`, Date.now().toString());
-        }
+      if (isAdminOrModerator) {
+         if (payload.isAnonymous) {
+            delete payload.senderEmail;
+            delete payload.senderId;
+            const batch = writeBatch(db);
+            // payload already has timestamp: serverTimestamp() so it's fine, but we're destructing
+            batch.set(docRef, { ...payload, createdAt: Date.now(), timestamp: serverTimestamp() });
+            batch.set(doc(db, `chat_messages/${docRef.id}/private/sender`), {
+              senderEmail: user.email,
+              senderId: user.uid
+            });
+            batch.commit().catch((e: any) => {
+              console.error("Failed to send anon msgs", e);
+              setAlertMessage(e instanceof Error ? e.message : String(e));
+              setMessages((prev) => prev.filter((m) => m.id !== docRef.id));
+            });
+         } else {
+            setDoc(docRef, { ...payload, createdAt: Date.now(), timestamp: serverTimestamp() }).catch((e: any) => {
+               console.error("Failed to send msg", e);
+               setAlertMessage(e instanceof Error ? e.message : String(e));
+               // Revert optimistic UI
+               setMessages((prev) => prev.filter((m) => m.id !== docRef.id));
+            });
+         }
+      } else {
+         const cleanPayload = { ...payload };
+         delete cleanPayload.timestamp; // Remove FieldValue because it's unserializable
+
+         const sendMessageObj = {
+            messageId: docRef.id,
+            message: cleanPayload,
+         };
+         // It's removed from public payload for students in cloud function
+         
+         const sendMessageCallable = httpsCallable<{ messageId: string, message: any }, { id: string }>(functions, 'sendMessage');
+         sendMessageCallable(sendMessageObj).then((res) => {
+            // Success, remove temp message (the real one will come from snapshot)
+            setMessages((prev) => prev.filter((m) => m.id !== docRef.id));
+         }).catch((error) => {
+            console.error("Failed to send message", error);
+            // Replace with a failed message indicator!
+            setAlertMessage(error instanceof Error ? error.message : String(error));
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === docRef.id ? { ...m, isPending: false, status: "failed", error: error.message } as any : m,
+              ),
+            );
+         });
       }
 
-      // Perform setDoc asynchronously to unblock UI immediately
-      setDoc(docRef, payload).catch((e: any) => {
-        console.error('Failed to send message', e);
-        setAlertMessage(e instanceof Error ? e.message : String(e));
-        // Revert optimistic UI
-        setMessages(prev => prev.filter(m => m.id !== docRef.id));
-      });
-
+      isSendingRef.current = false;
       setIsSending(false);
       setIsUploadingAttachment(false);
     } catch (e: any) {
-      console.error('Failed to prepare message', e);
+      console.error("Failed to prepare message", e);
       setAlertMessage(e instanceof Error ? e.message : String(e));
+      isSendingRef.current = false;
       setIsSending(false);
       setIsUploadingAttachment(false);
     }
@@ -778,50 +1204,56 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     try {
       if (messages.length === 0) return;
       const oldestMessage = messages[0];
-      
+
       const q = query(
-        collection(db, 'chat_messages'),
-        orderBy('createdAt', 'desc'),
-        where('createdAt', '<', oldestMessage.createdAt),
-        limit(50)
+        collection(db, "chat_messages"),
+        orderBy("createdAt", "desc"),
+        where("createdAt", "<", oldestMessage.createdAt),
+        limit(50),
       );
-      
+
       let snapshot;
       try {
-        const { getDocsFromCache } = await import('firebase/firestore');
+        const { getDocsFromCache } = await import("firebase/firestore");
         snapshot = await getDocsFromCache(q);
-        if (snapshot.empty) throw new Error('Cache empty');
+        if (snapshot.empty) throw new Error("Cache empty");
       } catch (e) {
         snapshot = await getDocs(q);
       }
 
       const oldMessages: ChatMessage[] = [];
-      snapshot.forEach(doc => {
+      snapshot.forEach((doc) => {
         const data = doc.data();
         oldMessages.push({
           id: doc.id,
-          text: data.text || '',
-          senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'مستخدم محذوف'),
-          senderEmail: data.senderEmail || '',
-          senderId: data.senderId || '',
-          senderAvatar: data.senderAvatar || '',
+          text: data.text || "",
+          senderName:
+            data.senderName ||
+            (data.senderEmail
+              ? data.senderEmail.split("@")[0]
+              : "مستخدم محذوف"),
+          senderEmail: data.senderEmail || "",
+          senderId: data.senderId || "",
+          senderAvatar: data.senderAvatar || "",
           timestamp: data.timestamp,
           createdAt: data.timestamp?.toMillis() || Date.now(),
           replyTo: data.replyTo || null,
           reactions: data.reactions || { like: [], heart: [], thanks: [] },
           isAnonymous: data.isAnonymous || false,
-          originalSenderName: data.originalSenderName || '',
-          originalSenderExamCode: data.originalSenderExamCode || '',
+          originalSenderName: data.originalSenderName || "",
+          originalSenderExamCode: data.originalSenderExamCode || "",
           fileUrl: data.fileUrl || undefined,
           fileName: data.fileName || undefined,
           fileType: data.fileType || undefined,
-          embeddedItem: data.embeddedItem || undefined
+          embeddedItem: data.embeddedItem || undefined,
         });
       });
 
       if (oldMessages.length > 0) {
-        setMessages(prev => {
-          const uniqueOld = oldMessages.reverse().filter(nm => !prev.some(pm => pm.id === nm.id));
+        setMessages((prev) => {
+          const uniqueOld = oldMessages
+            .reverse()
+            .filter((nm) => !prev.some((pm) => pm.id === nm.id));
           return [...uniqueOld, ...prev];
         });
         setHasMore(oldMessages.length === 20);
@@ -829,7 +1261,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         setHasMore(false);
       }
     } catch (e) {
-      console.error('Failed to load more messages', e);
+      console.error("Failed to load more messages", e);
     } finally {
       setIsLoadingMore(false);
     }
@@ -838,25 +1270,46 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const handleViewPinnedMessage = async (targetId: string) => {
     let el = document.getElementById(`msg-${targetId}`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500'), 2500);
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add(
+        "ring-2",
+        "ring-sky-500",
+        "bg-sky-50",
+        "dark:bg-sky-900/20",
+        "transition-all",
+        "duration-500",
+      );
+      setTimeout(
+        () =>
+          el.classList.remove(
+            "ring-2",
+            "ring-sky-500",
+            "bg-sky-50",
+            "dark:bg-sky-900/20",
+            "transition-all",
+            "duration-500",
+          ),
+        2500,
+      );
       return;
     }
 
     if (!hasMore || messages.length === 0) {
-      setAlertMessage(isRtl ? 'تعذر العثور على الرسالة.' : 'Message could not be found.');
+      setAlertMessage(
+        isRtl ? "تعذر العثور على الرسالة." : "Message could not be found.",
+      );
       return;
     }
 
     // Auto-load previous messages
     setIsLoadingMore(true);
     try {
-      const { getDoc, query, collection, orderBy, where, limit, getDocs } = await import('firebase/firestore');
-      const targetDoc = await getDoc(doc(db, 'chat_messages', targetId));
-      
+      const { getDoc, query, collection, orderBy, where, limit, getDocs } =
+        await import("firebase/firestore");
+      const targetDoc = await getDoc(doc(db, "chat_messages", targetId));
+
       if (!targetDoc.exists()) {
-        setAlertMessage(isRtl ? 'الرسالة محذوفة.' : 'Message deleted.');
+        setAlertMessage(isRtl ? "الرسالة محذوفة." : "Message deleted.");
         return;
       }
 
@@ -866,41 +1319,47 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       const oldestLoaded = messages[0];
       if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp) {
         const q = query(
-          collection(db, 'chat_messages'),
-          orderBy('createdAt', 'desc'),
-          where('createdAt', '<', oldestLoaded.createdAt),
-          where('createdAt', '>=', targetTimestamp),
-          limit(150)
+          collection(db, "chat_messages"),
+          orderBy("createdAt", "desc"),
+          where("createdAt", "<", oldestLoaded.createdAt),
+          where("createdAt", ">=", targetTimestamp),
+          limit(150),
         );
 
         const snap = await getDocs(q);
         const oldMsgs: ChatMessage[] = [];
-        snap.forEach(docSnap => {
+        snap.forEach((docSnap) => {
           const data = docSnap.data();
           oldMsgs.push({
             id: docSnap.id,
-            text: data.text || '',
-            senderName: data.senderName || (data.senderEmail ? data.senderEmail.split('@')[0] : 'مستخدم محذوف'),
-            senderEmail: data.senderEmail || '',
-            senderId: data.senderId || '',
-            senderAvatar: data.senderAvatar || '',
+            text: data.text || "",
+            senderName:
+              data.senderName ||
+              (data.senderEmail
+                ? data.senderEmail.split("@")[0]
+                : "مستخدم محذوف"),
+            senderEmail: data.senderEmail || "",
+            senderId: data.senderId || "",
+            senderAvatar: data.senderAvatar || "",
             timestamp: data.timestamp,
             createdAt: data.timestamp?.toMillis() || Date.now(),
             replyTo: data.replyTo || null,
             reactions: data.reactions || { like: [], heart: [], thanks: [] },
             isAnonymous: data.isAnonymous || false,
-            originalSenderName: data.originalSenderName || '',
-            originalSenderExamCode: data.originalSenderExamCode || '',
+            originalSenderName: data.originalSenderName || "",
+            originalSenderExamCode: data.originalSenderExamCode || "",
             fileUrl: data.fileUrl || undefined,
             fileName: data.fileName || undefined,
             fileType: data.fileType || undefined,
-            embeddedItem: data.embeddedItem || undefined
+            embeddedItem: data.embeddedItem || undefined,
           });
         });
 
         if (oldMsgs.length > 0) {
-          setMessages(prev => {
-            const uniqueOld = oldMsgs.reverse().filter(nm => !prev.some(pm => pm.id === nm.id));
+          setMessages((prev) => {
+            const uniqueOld = oldMsgs
+              .reverse()
+              .filter((nm) => !prev.some((pm) => pm.id === nm.id));
             return [...uniqueOld, ...prev];
           });
         }
@@ -908,23 +1367,45 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
         setTimeout(() => {
           const afterEl = document.getElementById(`msg-${targetId}`);
           if (afterEl) {
-            afterEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            afterEl.classList.add('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500');
+            afterEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            afterEl.classList.add(
+              "ring-2",
+              "ring-sky-500",
+              "bg-sky-50",
+              "dark:bg-sky-900/20",
+              "transition-all",
+              "duration-500",
+            );
             setTimeout(() => {
-              afterEl.classList.remove('ring-2', 'ring-sky-500', 'bg-sky-50', 'dark:bg-sky-900/20', 'transition-all', 'duration-500');
+              afterEl.classList.remove(
+                "ring-2",
+                "ring-sky-500",
+                "bg-sky-50",
+                "dark:bg-sky-900/20",
+                "transition-all",
+                "duration-500",
+              );
             }, 2500);
           } else {
-            setAlertMessage(isRtl ? 'الرسالة أقدم من الحد الأقصى للتحميل التلقائي.' : 'Message is older than the auto-load limit.');
+            setAlertMessage(
+              isRtl
+                ? "الرسالة أقدم من الحد الأقصى للتحميل التلقائي."
+                : "Message is older than the auto-load limit.",
+            );
           }
         }, 500); // give React more time to mount the new elements
-
       } else {
-         setAlertMessage(isRtl ? 'تعذر العثور على الرسالة في النطاق الزمني.' : 'Could not find message in time range.');
+        setAlertMessage(
+          isRtl
+            ? "تعذر العثور على الرسالة في النطاق الزمني."
+            : "Could not find message in time range.",
+        );
       }
-
     } catch (e) {
-      console.error('Jump error', e);
-      setAlertMessage(isRtl ? 'حدث خطأ أثناء تحميل الرسالة.' : 'Error loading message.');
+      console.error("Jump error", e);
+      setAlertMessage(
+        isRtl ? "حدث خطأ أثناء تحميل الرسالة." : "Error loading message.",
+      );
     } finally {
       setIsLoadingMore(false);
     }
@@ -934,38 +1415,44 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
   const toggleChatStatus = async () => {
     try {
       const newState = !settings.isChatOpen;
-      await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), {
-        isChatOpen: newState
+      await updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+        isChatOpen: newState,
       });
-      setSettings(prev => ({ ...prev, isChatOpen: newState }));
+      setSettings((prev) => ({ ...prev, isChatOpen: newState }));
     } catch (e) {
-      console.error('Failed to toggle chat state', e);
+      console.error("Failed to toggle chat state", e);
     }
   };
 
   const updateCooldown = async (val: number) => {
     try {
-      await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), {
-        messageCooldown: val
+      await updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+        messageCooldown: val,
       });
-      setSettings(prev => ({ ...prev, messageCooldown: val }));
+      setSettings((prev) => ({ ...prev, messageCooldown: val }));
     } catch (e) {
-      console.error('Failed to update cooldown', e);
+      console.error("Failed to update cooldown", e);
     }
   };
 
   const deleteMessage = async (id: string) => {
-    const msg = messages.find(m => m.id === id);
-    const isOwner = msg && user && (msg.senderId === user.uid || (msg.senderEmail && msg.senderEmail === user.email));
-    
+    const msg = messages.find((m) => m.id === id);
+    const isOwner =
+      msg &&
+      user &&
+      (msg.senderId === user.uid ||
+        (msg.senderEmail && msg.senderEmail === user.email));
+
     if (!isAdminOrModerator && !isOwner) return;
-    
+
     try {
-      await deleteDoc(doc(db, 'chat_messages', id));
-      setMessages(prev => prev.filter(m => m.id !== id));
+      await deleteDoc(doc(db, "chat_messages", id));
+      setMessages((prev) => prev.filter((m) => m.id !== id));
     } catch (e: any) {
-      console.error('Failed to delete message', e);
-      setAlertMessage(isRtl ? 'فشل الحذف. ' + e.message : 'Failed to delete: ' + e.message);
+      console.error("Failed to delete message", e);
+      setAlertMessage(
+        isRtl ? "فشل الحذف. " + e.message : "Failed to delete: " + e.message,
+      );
     }
   };
 
@@ -974,7 +1461,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     setIsClearing(true);
     try {
       let documentCount = 0;
-      let q = query(collection(db, 'chat_messages'), limit(500));
+      let q = query(collection(db, "chat_messages"), limit(500));
       let snapshot = await getDocs(q);
 
       while (!snapshot.empty) {
@@ -984,49 +1471,68 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
           documentCount++;
         });
         await batch.commit();
-        
+
         // fetch the next 500
-        q = query(collection(db, 'chat_messages'), limit(500));
+        q = query(collection(db, "chat_messages"), limit(500));
         snapshot = await getDocs(q);
       }
       setMessages([]);
       setShowClearConfirm(false);
-      setAlertMessage(isRtl ? `تم حذف جميع الرسائل. (${documentCount} رسالة)` : `Successfully cleared all messages. (${documentCount} messages)`);
+      setAlertMessage(
+        isRtl
+          ? `تم حذف جميع الرسائل. (${documentCount} رسالة)`
+          : `Successfully cleared all messages. (${documentCount} messages)`,
+      );
     } catch (e) {
-      console.error('Failed to clear messages', e);
-      setAlertMessage(isRtl ? 'حدث خطأ أثناء حذف الرسائل' : 'Error clearing messages');
+      console.error("Failed to clear messages", e);
+      setAlertMessage(
+        isRtl ? "حدث خطأ أثناء حذف الرسائل" : "Error clearing messages",
+      );
     } finally {
       setIsClearing(false);
     }
   };
 
-  const handleReaction = async (msgId: string, emoji: 'like' | 'heart' | 'thanks', msgReactions: any) => {
+  const handleReaction = async (
+    msgId: string,
+    emoji: "like" | "heart" | "thanks",
+    msgReactions: any,
+  ) => {
     if (!user) return;
-    const hasReacted = msgReactions && msgReactions[emoji] && msgReactions[emoji].includes(user.email);
-    
+    const hasReacted =
+      msgReactions &&
+      msgReactions[emoji] &&
+      msgReactions[emoji].includes(user.email);
+
     // Optimistic UI update
-    setMessages(prev => prev.map(m => {
-      if (m.id === msgId) {
-        const reactions = m.reactions || { like: [], heart: [], thanks: [] };
-        const updated = { ...reactions };
-        if (hasReacted) {
-          updated[emoji] = updated[emoji].filter((e: string) => e !== user.email);
-        } else {
-          updated[emoji] = [...(updated[emoji] || []), user.email];
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id === msgId) {
+          const reactions = m.reactions || { like: [], heart: [], thanks: [] };
+          const updated = { ...reactions };
+          if (hasReacted) {
+            updated[emoji] = updated[emoji].filter(
+              (e: string) => e !== user.email,
+            );
+          } else {
+            updated[emoji] = [...(updated[emoji] || []), user.email];
+          }
+          return { ...m, reactions: updated };
         }
-        return { ...m, reactions: updated };
-      }
-      return m;
-    }));
+        return m;
+      }),
+    );
     setShowReactionPickerFor(null);
-    
+
     try {
-      const ref = doc(db, 'chat_messages', msgId);
+      const ref = doc(db, "chat_messages", msgId);
       await updateDoc(ref, {
-        [`reactions.${emoji}`]: hasReacted ? arrayRemove(user.email) : arrayUnion(user.email)
+        [`reactions.${emoji}`]: hasReacted
+          ? arrayRemove(user.email)
+          : arrayUnion(user.email),
       });
     } catch (e) {
-      console.error('Failed to react', e);
+      console.error("Failed to react", e);
       // State will be reverted automatically by onSnapshot if the write fails
     }
   };
@@ -1035,22 +1541,35 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
     if (!text) return null;
     const parts = text.split(/(@\S+)/g);
     return parts.map((part, i) => {
-      if (part.startsWith('@')) {
-        return <span key={i} className="text-sky-600 dark:text-sky-400 font-bold bg-sky-100 dark:bg-sky-900/40 px-1 rounded mx-0.5 whitespace-nowrap">{part}</span>;
+      if (part.startsWith("@")) {
+        return (
+          <span
+            key={i}
+            className="text-sky-600 dark:text-sky-400 font-bold bg-sky-100 dark:bg-sky-900/40 px-1 rounded mx-0.5 whitespace-nowrap"
+          >
+            {part}
+          </span>
+        );
       }
       return <span key={i}>{part}</span>;
     });
   };
 
   const getTypingText = () => {
-     if (activeTypers.length === 0) return null;
-     if (activeTypers.length === 1) {
-       return isRtl ? `${activeTypers[0]} يكتب..` : `${activeTypers[0]} is typing..`;
-     }
-     if (activeTypers.length === 2) {
-       return isRtl ? `${activeTypers[0]} و ${activeTypers[1]} يكتبون...` : `${activeTypers[0]} and ${activeTypers[1]} are typing...`;
-     }
-     return isRtl ? `${activeTypers[0]} و ${activeTypers.length - 1} آخرين يكتبون...` : `${activeTypers[0]} and ${activeTypers.length - 1} others are typing...`;
+    if (activeTypers.length === 0) return null;
+    if (activeTypers.length === 1) {
+      return isRtl
+        ? `${activeTypers[0]} يكتب..`
+        : `${activeTypers[0]} is typing..`;
+    }
+    if (activeTypers.length === 2) {
+      return isRtl
+        ? `${activeTypers[0]} و ${activeTypers[1]} يكتبون...`
+        : `${activeTypers[0]} and ${activeTypers[1]} are typing...`;
+    }
+    return isRtl
+      ? `${activeTypers[0]} و ${activeTypers.length - 1} آخرين يكتبون...`
+      : `${activeTypers[0]} and ${activeTypers.length - 1} others are typing...`;
   };
 
   // Intersection Observer for auto-marking messages as viewed
@@ -1061,26 +1580,36 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            const msgId = entry.target.getAttribute('data-message-id');
-            const msgSender = entry.target.getAttribute('data-sender-id');
-            
+            const msgId = entry.target.getAttribute("data-message-id");
+            const msgSender = entry.target.getAttribute("data-sender-id");
+
             if (msgId && msgSender && msgSender !== user.uid) {
-              const msg = messages.find(m => m.id === msgId);
+              const msg = messages.find((m) => m.id === msgId);
               if (msg) {
                 const viewersList = msg.reactions?.viewers || msg.viewers || [];
                 if (!viewersList.includes(user.email!)) {
                   // Optimistic UI Update for viewing
-                  setMessages(prev => prev.map(m => {
-                    if (m.id === msgId) {
-                      const newReactions = { ...m.reactions, like: m.reactions?.like || [], heart: m.reactions?.heart || [], thanks: m.reactions?.thanks || [] };
-                      newReactions.viewers = [...(m.reactions?.viewers || m.viewers || []), user.email!];
-                      return { ...m, reactions: newReactions };
-                    }
-                    return m;
-                  }));
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id === msgId) {
+                        const newReactions = {
+                          ...m.reactions,
+                          like: m.reactions?.like || [],
+                          heart: m.reactions?.heart || [],
+                          thanks: m.reactions?.thanks || [],
+                        };
+                        newReactions.viewers = [
+                          ...(m.reactions?.viewers || m.viewers || []),
+                          user.email!,
+                        ];
+                        return { ...m, reactions: newReactions };
+                      }
+                      return m;
+                    }),
+                  );
                   // Update Firestore
-                  updateDoc(doc(db, 'chat_messages', msgId), {
-                    'reactions.viewers': arrayUnion(user.email)
+                  updateDoc(doc(db, "chat_messages", msgId), {
+                    "reactions.viewers": arrayUnion(user.email),
                   }).catch(() => {});
                 }
               }
@@ -1088,61 +1617,86 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
           }
         });
       },
-      { threshold: 0.5 }
+      { threshold: 0.5 },
     );
 
-    const messageElements = document.querySelectorAll('.message-bubble-container');
+    const messageElements = document.querySelectorAll(
+      ".message-bubble-container",
+    );
     messageElements.forEach((el) => observer.observe(el));
 
     return () => observer.disconnect();
   }, [messages, user, db]);
 
   return (
-    <div className="flex flex-col z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950" 
-         dir={isRtl ? 'rtl' : 'ltr'} 
-         style={{ height: '100dvh', paddingTop: '64px', paddingBottom: '96px', position: 'fixed', top: 0, left: 0, right: 0, margin: '0 auto' }}>
+    <div
+      className="flex flex-col z-30 max-w-2xl mx-auto w-full bg-slate-50 dark:bg-zinc-950"
+      dir={isRtl ? "rtl" : "ltr"}
+      style={{
+        height: "100dvh",
+        paddingTop: "64px",
+        paddingBottom: "96px",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        margin: "0 auto",
+      }}
+    >
       {/* Header and Pinned Message */}
       <div className="flex-none z-40 flex flex-col shadow-sm">
         <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400">
-              <Bell className="w-5 h-5" />
-            </div>
-            {settings.isChatOpen && (
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
-            )}
-            {!settings.isChatOpen && (
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
-            )}
-          </div>
-          <div>
-            <h1 className="font-bold text-lg text-slate-800 dark:text-stone-100 leading-tight">شات الدفعة</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 flex-wrap">
-              <span>{settings.isChatOpen ? (isRtl ? 'مفتوح' : 'Open') : (isRtl ? 'مغلق' : 'Closed')}</span>
-              {totalUsersCount > 0 && (
-                <>
-                  <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                  <span>{totalUsersCount} {isRtl ? 'طالب' : 'students'}</span>
-                </>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400">
+                <Bell className="w-5 h-5" />
+              </div>
+              {settings.isChatOpen && (
+                <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
               )}
-            </p>
+              {!settings.isChatOpen && (
+                <span className="absolute bottom-0 right-0 w-3 h-3 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
+              )}
+            </div>
+            <div>
+              <h1 className="font-bold text-lg text-slate-800 dark:text-stone-100 leading-tight">
+                شات الدفعة
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {settings.isChatOpen
+                    ? isRtl
+                      ? "مفتوح"
+                      : "Open"
+                    : isRtl
+                      ? "مغلق"
+                      : "Closed"}
+                </span>
+                {totalUsersCount > 0 && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                    <span>
+                      {totalUsersCount} {isRtl ? "طالب" : "students"}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
           </div>
-        </div>
 
-        {isAdminOrModerator && (
-          <button 
-            onClick={() => setShowAdminControls(!showAdminControls)}
-            className={`p-2 rounded-xl transition-colors ${showAdminControls ? 'bg-sky-100 dark:bg-sky-900/50 text-sky-600' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-        )}
+          {isAdminOrModerator && (
+            <button
+              onClick={() => setShowAdminControls(!showAdminControls)}
+              className={`p-2 rounded-xl transition-colors ${showAdminControls ? "bg-sky-100 dark:bg-sky-900/50 text-sky-600" : "text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800"}`}
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Pinned Message */}
         {settings.pinnedMessage && (
-          <div 
+          <div
             className="bg-white/95 backdrop-blur dark:bg-zinc-900/95 border-b border-slate-200 dark:border-zinc-800 p-2 sm:px-4 cursor-pointer flex items-center gap-2"
             onClick={() => handleViewPinnedMessage(settings.pinnedMessage!.id)}
           >
@@ -1150,18 +1704,24 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               📌
             </div>
             <div className="flex-1 overflow-hidden">
-              <div className="text-xs font-bold text-sky-600 dark:text-sky-400">{isRtl ? 'رسالة مثبتة' : 'Pinned Message'}</div>
-              <div className="text-sm text-slate-600 dark:text-slate-300 truncate">{settings.pinnedMessage.text}</div>
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400">
+                {isRtl ? "رسالة مثبتة" : "Pinned Message"}
+              </div>
+              <div className="text-sm text-slate-600 dark:text-slate-300 truncate">
+                {settings.pinnedMessage.text}
+              </div>
             </div>
             {isAdminOrModerator && (
-              <button 
+              <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { pinnedMessage: null });
+                  updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+                    pinnedMessage: null,
+                  });
                 }}
                 className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 transition-colors"
-                title={isRtl ? 'إلغاء التثبيت' : 'Unpin'}
+                title={isRtl ? "إلغاء التثبيت" : "Unpin"}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1173,65 +1733,48 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       {/* Admin Panel */}
       <AnimatePresence>
         {isAdminOrModerator && showAdminControls && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
+            animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 shadow-inner z-20"
           >
             <div className="p-4 space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">الشات مفتوح / مغلق</span>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                  الشات مفتوح / مغلق
+                </span>
                 <button
                   onClick={toggleChatStatus}
-                  className={`w-14 h-7 rounded-full transition-colors relative flex items-center px-1 ${settings.isChatOpen ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-700'}`}
+                  className={`w-14 h-7 rounded-full transition-colors relative flex items-center px-1 ${settings.isChatOpen ? "bg-sky-500" : "bg-slate-300 dark:bg-zinc-700"}`}
                 >
-                  <div className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all transform ${settings.isChatOpen ? (isRtl ? '-translate-x-7' : 'translate-x-7') : 'translate-x-0'}`} />
+                  <div
+                    className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all transform ${settings.isChatOpen ? (isRtl ? "-translate-x-7" : "translate-x-7") : "translate-x-0"}`}
+                  />
                 </button>
               </div>
 
-              <div>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-200 block mb-2">وقت الانتظار بين الرسائل</label>
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="300" 
-                      step="5"
-                      value={settings.messageCooldown}
-                      onChange={(e) => updateCooldown(Number(e.target.value))}
-                      className="flex-1 accent-sky-500"
-                    />
-                    <span className="w-12 text-center text-xs font-bold text-slate-600 dark:text-slate-300">
-                      {settings.messageCooldown}ث
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[0, 10, 30, 60, 120].map((val) => (
-                      <button
-                        key={val}
-                        onClick={() => updateCooldown(val)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${settings.messageCooldown === val ? 'bg-sky-600 text-white' : 'bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300'}`}
-                      >
-                        {val === 0 ? 'بدون' : val >= 60 ? `${val/60} دقيقة` : `${val} ث`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              {/* Message Cooldown setting was removed here */}
 
               <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-zinc-800">
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{isRtl ? 'السماح للطلاب بإرسال مرفقات' : 'Allow Students to Send Attachments'}</span>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                  {isRtl
+                    ? "السماح للطلاب بإرسال مرفقات"
+                    : "Allow Students to Send Attachments"}
+                </span>
                 <button
                   onClick={async () => {
                     const newVal = !(settings.allowAttachments ?? true);
                     setSettings({ ...settings, allowAttachments: newVal });
-                    await updateDoc(doc(db, 'chat_settings', CHAT_DOC_ID), { allowAttachments: newVal });
+                    await updateDoc(doc(db, "chat_settings", CHAT_DOC_ID), {
+                      allowAttachments: newVal,
+                    });
                   }}
-                  className={`w-14 h-7 rounded-full transition-colors relative flex items-center px-1 ${settings.allowAttachments !== false ? 'bg-sky-500' : 'bg-slate-300 dark:bg-zinc-700'}`}
+                  className={`w-14 h-7 rounded-full transition-colors relative flex items-center px-1 ${settings.allowAttachments !== false ? "bg-sky-500" : "bg-slate-300 dark:bg-zinc-700"}`}
                 >
-                  <div className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all transform ${settings.allowAttachments !== false ? (isRtl ? '-translate-x-7' : 'translate-x-7') : 'translate-x-0'}`} />
+                  <div
+                    className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all transform ${settings.allowAttachments !== false ? (isRtl ? "-translate-x-7" : "translate-x-7") : "translate-x-0"}`}
+                  />
                 </button>
               </div>
 
@@ -1241,7 +1784,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                   className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/40"
                 >
                   <Trash2 className="w-4 h-4" />
-                  {isRtl ? 'مسح كل الرسائل' : 'Clear All'}
+                  {isRtl ? "مسح كل الرسائل" : "Clear All"}
                 </button>
               </div>
             </div>
@@ -1250,7 +1793,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       </AnimatePresence>
 
       {/* Messages Area */}
-      <div 
+      <div
         ref={containerRef}
         onScroll={(e) => {
           const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -1269,60 +1812,94 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               disabled={isLoadingMore}
               className="px-4 py-2 bg-white dark:bg-zinc-800 rounded-full border border-slate-200 dark:border-zinc-700 text-xs font-bold text-slate-600 dark:text-slate-400 shadow-sm hover:shadow-md transition-all disabled:opacity-50 flex items-center justify-center min-w-[120px]"
             >
-              {isLoadingMore ? <RefreshCw className="w-4 h-4 animate-spin" /> : (isRtl ? 'تحميل المزيد القديمة' : 'Load Older')}
+              {isLoadingMore ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : isRtl ? (
+                "تحميل المزيد القديمة"
+              ) : (
+                "Load Older"
+              )}
             </button>
           </div>
         )}
 
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
-             <RefreshCw className="w-6 h-6 text-sky-600 dark:text-sky-400 animate-spin" />
+            <RefreshCw className="w-6 h-6 text-sky-600 dark:text-sky-400 animate-spin" />
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-600 space-y-3">
             <MessageSquare className="w-12 h-12 opacity-50" />
-            <p className="font-medium">{isRtl ? 'لا توجد رسائل بعد' : 'No messages yet'}</p>
+            <p className="font-medium">
+              {isRtl ? "لا توجد رسائل بعد" : "No messages yet"}
+            </p>
           </div>
         ) : (
           messages.map((msg, index) => {
             const isMe = getIsMe(msg);
             const msgDate = new Date(msg.createdAt);
-            
+
             // Format time logic
             const formatChatTime = (timestamp: number) => {
               const now = new Date();
               const date = new Date(timestamp);
               const diffMs = now.getTime() - timestamp;
               const diffMins = Math.floor(diffMs / 60000);
-              
+
               if (diffMins < 1) return isRtl ? "الآن" : "Now";
               if (diffMins === 1) return isRtl ? "منذ دقيقة" : "1 min ago";
               if (diffMins === 2) return isRtl ? "منذ دقيقتين" : "2 mins ago";
-              if (diffMins > 2 && diffMins <= 10) return isRtl ? `منذ ${diffMins} دقائق` : `${diffMins} mins ago`;
-              
-              return date.toLocaleTimeString(isRtl ? 'ar-IQ' : 'en-US', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit' });
+              if (diffMins > 2 && diffMins <= 10)
+                return isRtl ? `منذ ${diffMins} دقائق` : `${diffMins} mins ago`;
+
+              return date.toLocaleTimeString(isRtl ? "ar-IQ" : "en-US", {
+                timeZone: "Asia/Baghdad",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
             };
             const timeStr = formatChatTime(msg.createdAt);
-            
+
             // Should display name? (If previous message is not from same user or it's > 5 mins difference)
             const prevMsg = index > 0 ? messages[index - 1] : null;
-            
-            const isDifferentDay = !prevMsg || new Date(prevMsg.createdAt).toLocaleDateString('en-US', { timeZone: 'Asia/Baghdad' }) !== new Date(msg.createdAt).toLocaleDateString('en-US', { timeZone: 'Asia/Baghdad' });
 
-            const diffMinsHeader = prevMsg ? (msg.createdAt - prevMsg.createdAt) / 60000 : 999;
-            const isAnonGroupChange = prevMsg ? (!!prevMsg.isAnonymous !== !!msg.isAnonymous) : false;
-            const showHeader = (!isMe || msg.isAnonymous) && (!prevMsg || prevMsg.senderEmail !== msg.senderEmail || diffMinsHeader > 5 || isAnonGroupChange);
+            const isDifferentDay =
+              !prevMsg ||
+              new Date(prevMsg.createdAt).toLocaleDateString("en-US", {
+                timeZone: "Asia/Baghdad",
+              }) !==
+                new Date(msg.createdAt).toLocaleDateString("en-US", {
+                  timeZone: "Asia/Baghdad",
+                });
+
+            const diffMinsHeader = prevMsg
+              ? (msg.createdAt - prevMsg.createdAt) / 60000
+              : 999;
+            const isAnonGroupChange = prevMsg
+              ? !!prevMsg.isAnonymous !== !!msg.isAnonymous
+              : false;
+            const showHeader =
+              (!isMe || msg.isAnonymous) &&
+              (!prevMsg ||
+                prevMsg.senderEmail !== msg.senderEmail ||
+                diffMinsHeader > 5 ||
+                isAnonGroupChange);
 
             return (
               <React.Fragment key={msg.id}>
                 {isDifferentDay && (
                   <div className="flex justify-center my-4">
                     <span className="px-3 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 text-xs font-bold rounded-full">
-                      {new Intl.DateTimeFormat(isRtl ? 'ar-IQ' : 'en-US', { timeZone: 'Asia/Baghdad', month: 'short', day: 'numeric', weekday: 'short' }).format(msgDate)}
+                      {new Intl.DateTimeFormat(isRtl ? "ar-IQ" : "en-US", {
+                        timeZone: "Asia/Baghdad",
+                        month: "short",
+                        day: "numeric",
+                        weekday: "short",
+                      }).format(msgDate)}
                     </span>
                   </div>
                 )}
-                <MessageBubble 
+                <MessageBubble
                   msg={msg}
                   isMe={isMe}
                   showHeader={showHeader}
@@ -1356,14 +1933,26 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }}
             onClick={() => {
-               scrollToBottom();
-               setUnreadCount(0);
+              scrollToBottom();
+              setUnreadCount(0);
             }}
             className="absolute bottom-[90px] sm:bottom-[100px] right-4 bg-sky-600 text-white rounded-full p-2.5 shadow-lg flex items-center justify-center gap-1.5 z-40 hover:bg-sky-500 transition-colors"
           >
             <div className="flex items-center gap-1 px-1 text-sm font-bold">
-               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
-               {unreadCount} {isRtl ? 'رسالة جديدة' : 'New'}
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                />
+              </svg>
+              {unreadCount} {isRtl ? "رسالة جديدة" : "New"}
             </div>
           </motion.button>
         )}
@@ -1373,208 +1962,317 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
       <div className="flex-none p-2 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-4 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/50 dark:border-zinc-800/50 relative z-40">
         <div className="pointer-events-auto w-full mx-auto max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-2 sm:p-4 shadow-xl dark:shadow-[0_-5px_20px_rgba(0,0,0,0.3)]">
           {!settings.isChatOpen && !isAdminOrModerator ? (
-          <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
-            <StopCircle className="w-5 h-5" />
-            <span className="font-medium text-sm">{settings.closedMessage || 'الشات مغلق حالياً — يمكنك القراءة فقط'}</span>
-          </div>
-        ) : (
-          <div className="relative">
-            {/* Absolute popovers */}
-            <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 flex flex-col gap-2 z-50 pointer-events-none">
-              
-              {/* Mentions */}
-              {mentionSearch !== null && mentionFiltered.length > 0 && (
-                <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-lg overflow-hidden pointer-events-auto">
-                  {mentionFiltered.map(u => (
-                    <button
-                      key={u.name}
-                      type="button"
-                      onClick={() => {
-                        const newMsg = newMessage.replace(/@([^\s]*)$/, `@${u.name.replace(/\s+/g, '_')} `);
-                        setNewMessage(newMsg);
-                        setMentionSearch(null);
-                      }}
-                      className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
-                    >
-                      <div className="w-8 h-8 bg-sky-100 dark:bg-sky-900 overflow-hidden font-bold text-sky-600 dark:text-sky-400 rounded-full flex items-center justify-center shrink-0">
-                        {u.photoUrl && !u.hidePhoto ? <img src={u.photoUrl} alt={u.name} className="w-full h-full object-cover" /> : (u.name?.charAt(0) || '?')}
-                      </div>
-                      <span className="font-medium text-sm text-slate-700 dark:text-slate-200">{u.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {replyingTo && (
-                <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-start gap-2 pointer-events-auto">
-                  <div className="flex-1 overflow-hidden">
-                    <div className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-0.5">
-                      ↩ {isRtl ? 'رد على' : 'Replying to'} {replyingTo.senderName}
-                    </div>
-                    <div className="text-sm text-slate-500 dark:text-slate-400 truncate" dir="auto">{replyingTo.text}</div>
+            <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
+              <StopCircle className="w-5 h-5" />
+              <span className="font-medium text-sm">
+                {settings.closedMessage ||
+                  "الشات مغلق حالياً — يمكنك القراءة فقط"}
+              </span>
+            </div>
+          ) : (
+            <div className="relative">
+              {/* Absolute popovers */}
+              <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 flex flex-col gap-2 z-50 pointer-events-none">
+                {/* Mentions */}
+                {mentionSearch !== null && mentionFiltered.length > 0 && (
+                  <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-lg overflow-hidden pointer-events-auto">
+                    {mentionFiltered.map((u) => (
+                      <button
+                        key={u.name}
+                        type="button"
+                        onClick={() => {
+                          const newMsg = newMessage.replace(
+                            /@([^\s]*)$/,
+                            `@${u.name.replace(/\s+/g, "_")} `,
+                          );
+                          setNewMessage(newMsg);
+                          setMentionSearch(null);
+                        }}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
+                      >
+                        <div className="w-8 h-8 bg-sky-100 dark:bg-sky-900 overflow-hidden font-bold text-sky-600 dark:text-sky-400 rounded-full flex items-center justify-center shrink-0">
+                          {u.photoUrl && !u.hidePhoto ? (
+                            <img
+                              src={u.photoUrl}
+                              alt={u.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            u.name?.charAt(0) || "?"
+                          )}
+                        </div>
+                        <span className="font-medium text-sm text-slate-700 dark:text-slate-200">
+                          {u.name}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                  <button type="button" onClick={() => setReplyingTo(null)} className="p-1 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-              
-              {/* Attachment Preview */}
-              {(attachmentFile || embeddedItem) && (
-                <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-center justify-between pointer-events-auto">
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    {attachmentType === 'image' && attachmentFile ? (
-                      <img src={URL.createObjectURL(attachmentFile)} alt="Preview" className="w-10 h-10 rounded object-cover" />
-                    ) : embeddedItem ? (
+                )}
+
+                {replyingTo && (
+                  <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-start gap-2 pointer-events-auto">
+                    <div className="flex-1 overflow-hidden">
+                      <div className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-0.5">
+                        ↩ {isRtl ? "رد على" : "Replying to"}{" "}
+                        {replyingTo.senderName}
+                      </div>
+                      <div
+                        className="text-sm text-slate-500 dark:text-slate-400 truncate"
+                        dir="auto"
+                      >
+                        {replyingTo.text}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="p-1 rounded-full bg-slate-100 dark:bg-zinc-700 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Attachment Preview */}
+                {(attachmentFile || embeddedItem) && (
+                  <div className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-lg flex items-center justify-between pointer-events-auto">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      {attachmentType === "image" && attachmentFile ? (
+                        <img
+                          src={URL.createObjectURL(attachmentFile)}
+                          alt="Preview"
+                          className="w-10 h-10 rounded object-cover"
+                        />
+                      ) : embeddedItem ? (
                         <div className="flex items-center gap-2 p-1.5 bg-sky-50 dark:bg-sky-900/30 rounded border border-sky-100 dark:border-sky-800">
                           <Link className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                           <div className="flex flex-col">
-                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{embeddedItem.title}</span>
-                             <span className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">{embeddedItem.type}</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">
+                              {embeddedItem.title}
+                            </span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">
+                              {embeddedItem.type}
+                            </span>
                           </div>
                         </div>
-                    ) : (
-                      <div className="p-2 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-100 dark:border-zinc-700">
-                        <Paperclip className="w-5 h-5 text-sky-600" />
+                      ) : (
+                        <div className="p-2 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-100 dark:border-zinc-700">
+                          <Paperclip className="w-5 h-5 text-sky-600" />
+                        </div>
+                      )}
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                          {attachmentFile
+                            ? attachmentFile.name
+                            : embeddedItem?.title}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {attachmentFile
+                            ? `${(attachmentFile.size / 1024 / 1024).toFixed(2)} MB`
+                            : "Embedded Media"}
+                        </span>
                       </div>
-                    )}
-                    <div className="flex flex-col overflow-hidden">
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-                        {attachmentFile ? attachmentFile.name : embeddedItem?.title}
-                      </span>
-                      <span className="text-xs text-slate-500">
-                         {attachmentFile ? `${(attachmentFile.size / 1024 / 1024).toFixed(2)} MB` : 'Embedded Media'}
-                      </span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachmentFile(null);
+                        setEmbeddedItem(null);
+                        setAttachmentType(null);
+                      }}
+                      className="p-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 hover:bg-red-100 text-slate-500 hover:text-red-600 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button type="button" onClick={() => { setAttachmentFile(null); setEmbeddedItem(null); setAttachmentType(null); }} className="p-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 hover:bg-red-100 text-slate-500 hover:text-red-600 transition-colors">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* Typing Indicator */}
-              {activeTypers.length > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 pointer-events-auto">
-                  <div className="flex gap-0.5 items-center justify-center p-1.5 px-2 bg-slate-200 dark:bg-zinc-700/80 rounded-2xl w-fit shadow-sm">
-                    <motion.div className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full" animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", delay: 0 }} />
-                    <motion.div className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full" animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", delay: 0.2 }} />
-                    <motion.div className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full" animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", delay: 0.4 }} />
-                  </div>
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {getTypingText()}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Attachment Menu Popup */}
-            <AnimatePresence>
-              {showAttachmentMenu && (
-                 <motion.div 
-                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                   className={`absolute bottom-[60px] z-50 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-700 p-2 flex flex-col gap-1 w-48 ${isRtl ? 'right-2' : 'left-2'}`}
-                 >
-                   <button 
-                     type="button" 
-                     onClick={() => { fileInputRef.current?.setAttribute('accept', 'image/*'); fileInputRef.current?.click(); setShowAttachmentMenu(false); }}
-                     className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-slate-700 dark:text-slate-200 text-sm font-medium w-full text-left rtl:text-right"
-                   >
-                     <ImageIcon className="w-4 h-4 text-sky-500" />
-                     {isRtl ? 'صورة' : 'Image'}
-                   </button>
-                   <button 
-                     type="button" 
-                     onClick={() => { fileInputRef.current?.setAttribute('accept', '*/*'); fileInputRef.current?.click(); setShowAttachmentMenu(false); }}
-                     className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-slate-700 dark:text-slate-200 text-sm font-medium w-full text-left rtl:text-right"
-                   >
-                     <FileText className="w-4 h-4 text-indigo-500" />
-                     {isRtl ? 'ملف' : 'File'}
-                   </button>
-                 </motion.div>
-              )}
-            </AnimatePresence>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setAttachmentFile(file);
-                  setAttachmentType(file.type.startsWith('image/') ? 'image' : 'file');
-                }
-              }} 
-            />
-
-            {/* Telegram-style fixed input bar. LTR -> input then send. RTL -> send then input */}
-            <form onSubmit={handleSendMessage} className={`flex items-end gap-2 relative`} dir={isRtl ? 'rtl' : 'ltr'}>
-              <div className="flex items-center gap-1 shrink-0">
-                {(!isAdminOrModerator) && (
-                   <button
-                    type="button"
-                    title={isRtl ? 'إرسال كمجهول' : 'Send Anonymous'}
-                    onClick={() => setIsAnonymous(!isAnonymous)}
-                    className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all shadow-sm ${isAnonymous ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800' : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500'}`}
-                  >
-                    <svg className="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><line x1="2" x2="22" y1="2" y2="22" stroke={isAnonymous ? "currentColor" : "transparent"}/></svg>
-                  </button>
                 )}
-                {(isAdminOrModerator || settings.allowAttachments !== false) && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                    className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 rounded-full flex items-center justify-center transition-colors shadow-sm"
-                  >
-                    <Paperclip className="w-5 h-5" />
-                  </button>
+
+                {/* Typing Indicator */}
+                {activeTypers.length > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 pointer-events-auto">
+                    <div className="flex gap-0.5 items-center justify-center p-1.5 px-2 bg-slate-200 dark:bg-zinc-700/80 rounded-2xl w-fit shadow-sm">
+                      <motion.div
+                        className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full"
+                        animate={{ y: [0, -3, 0] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1,
+                          ease: "easeInOut",
+                          delay: 0,
+                        }}
+                      />
+                      <motion.div
+                        className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full"
+                        animate={{ y: [0, -3, 0] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1,
+                          ease: "easeInOut",
+                          delay: 0.2,
+                        }}
+                      />
+                      <motion.div
+                        className="w-1 h-1 bg-slate-500 dark:bg-slate-300 rounded-full"
+                        animate={{ y: [0, -3, 0] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1,
+                          ease: "easeInOut",
+                          delay: 0.4,
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {getTypingText()}
+                    </span>
+                  </div>
                 )}
               </div>
-              <textarea
-                ref={textareaRef}
-                value={newMessage}
+
+              {/* Attachment Menu Popup */}
+              <AnimatePresence>
+                {showAttachmentMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className={`absolute bottom-[60px] z-50 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-700 p-2 flex flex-col gap-1 w-48 ${isRtl ? "right-2" : "left-2"}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fileInputRef.current?.setAttribute("accept", "image/*");
+                        fileInputRef.current?.click();
+                        setShowAttachmentMenu(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-slate-700 dark:text-slate-200 text-sm font-medium w-full text-left rtl:text-right"
+                    >
+                      <ImageIcon className="w-4 h-4 text-sky-500" />
+                      {isRtl ? "صورة" : "Image"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fileInputRef.current?.setAttribute("accept", "*/*");
+                        fileInputRef.current?.click();
+                        setShowAttachmentMenu(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-slate-700 dark:text-slate-200 text-sm font-medium w-full text-left rtl:text-right"
+                    >
+                      <FileText className="w-4 h-4 text-indigo-500" />
+                      {isRtl ? "ملف" : "File"}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
                 onChange={(e) => {
-                  setNewMessage(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-                }}
-                maxLength={1000}
-                placeholder={isRtl ? 'رسالتك...' : 'Message...'}
-                className="flex-1 bg-slate-100 dark:bg-zinc-800 border border-transparent focus:border-sky-300 dark:focus:border-sky-700 rounded-2xl px-4 py-3 min-h-[44px] max-h-32 outline-none resize-none text-[15px] text-slate-900 dark:text-stone-100 transition-colors"
-                dir="auto"
-                rows={1}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(e);
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setAttachmentFile(file);
+                    setAttachmentType(
+                      file.type.startsWith("image/") ? "image" : "file",
+                    );
                   }
                 }}
               />
-              {cooldownRemaining > 0 && !isAdminOrModerator ? (
-                <div className="w-11 h-11 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-slate-500 dark:text-zinc-400 font-bold shrink-0 shadow-inner">
-                  {cooldownRemaining}
+
+              {/* Telegram-style fixed input bar. LTR -> input then send. RTL -> send then input */}
+              <form
+                onSubmit={handleSendMessage}
+                className={`flex items-end gap-2 relative`}
+                dir={isRtl ? "rtl" : "ltr"}
+              >
+                <div className="flex items-center gap-1 shrink-0">
+                  {!isAdminOrModerator && (
+                    <button
+                      type="button"
+                      title={isRtl ? "إرسال كمجهول" : "Send Anonymous"}
+                      onClick={() => setIsAnonymous(!isAnonymous)}
+                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all shadow-sm ${isAnonymous ? "bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800" : "bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500"}`}
+                    >
+                      <svg
+                        className="w-5 h-5 sm:w-6 sm:h-6"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                        <line
+                          x1="2"
+                          x2="22"
+                          y1="2"
+                          y2="22"
+                          stroke={isAnonymous ? "currentColor" : "transparent"}
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  {(isAdminOrModerator ||
+                    settings.allowAttachments !== false) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                      className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 rounded-full flex items-center justify-center transition-colors shadow-sm"
+                    >
+                      <Paperclip className="w-5 h-5" />
+                    </button>
+                  )}
                 </div>
-              ) : (
+                <textarea
+                  ref={textareaRef}
+                  value={newMessage}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height =
+                      Math.min(e.target.scrollHeight, 120) + "px";
+                  }}
+                  maxLength={1000}
+                  placeholder={isRtl ? "رسالتك..." : "Message..."}
+                  className="flex-1 bg-slate-100 dark:bg-zinc-800 border border-transparent focus:border-sky-300 dark:focus:border-sky-700 rounded-2xl px-4 py-3 min-h-[44px] max-h-32 outline-none resize-none text-[15px] text-slate-900 dark:text-stone-100 transition-colors"
+                  dir="auto"
+                  rows={1}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage(e);
+                    }
+                  }}
+                />
                 <button
                   type="submit"
-                  disabled={isSending || (!newMessage.trim() && !attachmentFile && !embeddedItem) || (!settings.isChatOpen && !isAdminOrModerator)}
+                  disabled={
+                    isSending ||
+                    (!newMessage.trim() && !attachmentFile && !embeddedItem) ||
+                    (!settings.isChatOpen && !isAdminOrModerator)
+                  }
                   className="w-11 h-11 bg-sky-600 hover:bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-zinc-700 transition-colors shrink-0 shadow-sm"
                 >
-                  {isSending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className={`w-5 h-5 ${isRtl ? 'rotate-180 transform -ml-1' : 'ml-1'}`} />}
+                  {isSending ? (
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send
+                      className={`w-5 h-5 ${isRtl ? "rotate-180 transform -ml-1" : "ml-1"}`}
+                    />
+                  )}
                 </button>
+              </form>
+              {/* Character limit counter */}
+              {newMessage.length > 800 && (
+                <div className="absolute -bottom-5 right-2 text-[10px] text-slate-500 font-bold">
+                  {newMessage.length} / 1000
+                </div>
               )}
-            </form>
-            {/* Character limit counter */}
-            {newMessage.length > 800 && (
-              <div className="absolute -bottom-5 right-2 text-[10px] text-slate-500 font-bold">
-                {newMessage.length} / 1000
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Clear All Confirm Modal */}
@@ -1594,15 +2292,21 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-sm bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 border border-slate-200 dark:border-zinc-700"
             >
-              <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">{isRtl ? 'حذف الرسالة' : 'Delete Message'}</h3>
-              <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">{isRtl ? 'هل أنت متأكد من حذف هذه الرسالة؟' : 'Are you sure you want to delete this message?'}</p>
-              
+              <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">
+                {isRtl ? "حذف الرسالة" : "Delete Message"}
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">
+                {isRtl
+                  ? "هل أنت متأكد من حذف هذه الرسالة؟"
+                  : "Are you sure you want to delete this message?"}
+              </p>
+
               <div className="flex gap-3">
                 <button
                   onClick={() => setMessageToDelete(null)}
                   className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-700/50 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
                 >
-                  {isRtl ? 'إلغاء' : 'Cancel'}
+                  {isRtl ? "إلغاء" : "Cancel"}
                 </button>
                 <button
                   onClick={() => {
@@ -1612,7 +2316,7 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
                   className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
                 >
                   <Trash2 className="w-5 h-5" />
-                  {isRtl ? 'حذف' : 'Delete'}
+                  {isRtl ? "حذف" : "Delete"}
                 </button>
               </div>
             </motion.div>
@@ -1636,29 +2340,39 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-md bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 border border-slate-200 dark:border-zinc-700"
             >
-              <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">{isRtl ? 'مسح جميع الرسائل' : 'Clear All Messages'}</h3>
-              <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">{isRtl ? 'هل أنت متأكد من مسح جميع الرسائل بشكل نهائي؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure you want to permanently delete all messages? This action cannot be undone.'}</p>
-              
+              <h3 className="text-xl font-bold text-slate-900 dark:text-stone-100 mb-2">
+                {isRtl ? "مسح جميع الرسائل" : "Clear All Messages"}
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">
+                {isRtl
+                  ? "هل أنت متأكد من مسح جميع الرسائل بشكل نهائي؟ لا يمكن التراجع عن هذا الإجراء."
+                  : "Are you sure you want to permanently delete all messages? This action cannot be undone."}
+              </p>
+
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowClearConfirm(false)}
                   className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-700/50 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
                 >
-                  {isRtl ? 'إلغاء' : 'Cancel'}
+                  {isRtl ? "إلغاء" : "Cancel"}
                 </button>
                 <button
                   onClick={clearAllMessages}
                   disabled={isClearing}
                   className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {isClearing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                  {isRtl ? 'تأكيد الحذف' : 'Confirm Delete'}
+                  {isClearing ? (
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-5 h-5" />
+                  )}
+                  {isRtl ? "تأكيد الحذف" : "Confirm Delete"}
                 </button>
               </div>
             </motion.div>
           </div>
         )}
-        
+
         {alertMessage && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div
@@ -1674,12 +2388,14 @@ export default function ChatScreen({ user, lang, setCurrentTab }: ChatScreenProp
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-sm bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 text-center border border-slate-200 dark:border-zinc-700"
             >
-              <p className="text-slate-800 dark:text-slate-200 font-medium mb-6">{alertMessage}</p>
+              <p className="text-slate-800 dark:text-slate-200 font-medium mb-6">
+                {alertMessage}
+              </p>
               <button
                 onClick={() => setAlertMessage(null)}
                 className="w-full py-3 px-4 rounded-xl font-bold text-white bg-sky-600 hover:bg-sky-700 transition-colors"
               >
-                {isRtl ? 'حسناً' : 'OK'}
+                {isRtl ? "حسناً" : "OK"}
               </button>
             </motion.div>
           </div>

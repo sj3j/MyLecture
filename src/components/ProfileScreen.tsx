@@ -54,36 +54,20 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       
-      // Check if user is in users collection or is master admin
-      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(result.user.email?.toLowerCase() || '');
-      
+      // Check if email is in allowed_admins
       let role = 'student';
       let permissions = undefined;
       
-      if (isMasterAdmin) {
-        role = 'admin';
-        permissions = {
-          manageLectures: true,
-          manageAnnouncements: true,
-          manageRecords: true,
-          manageChat: true,
-          manageHomeworks: true,
-          manageStudents: true,
-        };
+      const allowedDoc = await getDoc(doc(db, 'allowed_admins', (result.user.email || '').toLowerCase()));
+      if (allowedDoc.exists()) {
+        role = allowedDoc.data().role || 'admin';
+        permissions = allowedDoc.data().permissions;
       } else {
-        // Check if email is in allowed_admins
-        const allowedDoc = await getDoc(doc(db, 'allowed_admins', (result.user.email || '').toLowerCase()));
-        if (allowedDoc.exists()) {
-          role = allowedDoc.data().role || 'admin';
-          permissions = allowedDoc.data().permissions;
-        } else {
-          // Check if they are already an admin or moderator in users collection
-          const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-          if (userDoc.exists() && ['admin', 'moderator'].includes(userDoc.data().role)) {
-            role = userDoc.data().role;
-            permissions = userDoc.data().permissions;
-          }
+        // Check if they are already an admin or moderator in users collection
+        const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+        if (userDoc.exists() && ['admin', 'moderator'].includes(userDoc.data().role)) {
+          role = userDoc.data().role;
+          permissions = userDoc.data().permissions;
         }
       }
 
@@ -115,8 +99,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
     }
   };
 
-  const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-  const isMasterAdminUser = !!user?.email && adminEmails.includes(user.email.toLowerCase());
+  const isMasterAdminUser = user?.isMasterAdmin;
 
   const handleLogout = async () => {
     await signOut(auth);

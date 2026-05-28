@@ -131,13 +131,10 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       
-      // Check whitelist FIRST
-      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(result.user.email?.toLowerCase() || '');
-      
-      let userRole = isMasterAdmin ? 'admin' : 'student';
+      // Check whitelist
+      let userRole = 'student';
 
-      if (!isMasterAdmin && result.user.email) {
+      if (result.user.email) {
         const emailLower = result.user.email.toLowerCase();
         
         // Check allowed_admins
@@ -229,21 +226,14 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       let studentData: any = {};
       const emailLower = email.trim().toLowerCase();
       
-      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(emailLower);
-      
-      if (isMasterAdmin) {
-        userRole = 'admin';
+      const allowedDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
+      if (allowedDoc.exists()) {
+        userRole = allowedDoc.data().role || 'admin';
       } else {
-        const allowedDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
-        if (allowedDoc.exists()) {
-          userRole = allowedDoc.data().role || 'admin';
-        } else {
-          const studentDoc = await getDoc(doc(db, 'students', emailLower));
-          if (studentDoc.exists()) {
-            studentData = studentDoc.data() || {};
-            userRole = studentData.role || 'student';
-          }
+        const studentDoc = await getDoc(doc(db, 'students', emailLower));
+        if (studentDoc.exists()) {
+          studentData = studentDoc.data() || {};
+          userRole = studentData.role || 'student';
         }
       }
       

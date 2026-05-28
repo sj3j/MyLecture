@@ -131,13 +131,13 @@ export default function App() {
 
   // Auth Listener
   useEffect(() => {
-    const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
     let userUnsubscribe: (() => void) | undefined;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userEmail = firebaseUser.email || firebaseUser.uid;
-        const isMasterAdmin = adminEmails.includes(userEmail?.toLowerCase() || '');
+        const tokenResult = await firebaseUser.getIdTokenResult();
+        const isMasterAdmin = tokenResult.claims.role === 'master_admin';
         
         let studentData: any = null;
 

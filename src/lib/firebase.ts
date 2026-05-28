@@ -10,9 +10,11 @@ import {
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getMessaging, isSupported } from 'firebase/messaging';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
+export const functions = getFunctions(app, 'me-west1');
 
 export const auth = initializeAuth(app, {
   persistence: [

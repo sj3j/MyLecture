@@ -40,26 +40,21 @@ service cloud.firestore {
     }
 
     function isMasterAdmin() {
-      return isAuthenticated() && 
-             (request.auth.token.email == "almdrydyl335@gmail.com" || 
-              request.auth.token.email == "fenix.admin@gmail.com");
+      return isAuthenticated() && request.auth.token.role == 'master_admin';
     }
 
     function isAdmin() {
-      return isMasterAdmin() ||
-        (isAuthenticated() && 
-         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      return isAuthenticated() && (request.auth.token.role == 'master_admin' || request.auth.token.role == 'admin');
     }
 
     function isModerator() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator';
+      return isAuthenticated() && request.auth.token.role == 'moderator';
     }
 
     function isAdminOrModerator() {
-      return isAdmin() || isModerator();
+      return isAuthenticated() && 
+             (request.auth.token.role in ['master_admin', 'admin', 'moderator']) && 
+             request.auth.token.manageChat != false;
     }
 
     function isValidLecture(data) {
@@ -204,19 +199,22 @@ service cloud.firestore {
 
     match /chat_messages/{messageId} {
       allow read: if hasAccess();
-      allow create: if hasAccess();
+      allow create: if isAdminOrModerator();
       allow update: if isAdminOrModerator() || (
         hasAccess() && 
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'viewers']) &&
-        // Ensure they only add/remove their own email/id (basic check)
         request.auth.token.email != null
       );
-      // Allow delete if Admin OR (is owner by senderId OR senderEmail for legacy messages)
       allow delete: if isAdminOrModerator() || 
                     (isAuthenticated() && (
                       resource.data.get('senderId', '') == request.auth.uid ||
                       (request.auth.token.email != null && resource.data.get('senderEmail', '') == request.auth.token.email)
                     ));
+      
+      match /private/{docId} {
+        allow read: if isMasterAdmin();
+        allow write: if isAuthenticated();
+      }
     }
 
     match /chat_typing/{userId} {
