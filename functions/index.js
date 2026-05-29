@@ -762,6 +762,15 @@ exports.sendMessage = onCall(async (request) => {
     messageData.senderId = uid;
   }
 
+  // Support for inbox session creation/update for private chats from students
+  if (data.inboxSession && data.inboxSession.id) {
+     const sessionRef = db.doc(`inbox_sessions/${data.inboxSession.id}`);
+     batch.set(sessionRef, {
+        ...data.inboxSession,
+        updatedAt: now.toMillis() // force server time
+     }, { merge: true });
+  }
+
   batch.set(msgRef, messageData);
   await batch.commit();
 

@@ -1166,8 +1166,9 @@ export default function ChatScreen({
         setIsAnonymous(false);
       }
 
+      let inboxSessionData: any = null;
       if (activeChat.type === 'private') {
-         setDoc(doc(db, "inbox_sessions", activeChat.id), {
+         inboxSessionData = {
             id: activeChat.id,
             adminEmail: isAdminOrModerator ? user.email : activeChat.otherEmail,
             studentEmail: isAdminOrModerator ? activeChat.otherEmail : user.email,
@@ -1175,7 +1176,11 @@ export default function ChatScreen({
             adminName: isAdminOrModerator ? user.name : activeChat.name,
             lastMessage: payload.text || 'Attachment',
             updatedAt: Date.now()
-         }, { merge: true }).catch(console.error);
+         };
+         
+         if (isAdminOrModerator) {
+            setDoc(doc(db, "inbox_sessions", activeChat.id), inboxSessionData, { merge: true }).catch(console.error);
+         }
       }
 
       // Optimistic UI update instantly before network wait
@@ -1239,11 +1244,14 @@ export default function ChatScreen({
          const cleanPayload = { ...payload };
          delete cleanPayload.timestamp; // Remove FieldValue because it's unserializable
 
-         const sendMessageObj = {
+         const sendMessageObj: any = {
             messageId: docRef.id,
             message: cleanPayload,
             collectionPath: currentChatCollectionPath
          };
+         if (inboxSessionData) {
+            sendMessageObj.inboxSession = inboxSessionData;
+         }
          // It's removed from public payload for students in cloud function
          
          const sendMessageCallable = httpsCallable<{ messageId: string, message: any, collectionPath: string }, { id: string }>(functions, 'sendMessage');
