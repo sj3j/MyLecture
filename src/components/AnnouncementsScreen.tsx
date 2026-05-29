@@ -381,10 +381,10 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
   });
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="flex justify-between items-center mb-6 sticky top-20 z-30 bg-stone-50/90 dark:bg-zinc-900/90 backdrop-blur pb-2">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
-          <Megaphone className="w-6 h-6 text-sky-600 dark:text-sky-400" />
+    <div className="max-w-xl mx-auto px-3 sm:px-4 pt-4 pb-20" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div className="flex justify-between items-center mb-4 sticky top-16 z-30 bg-stone-50/90 dark:bg-zinc-900/90 backdrop-blur pb-2 pt-2">
+        <h1 className="text-xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
+          <Megaphone className="w-5 h-5 text-sky-600 dark:text-sky-400" />
           {t.navAnnouncements}
         </h1>
         
@@ -456,7 +456,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                     >
                       <div className={`absolute top-4 w-3 h-3 bg-[#2196F3] rounded-full border-4 border-[#F5F7FA] dark:border-zinc-950 ${isRtl ? 'right-[11px]' : 'left-[11px]'}`} />
                       
-                      <div className="bg-white dark:bg-zinc-800 p-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-[16px] border border-slate-100 dark:border-zinc-700 w-full relative">
+                      <div className="bg-white dark:bg-zinc-800 p-3 sm:p-3.5 shadow-sm rounded-[16px] border border-slate-100 dark:border-zinc-700 w-full relative">
                         
                         {isAdminOrModerator && (
                           <div className={`absolute top-2 z-10 flex gap-1 ${isRtl ? 'left-2 right-auto' : 'right-2 left-auto'}`}>
@@ -493,16 +493,16 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                           </div>
                         )}
                         
-                        <div className="inline-block bg-[#2196F3]/10 text-[#2196F3] dark:text-sky-400 font-bold text-[12px] px-2 py-1 rounded-full mb-3">
+                        <div className="inline-block bg-[#2196F3]/10 text-[#2196F3] dark:text-sky-400 font-bold text-[11px] px-2 py-0.5 rounded-full mb-2">
                           {post.authorName || (isRtl ? 'إعلان جديد' : 'New Announcement')}
                         </div>
                         
                         {post.photo_url && (
-                          <div className="rounded-[12px] overflow-hidden mb-3 relative">
+                          <div className="rounded-[10px] overflow-hidden mb-2 relative">
                             <img 
                               src={post.photo_url} 
                               alt="Announcement" 
-                              className="w-full h-auto max-h-[400px] object-cover" 
+                              className="w-full h-auto max-h-[250px] object-cover" 
                               referrerPolicy="no-referrer"
                             />
                           </div>
@@ -512,13 +512,13 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                             <video 
                               src={post.videoUrl} 
                               controls
-                              className="w-full h-auto max-h-[400px] object-contain" 
+                              className="w-full h-auto max-h-[250px] object-contain" 
                             />
                           </div>
                         )}
                         
                         {content && (
-                          <p className="text-[15px] text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed px-1 mb-1" dir="auto">
+                          <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-snug px-1 mb-1" dir="auto">
                             {content.split(/(https?:\/\/[^\s]+)/g).map((part, i) => 
                               part.match(/(https?:\/\/[^\s]+)/g) ? (
                                 <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:text-sky-600 hover:underline">{part}</a>
