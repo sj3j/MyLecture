@@ -89,6 +89,7 @@ export default function App() {
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [mcqLecture, setMcqLecture] = useState<Lecture | null>(null);
+  const [isMobileChatOpenApp, setIsMobileChatOpenApp] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
@@ -142,7 +143,7 @@ export default function App() {
         
         let studentData: any = null;
 
-        if (adminEmails.includes(userEmail?.toLowerCase() || '')) {
+        if (adminEmails.includes(userEmail?.toLowerCase() || '') && tokenResult.claims.role !== 'master_admin') {
           try {
              const token = await firebaseUser.getIdToken();
              await fetch('/api/bootstrap-admin', {
@@ -612,7 +613,7 @@ export default function App() {
         <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={handleNavigateToChat} onOpenMCQ={handleOpenMCQ} />
       )}
       {currentTab === 'chat' && (
-        <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} />
+        <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} onMobileChatOpenChange={setIsMobileChatOpenApp} />
       )}
       {currentTab === 'profile' && (
         <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowStreakManage={setShowStreakManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
@@ -651,9 +652,19 @@ export default function App() {
       )}
 
       <GlobalAudioPlayer isRtl={isRtl} />
-      {!isAnyOverlayOpen && (
-        <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
-      )}
+      <AnimatePresence>
+        {(!isAnyOverlayOpen && !isMobileChatOpenApp) && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 30 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            className="relative z-50"
+          >
+            <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

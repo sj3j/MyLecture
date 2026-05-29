@@ -151,8 +151,12 @@ async function startServer() {
         console.log(`Bootstrapped allowed_admins for ${emailLower}`);
       }
 
-      await admin.auth().setCustomUserClaims(user.uid, { role: 'master_admin' });
-      console.log(`Bootstrapped custom claims for ${emailLower}`);
+      if (user.role !== 'master_admin') {
+        await admin.auth().setCustomUserClaims(user.uid, { role: 'master_admin' });
+        console.log(`Bootstrapped custom claims for ${emailLower}`);
+      } else {
+        console.log(`Custom claims already bootstrapped for ${emailLower}`);
+      }
       
       return res.json({ success: true });
     } catch (error) {

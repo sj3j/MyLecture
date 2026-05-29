@@ -125,6 +125,7 @@ interface ChatScreenProps {
   user: UserProfile | null;
   lang: Language;
   setCurrentTab?: (tab: string) => void;
+  onMobileChatOpenChange?: (isOpen: boolean) => void;
 }
 
 const MessageBubble = React.memo(
@@ -641,6 +642,7 @@ export default function ChatScreen({
   user,
   lang,
   setCurrentTab,
+  onMobileChatOpenChange
 }: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === "ar";
@@ -706,6 +708,12 @@ export default function ChatScreen({
   }, [db]);
 
   // Load inbox sessions if admin
+  useEffect(() => {
+    if (onMobileChatOpenChange) {
+      onMobileChatOpenChange(isMobileChatOpen);
+    }
+  }, [isMobileChatOpen, onMobileChatOpenChange]);
+
   useEffect(() => {
      if (!isAdminOrModerator || !user?.email) return;
      const unsub = onSnapshot(
@@ -1722,7 +1730,7 @@ export default function ChatScreen({
       dir={isRtl ? "rtl" : "ltr"}
       style={{
         height: "calc(100dvh - 65px)",
-        paddingBottom: "80px",
+        paddingBottom: isMobileChatOpen ? "0px" : "80px",
       }}
     >
       {/* Sidebar - Chat List */}
@@ -2227,8 +2235,8 @@ export default function ChatScreen({
       </AnimatePresence>
 
       {/* Input Area */}
-      <div className="flex-none p-1 sm:p-2 pb-[env(safe-area-inset-bottom)] sm:pb-2 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/50 dark:border-zinc-800/50 relative z-40">
-        <div className="pointer-events-auto w-full mx-auto max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-1.5 sm:p-2 shadow-xl dark:shadow-[0_-5px_20px_rgba(0,0,0,0.3)]">
+      <div className="flex-none p-2 sm:p-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/50 dark:border-zinc-800/50 relative z-40">
+        <div className="pointer-events-auto w-full mx-auto max-w-3xl">
           {!settings.isChatOpen && !isAdminOrModerator ? (
             <div className="bg-slate-100 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-zinc-700 border-dashed">
               <StopCircle className="w-5 h-5" />
@@ -2449,22 +2457,22 @@ export default function ChatScreen({
               />
 
               {/* Telegram-style fixed input bar. LTR -> input then send. RTL -> send then input */}
-              <div className="flex-none bg-slate-50 dark:bg-zinc-950 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 px-2 sm:px-4 z-40">
+              <div className="flex-none z-40">
                 <form
                   onSubmit={handleSendMessage}
-                  className="flex items-end gap-1 sm:gap-2 relative bg-white dark:bg-zinc-900 rounded-[26px] p-1 shadow-sm border border-slate-200 dark:border-zinc-800 min-h-[52px]"
+                  className="flex items-end gap-1 sm:gap-2 relative bg-white dark:bg-zinc-900 rounded-[24px] p-1 shadow-sm border border-slate-200 dark:border-zinc-800 min-h-[48px]"
                   dir={isRtl ? "rtl" : "ltr"}
                 >
-                  <div className="flex items-center shrink-0 h-[44px]">
+                  <div className="flex items-center shrink-0 h-[40px]">
                     {!isAdminOrModerator && (
                       <button
                         type="button"
                         title={isRtl ? "إرسال كمجهول" : "Send Anonymous"}
                         onClick={() => setIsAnonymous(!isAnonymous)}
-                        className={`w-11 h-11 rounded-full flex items-center justify-center transition-all ${isAnonymous ? "text-amber-500" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"}`}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isAnonymous ? "text-amber-500" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"}`}
                       >
                         <svg
-                          className="w-6 h-6"
+                          className="w-5 h-5"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -2495,7 +2503,7 @@ export default function ChatScreen({
                     }}
                     maxLength={1000}
                     placeholder={isRtl ? "رسالة..." : "Message..."}
-                    className="flex-1 bg-transparent border-transparent py-[13px] px-2 min-h-[44px] max-h-32 outline-none resize-none text-[1rem] text-slate-900 dark:text-stone-100 placeholder:text-slate-400"
+                    className="flex-1 bg-transparent border-transparent py-[10px] px-2 min-h-[40px] max-h-32 outline-none resize-none text-[0.95rem] text-slate-900 dark:text-stone-100 placeholder:text-slate-400 block"
                     dir="auto"
                     rows={1}
                     onKeyDown={(e) => {
@@ -2505,15 +2513,15 @@ export default function ChatScreen({
                       }
                     }}
                   />
-                  <div className="flex items-center shrink-0 h-[44px]">
+                  <div className="flex items-center shrink-0 h-[40px]">
                     {(isAdminOrModerator ||
                       settings.allowAttachments !== false) && (
                       <button
                         type="button"
                         onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                        className="w-11 h-11 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center justify-center transition-colors shrink-0"
+                        className="w-10 h-10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center justify-center transition-colors shrink-0"
                       >
-                        <Paperclip className="w-[1.4rem] h-[1.4rem]" />
+                        <Paperclip className="w-[1.2rem] h-[1.2rem]" />
                       </button>
                     )}
                     <button
@@ -2523,13 +2531,13 @@ export default function ChatScreen({
                         (!newMessage.trim() && !attachmentFile && !embeddedItem) ||
                         (!settings.isChatOpen && !isAdminOrModerator)
                       }
-                      className="w-11 h-11 text-sky-500 hover:text-sky-600 dark:hover:text-sky-400 flex items-center justify-center disabled:opacity-50 transition-colors shrink-0"
+                      className="w-10 h-10 text-sky-500 hover:text-sky-600 dark:hover:text-sky-400 flex items-center justify-center disabled:opacity-50 transition-colors shrink-0"
                     >
                       {isSending ? (
                         <RefreshCw className="w-5 h-5 animate-spin" />
                       ) : (
                         <Send
-                          className={`w-[1.4rem] h-[1.4rem] ${isRtl ? "rotate-180 transform -ml-1" : "ml-1"}`}
+                          className={`w-[1.3rem] h-[1.3rem] ${isRtl ? "rotate-180 transform -ml-1" : "ml-1"}`}
                         />
                       )}
                     </button>
