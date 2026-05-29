@@ -723,6 +723,11 @@ exports.sendMessage = onCall(async (request) => {
   
   const now = admin.firestore.Timestamp.now();
 
+  const collectionPath = data.collectionPath || 'chat_messages';
+  if (collectionPath !== 'chat_messages' && !collectionPath.startsWith('private_chats/')) {
+    throw new HttpsError('invalid-argument', 'Invalid collection path.');
+  }
+
   if (!isAdminOrModerator) {
     const lastSent = userData?.lastMessageAt?.toMillis() ?? 0;
     if (now.toMillis() - lastSent < 3000) {
@@ -735,7 +740,7 @@ exports.sendMessage = onCall(async (request) => {
     batch.set(userRef, { lastMessageAt: now }, { merge: true });
   }
 
-  const msgRef = data.messageId ? db.collection('chat_messages').doc(data.messageId) : db.collection('chat_messages').doc();
+  const msgRef = data.messageId ? db.collection(collectionPath).doc(data.messageId) : db.collection(collectionPath).doc();
   const messageData = {
     ...data.message,
     createdAt: now.toMillis(),
@@ -744,7 +749,7 @@ exports.sendMessage = onCall(async (request) => {
 
   if (messageData.isAnonymous) {
     // Write private subcollection for emails
-    const privateRef = db.doc(`chat_messages/${msgRef.id}/private/sender`);
+    const privateRef = db.doc(`${collectionPath}/${msgRef.id}/private/sender`);
     batch.set(privateRef, {
       senderEmail: userData?.email || request.auth.token.email || "",
       senderId: uid
