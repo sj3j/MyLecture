@@ -2,7 +2,7 @@ import React, { useReducer, useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lecture } from '../../types';
 import { MCQQuestion } from '../../types/mcq.types';
-import { Check, X, ChevronUp, ArrowUp, Loader2, ShieldAlert, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Check, X, ChevronUp, ArrowUp, Loader2, ShieldAlert, AlertTriangle, CheckCircle, MessageSquare } from 'lucide-react';
 import { trackEvent } from '../../lib/analytics';
 import { auth, db } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -129,6 +129,41 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
   const [reportReason, setReportReason] = useState('');
   const [isReporting, setIsReporting] = useState(false);
   const [showReportSuccess, setShowReportSuccess] = useState(false);
+
+  const [editPromptQuestion, setEditPromptQuestion] = useState<MCQQuestion | null>(null);
+  const [editPromptText, setEditPromptText] = useState('');
+  const [isAiEditing, setIsAiEditing] = useState(false);
+  const [showEditSuccess, setShowEditSuccess] = useState(false);
+
+  // Derive admin
+  const isAdmin = user?.role === 'admin' || user?.role === 'moderator';
+
+  const [localQuestions, setLocalQuestions] = useState(questions);
+  useEffect(() => { setLocalQuestions(questions) }, [questions]);
+
+  const submitAiEdit = async () => {
+    if (!editPromptQuestion || !editPromptText.trim() || !isAdmin) return;
+    setIsAiEditing(true);
+    try {
+      const { modifyQuestionWithAI, updateLectureMCQSet } = await import('../../services/mcqGenerationService');
+      
+      const newQuestionData = await modifyQuestionWithAI(editPromptQuestion, editPromptText, lecture.pdfUrl);
+      const updatedQuestions = localQuestions.map(q => q.id === editPromptQuestion.id ? { ...q, ...newQuestionData } : q);
+      
+      await updateLectureMCQSet(lecture.id, updatedQuestions);
+      
+      setLocalQuestions(updatedQuestions);
+      setEditPromptQuestion(null);
+      setEditPromptText('');
+      setShowEditSuccess(true);
+      setTimeout(() => setShowEditSuccess(false), 3000);
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل التعديل بالذكاء الاصطناعي: ' + e.message);
+    } finally {
+      setIsAiEditing(false);
+    }
+  };
 
   const handleReport = (q: MCQQuestion) => {
     setReportQuestion(q);
@@ -298,7 +333,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
          className="flex-1 overflow-y-auto px-3 sm:px-4 py-6 scroll-smooth"
       >
         <div className="max-w-2xl mx-auto space-y-3 pb-[150px]">
-          {questions.map((question, index) => {
+          {localQuestions.map((question, index) => {
             const answerState = state.answers[question.id];
             const isAnswered = !!answerState;
 
@@ -319,7 +354,17 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
                        </span>
                      </span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    {isAdmin && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setEditPromptQuestion(question); }}
+                        className="text-xs font-bold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-400 px-2 py-1 flex items-center gap-1 rounded-md transition-colors"
+                        title="تعديل بالذكاء الاصطناعي"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        AI
+                      </button>
+                    )}
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleReport(question); }}
                       className="text-xs font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 flex items-center gap-1 rounded-md transition-colors"
@@ -579,10 +624,66 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {editPromptQuestion && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl p-6 w-full max-w-md shadow-xl border border-slate-100 dark:border-zinc-800"
+            >
+              <div className="flex items-center gap-3 mb-4 text-sky-600 dark:text-sky-500">
+                <MessageSquare className="w-8 h-8" />
+                <h3 className="font-bold text-xl">تعديل بالذكاء الاصطناعي</h3>
+              </div>
+              <p className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-4 bg-slate-50 dark:bg-zinc-800 p-3 rounded-xl border border-slate-100 dark:border-zinc-700 max-h-32 overflow-y-auto" dir="auto">
+                {editPromptQuestion.stem}
+              </p>
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                  ما الذي تريد تعديله في هذا السؤال عبر الذكاء الاصطناعي؟
+                </label>
+                <textarea 
+                  value={editPromptText}
+                  onChange={e => setEditPromptText(e.target.value)}
+                  className="w-full p-4 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white resize-none outline-none focus:ring-2 focus:ring-sky-500/50"
+                  rows={3}
+                  placeholder="مثال: أضف شرحاً مفصلاً لهذا السؤال، اجعله أسهل..."
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setEditPromptQuestion(null)}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                  disabled={isAiEditing}
+                >
+                  إلغاء
+                </button>
+                <button 
+                  onClick={submitAiEdit}
+                  disabled={!editPromptText.trim() || isAiEditing}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  {isAiEditing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'تطبيق التعديل'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {showReportSuccess && (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-emerald-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
           <CheckCircle className="w-5 h-5" />
           تم إرسال التقرير بنجاح، شكراً لك!
+        </div>
+      )}
+      
+      {showEditSuccess && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-sky-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
+          <CheckCircle className="w-5 h-5" />
+          تم التعديل الذكي بنجاح
         </div>
       )}
     </div>

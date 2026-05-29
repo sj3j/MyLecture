@@ -207,14 +207,14 @@ const MessageBubble = React.memo(
             )}
 
             <div
-              className={`relative px-3 py-1.5 sm:px-4 sm:py-2.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
+              className={`relative px-3 sm:px-4 pt-2 pb-1.5 shadow-sm text-[15px] cursor-pointer transition-colors ${
                 isMe
                   ? msg.isAnonymous
-                    ? "bg-amber-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm"
-                    : "bg-sky-600 text-white rounded-2xl rounded-tr-sm rtl:rounded-tr-2xl rtl:rounded-tl-sm"
+                    ? "bg-amber-600 text-white rounded-[18px] rounded-br-[4px] rtl:rounded-br-[18px] rtl:rounded-bl-[4px]"
+                    : "bg-sky-600 text-white rounded-[18px] rounded-br-[4px] rtl:rounded-br-[18px] rtl:rounded-bl-[4px]"
                   : msg.isAnonymous
-                    ? "bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-amber-200 dark:border-amber-900/50"
-                    : "bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm rtl:rounded-tl-2xl rtl:rounded-tr-sm border border-slate-100 dark:border-zinc-700"
+                    ? "bg-amber-50 dark:bg-amber-900/20 text-slate-800 dark:text-slate-200 rounded-[18px] rounded-bl-[4px] rtl:rounded-bl-[18px] rtl:rounded-br-[4px] border border-amber-200 dark:border-amber-900/50"
+                    : "bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-200 rounded-[18px] rounded-bl-[4px] rtl:rounded-bl-[18px] rtl:rounded-br-[4px] border border-slate-100 dark:border-zinc-700"
               }`}
               onClick={() => {
                 setShowReactionPickerFor(
@@ -353,17 +353,19 @@ const MessageBubble = React.memo(
                 </div>
               )}
 
-              <p
-                className="whitespace-pre-wrap break-words leading-relaxed"
-                dir="auto"
-              >
-                {renderMessageText(msg.text)}
-              </p>
-
-              <div
-                className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 ${isMe ? "text-sky-100" : "text-slate-400"}`}
-              >
-                <span className="text-[10px] font-medium">{timeStr}</span>
+              <div className="flex flex-col">
+                <p
+                  className="whitespace-pre-wrap break-words leading-relaxed"
+                  dir="auto"
+                >
+                  {renderMessageText(msg.text)}
+                </p>
+  
+                <div
+                  className={`flex items-center justify-end mt-1 gap-1 -mb-1 opacity-70 float-right ${isMe ? "text-sky-100" : "text-slate-400"}`}
+                >
+                  <span className="text-[10.5px] font-medium leading-tight">{timeStr}</span>
+                </div>
               </div>
             </div>
 
@@ -681,6 +683,8 @@ export default function ChatScreen({
   const [isAnonymous, setIsAnonymous] = useState(false);
   
   const [activeChat, setActiveChat] = useState<ActiveChat>({ type: 'group', id: 'group', name: isRtl ? 'شات الدفعة' : 'Group Chat' });
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [activeChatFilter, setActiveChatFilter] = useState<'all' | 'personal' | 'groups'>('all');
   const [inboxSessions, setInboxSessions] = useState<any[]>([]);
   const [appUsers, setAppUsers] = useState<any[]>([]);
 
@@ -1722,62 +1726,83 @@ export default function ChatScreen({
       }}
     >
       {/* Sidebar - Chat List */}
-      <div className={`flex flex-col w-20 sm:w-72 shrink-0 border-${isRtl ? 'l' : 'r'} border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-y-auto`}>
-        <div className="p-2 sm:p-4 space-y-2">
+      <div className={`flex flex-col ${isMobileChatOpen ? 'hidden md:flex' : 'flex w-full'} md:w-80 shrink-0 border-${isRtl ? 'l' : 'r'} border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-y-auto`}>
+        {/* Telegram style filter tabs */}
+        <div className="px-4 py-2 flex gap-2 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-zinc-800">
+           <button onClick={() => setActiveChatFilter('all')} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeChatFilter === 'all' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' : 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'}`}>
+              {isRtl ? 'الكل' : 'All'}
+           </button>
+           {isAdminOrModerator && (
+             <button onClick={() => setActiveChatFilter('personal')} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeChatFilter === 'personal' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' : 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'}`}>
+                {isRtl ? 'الخاص' : 'Personal'}
+             </button>
+           )}
+        </div>
+        
+        <div className="flex flex-col w-full">
            {/* Group Chat Item */}
+           {(activeChatFilter === 'all' || activeChatFilter === 'groups') && (
            <button
-             onClick={() => setActiveChat({ type: 'group', id: 'group', name: isRtl ? 'شات الدفعة' : 'Group Chat' })}
-             className={`flex items-center gap-3 w-full p-2 sm:p-3 rounded-xl transition-colors ${activeChat.type === 'group' ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
+             onClick={() => { setActiveChat({ type: 'group', id: 'group', name: isRtl ? 'شات الدفعة' : 'Group Chat' }); setIsMobileChatOpen(true); }}
+             className={`flex items-center gap-3 w-full h-[72px] px-4 transition-colors relative ${activeChat.type === 'group' ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
            >
-              <div className="w-10 h-10 shrink-0 rounded-full bg-sky-200 dark:bg-sky-900 flex items-center justify-center text-sky-700 dark:text-sky-300">
-                 <Users className="w-5 h-5" />
+              <div className="w-12 h-12 shrink-0 rounded-full bg-sky-200 dark:bg-sky-900 flex items-center justify-center text-sky-700 dark:text-sky-300">
+                 <Users className="w-6 h-6" />
               </div>
-              <div className="hidden sm:block text-start flex-1 overflow-hidden">
-                 <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{isRtl ? 'شات الدفعة' : 'Group Chat'}</div>
-                 <div className="text-xs text-slate-500 truncate">{isRtl ? 'الدردشة العامة' : 'General Chat'}</div>
+              <div className={`flex flex-col flex-1 h-full justify-center text-start border-b border-slate-100 dark:border-zinc-800 overflow-hidden ${activeChat.type === 'group' ? 'border-transparent dark:border-transparent' : ''}`}>
+                 <div className="flex justify-between items-center mb-0.5 w-full">
+                    <div className="font-bold text-[1rem] text-slate-800 dark:text-slate-200 truncate">{isRtl ? 'شات الدفعة' : 'Group Chat'}</div>
+                 </div>
+                 <div className="text-[0.9rem] text-slate-500 truncate">{isRtl ? 'الدردشة العامة' : 'General Chat'}</div>
               </div>
            </button>
-           
-           <div className="h-px bg-slate-200 dark:bg-zinc-800 w-full my-4"></div>
+           )}
 
            {/* Private Chats for Admins */}
-           {isAdminOrModerator && inboxSessions.map(session => {
+           {isAdminOrModerator && (activeChatFilter === 'all' || activeChatFilter === 'personal') && inboxSessions.map(session => {
               const sessionUser = appUsers.find(u => u.email === session.studentEmail);
               const photoUrl = sessionUser?.hidePhotoOnLeaderboard ? undefined : sessionUser?.photoUrl;
               return (
                  <button
                     key={session.id}
-                    onClick={() => setActiveChat({ type: 'private', id: session.id, name: session.studentName, otherEmail: session.studentEmail })}
-                    className={`flex items-center gap-3 w-full p-2 sm:p-3 rounded-xl transition-colors ${activeChat.id === session.id ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
+                    onClick={() => { setActiveChat({ type: 'private', id: session.id, name: session.studentName, otherEmail: session.studentEmail }); setIsMobileChatOpen(true); }}
+                    className={`flex items-center gap-3 w-full h-[72px] px-4 transition-colors relative ${activeChat.id === session.id ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
                  >
-                     <div className="w-10 h-10 shrink-0 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300 overflow-hidden">
+                     <div className="w-12 h-12 shrink-0 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300 overflow-hidden">
                         {photoUrl ? <img src={photoUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (session.studentName || '?').charAt(0).toUpperCase()}
                      </div>
-                     <div className="hidden sm:block text-start flex-1 overflow-hidden">
-                        <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{session.studentName}</div>
-                        <div className="text-xs text-slate-500 truncate" dir="auto">{session.lastMessage}</div>
+                     <div className={`flex flex-col flex-1 h-full justify-center text-start border-b border-slate-100 dark:border-zinc-800 overflow-hidden ${activeChat.id === session.id ? 'border-transparent dark:border-transparent' : ''}`}>
+                        <div className="flex justify-between items-center mb-0.5 w-full">
+                           <div className="font-bold text-[1rem] text-slate-800 dark:text-slate-200 truncate">{session.studentName}</div>
+                           <div className="text-xs text-slate-400">
+                             {new Intl.DateTimeFormat(isRtl ? 'ar-IQ' : 'en-US', { hour: '2-digit', minute: '2-digit' }).format(new Date(session.updatedAt))}
+                           </div>
+                        </div>
+                        <div className="text-[0.9rem] text-slate-500 truncate" dir="auto">{session.lastMessage}</div>
                      </div>
                  </button>
               );
            })}
 
            {/* Private Chats for Students */}
-           {!isAdminOrModerator && (settings.privateAccounts || []).map(acc => {
+           {!isAdminOrModerator && (activeChatFilter === 'all' || activeChatFilter === 'personal') && (settings.privateAccounts || []).map(acc => {
               const chatId = [user?.email, acc.email].sort().join('_');
               const sessionUser = appUsers.find(u => u.email === acc.email);
               const photoUrl = sessionUser?.photoUrl;
               return (
                  <button
                     key={acc.id}
-                    onClick={() => setActiveChat({ type: 'private', id: chatId, name: acc.name, title: acc.title, otherEmail: acc.email })}
-                    className={`flex items-center gap-3 w-full p-2 sm:p-3 rounded-xl transition-colors ${activeChat.id === chatId ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
+                    onClick={() => { setActiveChat({ type: 'private', id: chatId, name: acc.name, title: acc.title, otherEmail: acc.email }); setIsMobileChatOpen(true); }}
+                    className={`flex items-center gap-3 w-full h-[72px] px-4 transition-colors relative ${activeChat.id === chatId ? 'bg-sky-100 dark:bg-sky-900/40' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80'}`}
                  >
-                     <div className="w-10 h-10 shrink-0 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600 font-bold overflow-hidden">
+                     <div className="w-12 h-12 shrink-0 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600 font-bold overflow-hidden">
                         {photoUrl ? <img src={photoUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : acc.name.charAt(0).toUpperCase()}
                      </div>
-                     <div className="hidden sm:block text-start flex-1 overflow-hidden">
-                        <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{acc.title}</div>
-                        <div className="text-xs text-slate-500 truncate">{acc.name}</div>
+                     <div className={`flex flex-col flex-1 h-full justify-center text-start border-b border-slate-100 dark:border-zinc-800 overflow-hidden ${activeChat.id === chatId ? 'border-transparent dark:border-transparent' : ''}`}>
+                        <div className="flex justify-between items-center mb-0.5 w-full">
+                           <div className="font-bold text-[1rem] text-slate-800 dark:text-slate-200 truncate">{acc.title}</div>
+                        </div>
+                        <div className="text-[0.9rem] text-slate-500 truncate">{acc.name}</div>
                      </div>
                  </button>
               );
@@ -1785,12 +1810,17 @@ export default function ChatScreen({
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col relative w-full h-full border-x border-slate-200 dark:border-zinc-800/50 bg-slate-50 dark:bg-zinc-950 overflow-hidden shadow-sm">
+      <div className={`flex flex-col relative w-full md:flex-1 h-full border-x border-slate-200 dark:border-zinc-800/50 bg-slate-50 dark:bg-zinc-950 overflow-hidden shadow-sm ${isMobileChatOpen ? 'flex' : 'hidden md:flex'}`}>
       {/* Header and Pinned Message */}
       <div className="flex-none z-40 flex flex-col shadow-sm">
-        <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-2 sm:p-3 px-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="relative">
+        <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-2 sm:p-3 px-3 flex justify-between items-center h-[56px]">
+          <div className="flex items-center gap-3 w-full overflow-hidden">
+            <button className="md:hidden p-1 -ml-1 rtl:-ml-0 rtl:-mr-1 text-slate-500" onClick={() => setIsMobileChatOpen(false)}>
+               <svg className={`w-6 h-6 ${isRtl ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+               </svg>
+            </button>
+            <div className="relative shrink-0">
               <div className="w-10 h-10 bg-sky-100 dark:bg-sky-900/40 rounded-full flex items-center justify-center text-sky-600 dark:text-sky-400 overflow-hidden shrink-0">
                 {activeChat.type === 'group' ? (
                    <Users className="w-5 h-5" />
@@ -2040,33 +2070,18 @@ export default function ChatScreen({
       <div
         ref={containerRef}
         onScroll={(e) => {
-          const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-          const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+          // With flex-col-reverse, scrollTop = 0 is bottom. For cross browser, use absolute value
+          const { Math } = window;
+          const atBottom = Math.abs(e.currentTarget.scrollTop) < 50;
           setIsAtBottom(atBottom);
           if (atBottom) {
             setUnreadCount(0);
           }
         }}
-        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-zinc-950 scroll-smooth overscroll-contain"
+        className="flex-1 overflow-y-auto p-4 flex flex-col-reverse bg-slate-50 dark:bg-zinc-950 scroll-smooth overscroll-contain gap-4"
       >
-        {hasMore && !isLoading && (
-          <div className="flex justify-center mb-4">
-            <button
-              onClick={handleLoadMore}
-              disabled={isLoadingMore}
-              className="px-4 py-2 bg-white dark:bg-zinc-800 rounded-full border border-slate-200 dark:border-zinc-700 text-xs font-bold text-slate-600 dark:text-slate-400 shadow-sm hover:shadow-md transition-all disabled:opacity-50 flex items-center justify-center min-w-[120px]"
-            >
-              {isLoadingMore ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : isRtl ? (
-                "تحميل المزيد القديمة"
-              ) : (
-                "Load Older"
-              )}
-            </button>
-          </div>
-        )}
-
+        <div ref={messagesEndRef} className="h-px shrink-0" />
+        
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <RefreshCw className="w-6 h-6 text-sky-600 dark:text-sky-400 animate-spin" />
@@ -2079,23 +2094,13 @@ export default function ChatScreen({
             </p>
           </div>
         ) : (
-          messages.map((msg, index) => {
+          [...messages].reverse().map((msg, idx, arr) => {
             const isMe = getIsMe(msg);
             const msgDate = new Date(msg.createdAt);
 
             // Format time logic
             const formatChatTime = (timestamp: number) => {
-              const now = new Date();
               const date = new Date(timestamp);
-              const diffMs = now.getTime() - timestamp;
-              const diffMins = Math.floor(diffMs / 60000);
-
-              if (diffMins < 1) return isRtl ? "الآن" : "Now";
-              if (diffMins === 1) return isRtl ? "منذ دقيقة" : "1 min ago";
-              if (diffMins === 2) return isRtl ? "منذ دقيقتين" : "2 mins ago";
-              if (diffMins > 2 && diffMins <= 10)
-                return isRtl ? `منذ ${diffMins} دقائق` : `${diffMins} mins ago`;
-
               return date.toLocaleTimeString(isRtl ? "ar-IQ" : "en-US", {
                 timeZone: "Asia/Baghdad",
                 hour: "2-digit",
@@ -2103,46 +2108,34 @@ export default function ChatScreen({
               });
             };
             const timeStr = formatChatTime(msg.createdAt);
-
-            // Should display name? (If previous message is not from same user or it's > 5 mins difference)
-            const prevMsg = index > 0 ? messages[index - 1] : null;
+            
+            // Since array is reversed (newest first), the "previous" message in chronological order is at idx + 1
+            const prevMsgChrono = idx + 1 < arr.length ? arr[idx + 1] : null;
 
             const isDifferentDay =
-              !prevMsg ||
-              new Date(prevMsg.createdAt).toLocaleDateString("en-US", {
+              !prevMsgChrono ||
+              new Date(prevMsgChrono.createdAt).toLocaleDateString("en-US", {
                 timeZone: "Asia/Baghdad",
               }) !==
                 new Date(msg.createdAt).toLocaleDateString("en-US", {
                   timeZone: "Asia/Baghdad",
                 });
 
-            const diffMinsHeader = prevMsg
-              ? (msg.createdAt - prevMsg.createdAt) / 60000
+            const diffMinsHeader = prevMsgChrono
+              ? (msg.createdAt - prevMsgChrono.createdAt) / 60000
               : 999;
-            const isAnonGroupChange = prevMsg
-              ? !!prevMsg.isAnonymous !== !!msg.isAnonymous
+            const isAnonGroupChange = prevMsgChrono
+              ? !!prevMsgChrono.isAnonymous !== !!msg.isAnonymous
               : false;
             const showHeader =
               (!isMe || msg.isAnonymous) &&
-              (!prevMsg ||
-                prevMsg.senderEmail !== msg.senderEmail ||
+              (!prevMsgChrono ||
+                prevMsgChrono.senderEmail !== msg.senderEmail ||
                 diffMinsHeader > 5 ||
                 isAnonGroupChange);
 
             return (
               <React.Fragment key={msg.id}>
-                {isDifferentDay && (
-                  <div className="flex justify-center my-4">
-                    <span className="px-3 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 text-xs font-bold rounded-full">
-                      {new Intl.DateTimeFormat(isRtl ? "ar-IQ" : "en-US", {
-                        timeZone: "Asia/Baghdad",
-                        month: "short",
-                        day: "numeric",
-                        weekday: "short",
-                      }).format(msgDate)}
-                    </span>
-                  </div>
-                )}
                 <MessageBubble
                   msg={msg}
                   isMe={isMe}
@@ -2164,11 +2157,41 @@ export default function ChatScreen({
                   renderMessageText={renderMessageText}
                   appUsers={appUsers}
                 />
+                
+                {isDifferentDay && (
+                  <div className="flex justify-center my-4 pb-2">
+                    <span className="px-3 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 text-xs font-bold rounded-full">
+                      {new Intl.DateTimeFormat(isRtl ? "ar-IQ" : "en-US", {
+                        timeZone: "Asia/Baghdad",
+                        month: "short",
+                        day: "numeric",
+                        weekday: "short",
+                      }).format(msgDate)}
+                    </span>
+                  </div>
+                )}
               </React.Fragment>
             );
           })
         )}
-        <div ref={messagesEndRef} className="h-px" />
+
+        {hasMore && !isLoading && (
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={handleLoadMore}
+              disabled={isLoadingMore}
+              className="px-4 py-2 bg-white dark:bg-zinc-800 rounded-full border border-slate-200 dark:border-zinc-700 text-xs font-bold text-slate-600 dark:text-slate-400 shadow-sm hover:shadow-md transition-all disabled:opacity-50 flex items-center justify-center min-w-[120px]"
+            >
+              {isLoadingMore ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : isRtl ? (
+                "تحميل المزيد"
+              ) : (
+                "Load Older"
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -2426,95 +2449,99 @@ export default function ChatScreen({
               />
 
               {/* Telegram-style fixed input bar. LTR -> input then send. RTL -> send then input */}
-              <form
-                onSubmit={handleSendMessage}
-                className={`flex items-end gap-2 relative`}
-                dir={isRtl ? "rtl" : "ltr"}
-              >
-                <div className="flex items-center gap-1 shrink-0">
-                  {!isAdminOrModerator && (
-                    <button
-                      type="button"
-                      title={isRtl ? "إرسال كمجهول" : "Send Anonymous"}
-                      onClick={() => setIsAnonymous(!isAnonymous)}
-                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all shadow-sm ${isAnonymous ? "bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800" : "bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500"}`}
-                    >
-                      <svg
-                        className="w-5 h-5 sm:w-6 sm:h-6"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                        <line
-                          x1="2"
-                          x2="22"
-                          y1="2"
-                          y2="22"
-                          stroke={isAnonymous ? "currentColor" : "transparent"}
-                        />
-                      </svg>
-                    </button>
-                  )}
-                  {(isAdminOrModerator ||
-                    settings.allowAttachments !== false) && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                      className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-500 rounded-full flex items-center justify-center transition-colors shadow-sm"
-                    >
-                      <Paperclip className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-                <textarea
-                  ref={textareaRef}
-                  value={newMessage}
-                  onChange={(e) => {
-                    setNewMessage(e.target.value);
-                    e.target.style.height = "auto";
-                    e.target.style.height =
-                      Math.min(e.target.scrollHeight, 120) + "px";
-                  }}
-                  maxLength={1000}
-                  placeholder={isRtl ? "رسالتك..." : "Message..."}
-                  className="flex-1 bg-slate-100 dark:bg-zinc-800 border border-transparent focus:border-sky-300 dark:focus:border-sky-700 rounded-2xl px-4 py-3 min-h-[44px] max-h-32 outline-none resize-none text-[15px] text-slate-900 dark:text-stone-100 transition-colors"
-                  dir="auto"
-                  rows={1}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage(e);
-                    }
-                  }}
-                />
-                <button
-                  type="submit"
-                  disabled={
-                    isSending ||
-                    (!newMessage.trim() && !attachmentFile && !embeddedItem) ||
-                    (!settings.isChatOpen && !isAdminOrModerator)
-                  }
-                  className="w-11 h-11 bg-sky-600 hover:bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-zinc-700 transition-colors shrink-0 shadow-sm"
+              <div className="flex-none bg-slate-50 dark:bg-zinc-950 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 px-2 sm:px-4 z-40">
+                <form
+                  onSubmit={handleSendMessage}
+                  className="flex items-end gap-1 sm:gap-2 relative bg-white dark:bg-zinc-900 rounded-[26px] p-1 shadow-sm border border-slate-200 dark:border-zinc-800 min-h-[52px]"
+                  dir={isRtl ? "rtl" : "ltr"}
                 >
-                  {isSending ? (
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Send
-                      className={`w-5 h-5 ${isRtl ? "rotate-180 transform -ml-1" : "ml-1"}`}
-                    />
-                  )}
-                </button>
-              </form>
-              {/* Character limit counter */}
-              {newMessage.length > 800 && (
-                <div className="absolute -bottom-5 right-2 text-[10px] text-slate-500 font-bold">
-                  {newMessage.length} / 1000
-                </div>
-              )}
+                  <div className="flex items-center shrink-0 h-[44px]">
+                    {!isAdminOrModerator && (
+                      <button
+                        type="button"
+                        title={isRtl ? "إرسال كمجهول" : "Send Anonymous"}
+                        onClick={() => setIsAnonymous(!isAnonymous)}
+                        className={`w-11 h-11 rounded-full flex items-center justify-center transition-all ${isAnonymous ? "text-amber-500" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"}`}
+                      >
+                        <svg
+                          className="w-6 h-6"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                          <line
+                            x1="2"
+                            x2="22"
+                            y1="2"
+                            y2="22"
+                            stroke={isAnonymous ? "currentColor" : "transparent"}
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    value={newMessage}
+                    onChange={(e) => {
+                      setNewMessage(e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height =
+                        Math.min(e.target.scrollHeight, 120) + "px";
+                    }}
+                    maxLength={1000}
+                    placeholder={isRtl ? "رسالة..." : "Message..."}
+                    className="flex-1 bg-transparent border-transparent py-[13px] px-2 min-h-[44px] max-h-32 outline-none resize-none text-[1rem] text-slate-900 dark:text-stone-100 placeholder:text-slate-400"
+                    dir="auto"
+                    rows={1}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(e);
+                      }
+                    }}
+                  />
+                  <div className="flex items-center shrink-0 h-[44px]">
+                    {(isAdminOrModerator ||
+                      settings.allowAttachments !== false) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                        className="w-11 h-11 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center justify-center transition-colors shrink-0"
+                      >
+                        <Paperclip className="w-[1.4rem] h-[1.4rem]" />
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={
+                        isSending ||
+                        (!newMessage.trim() && !attachmentFile && !embeddedItem) ||
+                        (!settings.isChatOpen && !isAdminOrModerator)
+                      }
+                      className="w-11 h-11 text-sky-500 hover:text-sky-600 dark:hover:text-sky-400 flex items-center justify-center disabled:opacity-50 transition-colors shrink-0"
+                    >
+                      {isSending ? (
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Send
+                          className={`w-[1.4rem] h-[1.4rem] ${isRtl ? "rotate-180 transform -ml-1" : "ml-1"}`}
+                        />
+                      )}
+                    </button>
+                  </div>
+                </form>
+                {/* Character limit counter */}
+                {newMessage.length > 800 && (
+                  <div className="absolute -top-4 right-4 text-[10px] text-slate-500 font-bold">
+                    {newMessage.length} / 1000
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -59,7 +59,9 @@ export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions 
             <Bot className="w-5 h-5 text-sky-500" />
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">أسئلة الذكاء الاصطناعي</h2>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">{questionsCount} سؤال مولّد من محتوى المحاضرة</p>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            {questionsCount > 0 ? `${questionsCount} سؤال مولّد من محتوى المحاضرة` : 'سيتم توليد ٢٠ سؤال بالذكاء الاصطناعي من محتوى المحاضرة'}
+          </p>
           
           <div className="space-y-4 mb-4">
             <div className="flex items-center gap-3">

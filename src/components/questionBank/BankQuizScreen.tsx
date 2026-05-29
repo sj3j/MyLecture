@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, X, ArrowRight, Play, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Check, X, ArrowRight, CheckCircle, AlertTriangle, MessageSquare, Loader2 } from 'lucide-react';
 import { BankQuestion } from '../../types/questionBank.types';
 import { saveUserBankAnswer } from '../../services/questionBankService';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -11,9 +11,11 @@ interface Props {
   onBack: () => void;
   userId: string;
   userName?: string;
+  isAdmin?: boolean;
 }
 
-export default function BankQuizScreen({ questions, onFinish, onBack, userId, userName }: Props) {
+export default function BankQuizScreen({ questions: initialQuestions, onFinish, onBack, userId, userName, isAdmin }: Props) {
+  const [questions, setQuestions] = useState(initialQuestions);
   const [sessionId] = useState(() => Math.random().toString(36).substring(7));
   const [answers, setAnswers] = useState<Record<string, string>>({}); 
   const [isFinished, setIsFinished] = useState(false);
@@ -23,6 +25,44 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId, us
   const [reportReason, setReportReason] = useState('');
   const [isReporting, setIsReporting] = useState(false);
   const [showReportSuccess, setShowReportSuccess] = useState(false);
+  
+  const [editPromptQuestion, setEditPromptQuestion] = useState<BankQuestion | null>(null);
+  const [editPromptText, setEditPromptText] = useState('');
+  const [isAiEditing, setIsAiEditing] = useState(false);
+  const [showEditSuccess, setShowEditSuccess] = useState(false);
+
+  const submitAiEdit = async () => {
+    if (!editPromptQuestion || !editPromptText.trim() || !isAdmin) return;
+    setIsAiEditing(true);
+    try {
+      let pdfUrl = undefined;
+      if (editPromptQuestion.lectureId) {
+        const { getDoc, doc } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        const lectureDoc = await getDoc(doc(db, 'lectures', editPromptQuestion.lectureId));
+        if (lectureDoc.exists() && lectureDoc.data().pdfUrl) {
+          pdfUrl = lectureDoc.data().pdfUrl;
+        }
+      }
+
+      const { modifyQuestionWithAI } = await import('../../services/mcqGenerationService');
+      const { editBankQuestion } = await import('../../services/questionBankService');
+      
+      const newQuestionData = await modifyQuestionWithAI(editPromptQuestion, editPromptText, pdfUrl);
+      await editBankQuestion(editPromptQuestion.id, newQuestionData);
+      
+      setQuestions(prev => prev.map(q => q.id === editPromptQuestion.id ? { ...q, ...newQuestionData } : q));
+      setEditPromptQuestion(null);
+      setEditPromptText('');
+      setShowEditSuccess(true);
+      setTimeout(() => setShowEditSuccess(false), 3000);
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل التعديل بالذكاء الاصطناعي: ' + e.message);
+    } finally {
+      setIsAiEditing(false);
+    }
+  };
 
   const handleAnswer = async (q: BankQuestion, choiceText: string) => {
     if (isFinished || answers[q.id]) return;
@@ -118,14 +158,26 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId, us
           
           return (
             <div key={q.id} className="bg-white dark:bg-zinc-800 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-zinc-700 relative group">
-              <button 
-                onClick={() => handleReport(q)} 
-                className="absolute top-4 left-4 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:text-zinc-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                title="الإبلاغ عن خطأ"
-              >
-                <AlertTriangle className="w-5 h-5" />
-              </button>
-              <div className="flex justify-between items-start mb-4 pl-12">
+              <div className="absolute top-4 left-4 flex items-center gap-1">
+                {isAdmin && (
+                  <button 
+                    onClick={() => setEditPromptQuestion(q)} 
+                    className="p-1.5 text-slate-300 hover:text-sky-500 hover:bg-sky-50 dark:text-zinc-500 dark:hover:text-sky-400 dark:hover:bg-sky-900/30 rounded-lg transition-colors flex items-center gap-1"
+                    title="تعديل بالذكاء الاصطناعي"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span className="text-[10px] font-bold">AI</span>
+                  </button>
+                )}
+                <button 
+                  onClick={() => handleReport(q)} 
+                  className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:text-zinc-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                  title="الإبلاغ عن خطأ"
+                >
+                  <AlertTriangle className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex justify-between items-start mb-4 pl-24">
                  <div className="flex flex-wrap gap-2 items-center">
                    <span className="px-3 py-1 bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-slate-300 rounded font-bold text-sm">
                      السؤال {index + 1}
@@ -227,6 +279,52 @@ export default function BankQuizScreen({ questions, onFinish, onBack, userId, us
         cancelText="العودة للاختبار"
         isDestructive={false}
       />
+
+      {editPromptQuestion && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-zinc-900 rounded-3xl p-6 w-full max-w-md shadow-xl border border-slate-100 dark:border-zinc-800"
+          >
+            <div className="flex items-center gap-3 mb-4 text-sky-600 dark:text-sky-500">
+              <MessageSquare className="w-8 h-8" />
+              <h3 className="font-bold text-xl">تعديل بالذكاء الاصطناعي</h3>
+            </div>
+            <p className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-4 bg-slate-50 dark:bg-zinc-800 p-3 rounded-xl border border-slate-100 dark:border-zinc-700 max-h-32 overflow-y-auto" dir="auto">
+              {editPromptQuestion.stem}
+            </p>
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                ما الذي تريد تعديله في هذا السؤال عبر الذكاء الاصطناعي؟
+              </label>
+              <textarea 
+                value={editPromptText}
+                onChange={e => setEditPromptText(e.target.value)}
+                className="w-full p-4 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white resize-none outline-none focus:ring-2 focus:ring-sky-500/50"
+                rows={3}
+                placeholder="مثال: أضف شرحاً مفصلاً لهذا السؤال، اجعله أسهل..."
+              />
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setEditPromptQuestion(null)}
+                className="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                disabled={isAiEditing}
+              >
+                إلغاء
+              </button>
+              <button 
+                onClick={submitAiEdit}
+                disabled={!editPromptText.trim() || isAiEditing}
+                className="flex-1 py-3 px-4 rounded-xl font-bold bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {isAiEditing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'تطبيق التعديل'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {reportQuestion && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">

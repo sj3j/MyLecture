@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { GoogleGenAI } from '@google/genai';
 import { MCQQuestion, LectureMCQSets } from '../types/mcq.types';
@@ -104,7 +104,13 @@ async function callGeminiWithBackoff(contents: any, maxRetries = 3) {
       });
       return response;
     } catch (error: any) {
-      if (error.status === 429 && attempt < maxRetries - 1) {
+      const isQuotaExceeded = error?.message?.toLowerCase().includes('quota') || error?.status === 'RESOURCE_EXHAUSTED' || error?.message?.includes('RESOURCE_EXHAUSTED');
+      
+      if (isQuotaExceeded) {
+         throw new Error('لقد تجاوزت الحد المسموح للاستخدام من الذكاء الاصطناعي (Quota Exceeded). يرجى التحقق من خطة الدفع الخاصة بك في حسابك على Google.');
+      }
+
+      if ((error?.status === 429 || error?.message?.includes('429')) && attempt < maxRetries - 1) {
         attempt++;
         const delay = Math.pow(2, attempt) * 2000; // 4s, 8s,...
         console.warn(`Gemini 429 Rate Limit. Retrying in ${delay}ms...`);
@@ -228,6 +234,72 @@ export async function extractMCQsFromPDFFile(base64Data: string, prompt: string)
   }
 
   return extractedData.questions || [];
+}
+
+export async function updateLectureMCQSet(lectureId: string, updatedQuestions: MCQQuestion[]) {
+  const docRef = doc(db, 'mcqs', lectureId);
+  await updateDoc(docRef, {
+    questions: updatedQuestions,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function getExistingMCQsForLecture(lectureId: string): Promise<MCQQuestion[]> {
+  try {
+    const existingDoc = await getDoc(doc(db, 'mcqs', lectureId));
+    if (existingDoc.exists()) {
+      const data = existingDoc.data() as LectureMCQSets;
+      if (data.status === 'ready' && data.questions) {
+        return data.questions;
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to get existing MCQs", e);
+  }
+  return [];
+}
+
+export async function modifyQuestionWithAI(question: any, userPrompt: string, pdfUrl?: string): Promise<any> {
+  const PROMPT = `You are an expert professor. A user wants to modify an existing True/False or Multiple Choice question.
+Here is the current question in JSON format:
+${JSON.stringify(question, null, 2)}
+
+User request: "${userPrompt}"
+
+Instructions:
+1. Apply the user's requested modifications. You can modify the stem, choices, correct answer, or explanation.
+2. Ensure the returned format perfectly matches the original JSON structure.
+3. Keep the same language as the original question (e.g. if Arabic, keep it Arabic).
+4. Do NOT wrap the JSON in Markdown block (no \`\`\`json). Return raw JSON only.
+`;
+
+  let parts: any[] = [{ text: PROMPT }];
+
+  if (pdfUrl) {
+    try {
+      const pdfResponse = await fetch(pdfUrl);
+      if (pdfResponse.ok) {
+        const pdfBlob = await pdfResponse.blob();
+        const sizeMb = pdfBlob.size / (1024 * 1024);
+        if (sizeMb <= 20) {
+          const base64Data = await blobToBase64(pdfBlob);
+          parts.unshift({ inlineData: { data: base64Data, mimeType: 'application/pdf' } });
+        } else {
+          console.warn("PDF is larger than 20MB, skipping file context for edit.");
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load PDF for question edit context.", e);
+    }
+  }
+
+  const response = await callGeminiWithBackoff([{ parts }]);
+  const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  const updatedQuestion = extractJson(resultText);
+  
+  // Preserve essential IDs
+  updatedQuestion.id = question.id;
+  return updatedQuestion;
 }
 
 export function generateMCQsForLecture(lectureId: string, subjectId: string, pdfUrl: string): Promise<MCQQuestion[]> {

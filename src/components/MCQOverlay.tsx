@@ -2,7 +2,7 @@ import React, { useState, useReducer, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lecture, UserProfile, Language } from '../types';
 import { X, Loader2, ArrowRight } from 'lucide-react';
-import { generateMCQsForLecture } from '../services/mcqGenerationService';
+import { getExistingMCQsForLecture, generateMCQsForLecture } from '../services/mcqGenerationService';
 import { getFirstAttemptStatus, finalizeFirstAttempt, submitRetakeAttempt } from '../services/mcqAnswerService';
 import { checkMCQBanStatus } from '../services/antiCheatService';
 import { getQuestionsForLecture } from '../services/questionBankService';
@@ -15,7 +15,7 @@ import MCQReviewScreen from './mcq/MCQReviewScreen';
 import BankQuizSetupScreen from './questionBank/BankQuizSetupScreen';
 import BankQuizScreen from './questionBank/BankQuizScreen';
 
-export type MCQStackRoute = 'loading' | 'intro' | 'quiz' | 'result' | 'review' | 'banned' | 'bank_quiz_setup' | 'bank_quiz' | 'bank_result';
+export type MCQStackRoute = 'init_loading' | 'loading' | 'intro' | 'quiz' | 'result' | 'review' | 'banned' | 'bank_quiz_setup' | 'bank_quiz' | 'bank_result';
 
 interface MCQOverlayProps {
   lecture: Lecture;
@@ -26,7 +26,7 @@ interface MCQOverlayProps {
 
 export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayProps) {
   const isRtl = lang === 'ar';
-  const [route, setRoute] = useState<MCQStackRoute>('loading');
+  const [route, setRoute] = useState<MCQStackRoute>('init_loading');
   
   // High-level state to pass to screens
   const [questions, setQuestions] = useState<any[]>([]);
@@ -57,8 +57,8 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
         if (!active) return;
         setFirstAttemptStatus(status);
 
-        // 2. Generate or fetch questions
-        const fetchedQuestions = await generateMCQsForLecture(lecture.id, lecture.category, lecture.pdfUrl);
+        // 2. Fetch existing generated questions only (do not generate yet)
+        const fetchedQuestions = await getExistingMCQsForLecture(lecture.id);
         if (!active) return;
         
         setQuestions(fetchedQuestions);
@@ -66,7 +66,8 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
       } catch (err: any) {
         console.error(err);
         if (active) {
-          setErrorMsg('فشل التوليد. يرجى المحاولة مرة أخرى.'); // "Generation failed. Please try again."
+          setErrorMsg(err.message || 'فشل فتح الاختبار. يرجى المحاولة مرة أخرى.'); // Generic error
+          setRoute('loading');
         }
       }
     };
@@ -74,7 +75,22 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
     return () => { active = false; };
   }, [lecture, user.uid]);
 
-  const handleStartQuiz = () => setRoute('quiz');
+  const handleStartQuiz = async () => {
+    if (questions.length === 0) {
+      setRoute('loading');
+      setErrorMsg(null);
+      try {
+        const generatedQuestions = await generateMCQsForLecture(lecture.id, lecture.category, lecture.pdfUrl);
+        setQuestions(generatedQuestions);
+        setRoute('quiz');
+      } catch (err: any) {
+        console.error(err);
+        setErrorMsg(err.message || 'فشل التوليد. يرجى المحاولة مرة أخرى.'); // "Generation failed. Please try again."
+      }
+    } else {
+      setRoute('quiz');
+    }
+  };
   
   const handleFinishQuiz = async (answersState: any, correctCount: number, score: number) => {
     // Process submission
@@ -106,6 +122,17 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
   return (
     <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-900 flex flex-col" dir={isRtl ? 'rtl' : 'ltr'}>
       <AnimatePresence mode="wait">
+        {route === 'init_loading' && (
+          <motion.div 
+            key="init_loading"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="flex-1 flex items-center justify-center flex-col p-6"
+          >
+             <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
+             <h2 className="text-xl font-bold dark:text-white">جاري التحميل...</h2>
+          </motion.div>
+        )}
+        
         {route === 'loading' && (
           <motion.div 
             key="loading"
@@ -118,7 +145,18 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
                   <X className="w-8 h-8" />
                 </div>
                 <h2 className="text-xl font-bold mb-2 dark:text-white">{errorMsg}</h2>
-                <button onClick={onClose} className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg">{isRtl ? 'إغلاق' : 'Close'}</button>
+                <button 
+                  onClick={() => {
+                    if (bankQuestions.length > 0 || route === 'loading') {
+                        setRoute('intro');
+                    } else {
+                        onClose();
+                    }
+                  }} 
+                  className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg"
+                >
+                  {isRtl ? 'العودة' : 'Back'}
+                </button>
               </div>
             ) : (
               <div className="text-center">
@@ -216,6 +254,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             onBack={() => setRoute('intro')}
             userId={user.uid}
             userName={user.name}
+            isAdmin={user.role === 'admin' || user.role === 'moderator'}
           />
         )}
       </AnimatePresence>
