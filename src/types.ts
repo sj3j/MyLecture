@@ -55,7 +55,7 @@ export interface UserProfile {
   name: string;
   originalName?: string;
   email: string;
-  role: 'admin' | 'moderator' | 'student';
+  role: 'admin' | 'student';
   isMasterAdmin?: boolean;
   photoUrl?: string;
   completedWeeklyTasks?: string[];

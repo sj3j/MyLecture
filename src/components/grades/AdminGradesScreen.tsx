@@ -113,7 +113,7 @@ const SearchableStudentSelect = ({
 
 export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGradesScreenProps) {
   const isMasterAdmin = auth.currentUser?.email === 'almdrydyl335@gmail.com' || auth.currentUser?.email === 'fenix.admin@gmail.com';
-  const canManageGrades = user && (user.role === 'admin' || user.role === 'moderator') && user.permissions?.manageGrades !== false;
+  const canManageGrades = user && (user.role === 'admin') && user.permissions?.manageGrades !== false;
   
   if (isOpen && !canManageGrades && !isMasterAdmin) {
     onClose();

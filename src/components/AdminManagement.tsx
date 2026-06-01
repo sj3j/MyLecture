@@ -14,7 +14,7 @@ interface AdminManagementProps {
 interface AdminRole {
   id: string;
   email: string;
-  role?: 'admin' | 'moderator';
+  role?: 'admin';
   permissions?: {
     manageLectures?: boolean;
     manageAnnouncements?: boolean;
@@ -31,7 +31,6 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const isRtl = lang === 'ar';
   
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'admin' | 'moderator'>('admin');
   const [permissions, setPermissions] = useState({
     manageLectures: true,
     manageAnnouncements: true,
@@ -47,7 +46,6 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editRole, setEditRole] = useState<'admin' | 'moderator'>('admin');
   const [editPermissions, setEditPermissions] = useState({
     manageLectures: true,
     manageAnnouncements: true,
@@ -66,7 +64,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       const adminList = snapshot.docs.map(doc => ({
         id: doc.id,
         email: doc.id,
-        role: doc.data().role as 'admin' | 'moderator' || 'admin',
+        role: 'admin' as const,
         permissions: doc.data().permissions || {
           manageLectures: true,
           manageAnnouncements: true,
@@ -105,7 +103,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
 
       await setDoc(doc(db, 'allowed_admins', email.toLowerCase()), {
         email: email.toLowerCase(),
-        role: role,
+        role: 'admin',
         permissions: permissions,
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.uid
@@ -117,7 +115,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       if (!userSnap.empty) {
          try {
             await setDoc(doc(db, 'users', userSnap.docs[0].id), {
-               role: role,
+               role: 'admin',
                permissions: permissions
             }, { merge: true });
          } catch (e) {
@@ -139,7 +137,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     try {
       await setDoc(doc(db, 'allowed_admins', id), {
         email: email,
-        role: editRole,
+        role: 'admin',
         permissions: editPermissions,
       }, { merge: true });
       
@@ -149,7 +147,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       if (!userSnap.empty) {
          try {
             await setDoc(doc(db, 'users', userSnap.docs[0].id), {
-               role: editRole,
+               role: 'admin',
                permissions: editPermissions
             }, { merge: true });
          } catch (e) {
@@ -236,14 +234,6 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                   />
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as 'admin' | 'moderator')}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
-                  >
-                    <option value="admin">Admin (Full Access)</option>
-                    <option value="moderator">Moderator (Content Only)</option>
-                  </select>
 
                   <div className="bg-slate-50 dark:bg-zinc-800 p-4 rounded-xl border border-slate-200 dark:border-zinc-700 flex flex-col gap-2">
                     <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{isRtl ? 'الصلاحيات' : 'Permissions'}</h4>
@@ -297,15 +287,6 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                             <div className="flex items-center justify-between pointer-events-none">
                               <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
                             </div>
-                            
-                            <select
-                              value={editRole}
-                              onChange={(e) => setEditRole(e.target.value as 'admin' | 'moderator')}
-                              className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none transition-all text-sm"
-                            >
-                              <option value="admin">Admin (Full Access)</option>
-                              <option value="moderator">Moderator (Content Only)</option>
-                            </select>
 
                             <div className="bg-white dark:bg-zinc-900 p-3 rounded-lg border border-slate-200 dark:border-zinc-700 flex flex-col gap-2">
                               <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{isRtl ? 'الصلاحيات' : 'Permissions'}</h4>
@@ -348,12 +329,12 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                         ) : (
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${admin.role === 'moderator' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'}`}>
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400">
                                 {admin.email[0].toUpperCase()}
                               </div>
                               <div className="flex flex-col">
                                 <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
-                                <span className={`text-[10px] font-bold uppercase tracking-wider ${admin.role === 'moderator' ? 'text-amber-600 dark:text-amber-400' : 'text-sky-600 dark:text-sky-400'}`}>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
                                   {admin.role || 'admin'}
                                 </span>
                               </div>
@@ -378,7 +359,6 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                                 <button
                                   onClick={() => {
                                     setEditingId(admin.id);
-                                    setEditRole(admin.role || 'admin');
                                     setEditPermissions(admin.permissions || {
                                       manageLectures: true,
                                       manageAnnouncements: true,

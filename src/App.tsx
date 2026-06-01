@@ -166,7 +166,7 @@ export default function App() {
             if (adminDoc.exists()) {
               const data = adminDoc.data();
               studentData = {
-                name: data.role === 'moderator' ? 'Moderator' : 'Admin',
+                name: 'Admin',
                 email: emailLower,
                 isActive: true,
                 role: data.role || 'admin',
@@ -212,7 +212,7 @@ export default function App() {
         // Listen to user document
         userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
           if (userDoc.exists()) {
-            const whitelistRole = studentData?.role === 'admin' || studentData?.role === 'moderator' ? studentData.role : null;
+            const whitelistRole = studentData?.role === 'admin' ? studentData.role : null;
             
             const defaultEmailName = firebaseUser.email ? firebaseUser.email.split('@')[0] : '';
             const isDefaultName = userDoc.data().name === defaultEmailName || 
@@ -394,7 +394,7 @@ export default function App() {
         }
 
         // Check latest admin alert
-        if (user.role === 'admin' || user.role === 'master_admin' || user.role === 'moderator') {
+        if (user.role === 'admin' || user.role === 'master_admin') {
           const adQuery = query(collection(db, 'adminAlerts'), orderBy('createdAt', 'desc'), limit(1));
           const adSnap = await getDocs(adQuery);
           if (!adSnap.empty) {

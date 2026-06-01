@@ -65,7 +65,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
       } else {
         // Check if they are already an admin or moderator in users collection
         const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-        if (userDoc.exists() && ['admin', 'moderator'].includes(userDoc.data().role)) {
+        if (userDoc.exists() && ['admin'].includes(userDoc.data().role)) {
           role = userDoc.data().role;
           permissions = userDoc.data().permissions;
         }
@@ -259,7 +259,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
                 Admin
               </span>
             )}
-            {user!.role === 'moderator' && (
+            {false && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold mt-2">
                 <Shield className="w-3 h-3" />
                 Moderator
@@ -510,7 +510,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && setShowStudentManage && (
+          {((user?.role === 'admin') && user?.permissions?.manageStudents !== false) && setShowStudentManage && (
             <button
               onClick={() => setShowStudentManage(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors mt-4"
@@ -530,7 +530,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageGrades !== false) && setShowAdminGrades && (
+          {((user?.role === 'admin' ) && user?.permissions?.manageGrades !== false) && setShowAdminGrades && (
             <button
               onClick={() => setShowAdminGrades(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-fuchsia-50 dark:bg-fuchsia-900/30 text-fuchsia-600 dark:text-fuchsia-400 rounded-xl font-bold hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/50 transition-colors mt-4"

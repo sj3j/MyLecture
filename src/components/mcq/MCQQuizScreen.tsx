@@ -10,6 +10,7 @@ import { lockSingleAnswer, getLockedAnswers } from '../../services/mcqAnswerServ
 import { enableAntiScreenshot, disableAntiScreenshot } from '../../services/antiCheatService';
 
 interface Props {
+  onQuestionsUpdated?: (questions: any[]) => void;
   lecture: Lecture;
   questions: MCQQuestion[];
   onFinish: (answers: Record<string, { selected: string, isCorrect: boolean }>, correctCount: number, score: number) => void;
@@ -66,7 +67,7 @@ function quizReducer(state: QuizState, action: QuizAction): QuizState {
   }
 }
 
-export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, user }: Props) {
+export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, user, onQuestionsUpdated }: Props) {
   const [state, dispatch] = useReducer(quizReducer, {
     answers: {},
     answeredCount: 0,
@@ -134,25 +135,39 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
   const [editPromptText, setEditPromptText] = useState('');
   const [isAiEditing, setIsAiEditing] = useState(false);
   const [showEditSuccess, setShowEditSuccess] = useState(false);
+  const [grantAiAccess, setGrantAiAccess] = useState(false);
+  const [modifyQuestionCheck, setModifyQuestionCheck] = useState(false);
+  const [modifyAnswerCheck, setModifyAnswerCheck] = useState(false);
+  const [modifyExplanationCheck, setModifyExplanationCheck] = useState(false);
 
   // Derive admin
-  const isAdmin = user?.role === 'admin' || user?.role === 'moderator';
+  const isAdmin = user?.role === 'admin';
 
   const [localQuestions, setLocalQuestions] = useState(questions);
   useEffect(() => { setLocalQuestions(questions) }, [questions]);
 
   const submitAiEdit = async () => {
-    if (!editPromptQuestion || !editPromptText.trim() || !isAdmin) return;
+    if (!editPromptQuestion || (!editPromptText.trim() && !modifyQuestionCheck && !modifyAnswerCheck && !modifyExplanationCheck) || !isAdmin) return;
+    
+    let finalPrompt = editPromptText;
+    let autoInstructions = [];
+    if (modifyQuestionCheck) autoInstructions.push('قم بإعادة صياغة وتغيير نص السؤال (stem) ليكون أفضل وأوضح.');
+    if (modifyAnswerCheck) autoInstructions.push('تأكد من صحة الجواب الصحيح (correctAnswer)، وقم بتعديل وتغيير الخيارات (options) لجعلها أكثر دقة.');
+    if (modifyExplanationCheck) autoInstructions.push('أضف شرحاً علمياً مفصلاً (explanation) للإجابة.');
+    if (autoInstructions.length > 0) {
+      finalPrompt += '\n\nمطلوب بشكل إجباري:\n- ' + autoInstructions.join('\n- ');
+    }
     setIsAiEditing(true);
     try {
       const { modifyQuestionWithAI, updateLectureMCQSet } = await import('../../services/mcqGenerationService');
       
-      const newQuestionData = await modifyQuestionWithAI(editPromptQuestion, editPromptText, lecture.pdfUrl);
+      const newQuestionData = await modifyQuestionWithAI(editPromptQuestion, finalPrompt, grantAiAccess ? lecture.pdfUrl : undefined);
       const updatedQuestions = localQuestions.map(q => q.id === editPromptQuestion.id ? { ...q, ...newQuestionData } : q);
       
       await updateLectureMCQSet(lecture.id, updatedQuestions);
       
       setLocalQuestions(updatedQuestions);
+      if (onQuestionsUpdated) onQuestionsUpdated(updatedQuestions);
       setEditPromptQuestion(null);
       setEditPromptText('');
       setShowEditSuccess(true);
@@ -652,6 +667,41 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
                   placeholder="مثال: أضف شرحاً مفصلاً لهذا السؤال، اجعله أسهل..."
                 />
               </div>
+
+              
+              <div className="flex flex-col gap-3 mb-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="relative flex items-center">
+                    <input type="checkbox" className="sr-only peer" checked={modifyQuestionCheck} onChange={(e) => setModifyQuestionCheck(e.target.checked)} />
+                    <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-500/50 rounded-full peer dark:bg-zinc-700 peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-600 peer-checked:bg-sky-500 origin-right"></div>
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300 select-none text-right">تعديل السؤال نفسه</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="relative flex items-center">
+                    <input type="checkbox" className="sr-only peer" checked={modifyAnswerCheck} onChange={(e) => setModifyAnswerCheck(e.target.checked)} />
+                    <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-500/50 rounded-full peer dark:bg-zinc-700 peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-600 peer-checked:bg-sky-500 origin-right"></div>
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300 select-none text-right">تعديل الجواب الصحيح والخيارات</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="relative flex items-center">
+                    <input type="checkbox" className="sr-only peer" checked={modifyExplanationCheck} onChange={(e) => setModifyExplanationCheck(e.target.checked)} />
+                    <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-500/50 rounded-full peer dark:bg-zinc-700 peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-600 peer-checked:bg-sky-500 origin-right"></div>
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300 select-none text-right">تعديل الشرح للتوضيح</span>
+                </label>
+              </div>
+              <label className="flex items-center gap-2 mb-6 cursor-pointer">
+                <div className="relative flex items-center">
+                  <input type="checkbox" className="sr-only peer" checked={grantAiAccess} onChange={(e) => setGrantAiAccess(e.target.checked)} />
+                  <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-500/50 rounded-full peer dark:bg-zinc-700 peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-600 peer-checked:bg-sky-500 origin-right"></div>
+                </div>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 select-none text-right">
+                  منح الذكاء الاصطناعي صلاحية الوصول إلى المحاضرة الحالية
+                </span>
+              </label>
+
               <div className="flex gap-3">
                 <button 
                   onClick={() => setEditPromptQuestion(null)}
@@ -662,7 +712,7 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
                 </button>
                 <button 
                   onClick={submitAiEdit}
-                  disabled={!editPromptText.trim() || isAiEditing}
+                  disabled={(!editPromptText.trim() && !modifyQuestionCheck && !modifyAnswerCheck && !modifyExplanationCheck) || isAiEditing}
                   className="flex-1 py-3 px-4 rounded-xl font-bold bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                 >
                   {isAiEditing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'تطبيق التعديل'}

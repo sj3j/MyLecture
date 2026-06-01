@@ -647,7 +647,7 @@ export default function ChatScreen({
   const t = TRANSLATIONS[lang];
   const isRtl = lang === "ar";
   const isAdminOrModerator =
-    (user?.role === "admin" || user?.role === "moderator") &&
+    (user?.role === "admin") &&
     user?.permissions?.manageChat !== false;
   const isMasterAdmin = user?.isMasterAdmin;
   const CHAT_DOC_ID = "config";

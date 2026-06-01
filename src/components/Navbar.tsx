@@ -86,7 +86,7 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
               <span translate="no" className="hidden md:inline notranslate">{lang === 'ar' ? 'EN' : 'AR'}</span>
             </button>
 
-            {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && currentTab === 'home' && (
+            {user && ['admin'].includes(user.role) && user?.permissions?.manageLectures !== false && currentTab === 'home' && (
               <button
                 onClick={onShowUpload}
                 className="flex items-center gap-2 px-4 py-2 bg-sky-600 dark:bg-sky-500 text-white dark:text-zinc-900 rounded-full hover:bg-sky-700 dark:hover:bg-sky-600 transition-colors text-sm font-bold"

@@ -85,7 +85,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
   };
 
   const handleDelete = async () => {
-    if (!user || (!['admin', 'moderator'].includes(user.role) || user?.permissions?.manageLectures === false)) return;
+    if (!user || (!['admin'].includes(user.role) || user?.permissions?.manageLectures === false)) return;
     
     setIsDeleting(true);
     try {
@@ -277,7 +277,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
             </button>
           )}
 
-          {user && ['admin', 'moderator'].includes(user.role) && user?.permissions?.manageLectures !== false && (
+          {user && ['admin'].includes(user.role) && user?.permissions?.manageLectures !== false && (
             <>
               <button
                 onClick={() => onEdit?.(lecture)}

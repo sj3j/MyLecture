@@ -42,25 +42,17 @@ service cloud.firestore {
     function isMasterAdmin() {
       return isAuthenticated() && (
         (request.auth.token.email != null && (request.auth.token.email.lower() == 'almdrydyl335@gmail.com' || request.auth.token.email.lower() == 'fenix.admin@gmail.com')) ||
-        ('role' in request.auth.token && request.auth.token.role == 'master_admin')
+        ('role' in request.auth.token && request.auth.token.role == 'master_admin') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master_admin')
       );
     }
 
     function isAdmin() {
       return isAuthenticated() && (
         isMasterAdmin() ||
-        ('role' in request.auth.token && request.auth.token.role == 'admin')
-      );
-    }
-
-    function isModerator() {
-      return isAuthenticated() && ('role' in request.auth.token && request.auth.token.role == 'moderator');
-    }
-
-    function isAdminOrModerator() {
-      return isAuthenticated() && (
-        isMasterAdmin() ||
-        ('role' in request.auth.token && request.auth.token.role in ['admin', 'moderator'])
+        ('role' in request.auth.token && request.auth.token.role == 'admin') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
       );
     }
 
@@ -81,7 +73,7 @@ service cloud.firestore {
       return data.keys().hasAll(['name', 'email', 'role']) &&
              data.name is string && data.name.size() > 0 &&
              data.email is string && (data.email == '' || data.email.matches(".*@.*")) &&
-             data.role in ['admin', 'moderator', 'student'] &&
+             data.role in ['admin', 'student'] &&
              (!('originalName' in data) || data.originalName is string) &&
              (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches(".*"))) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
@@ -112,7 +104,7 @@ service cloud.firestore {
     }
 
     function hasAccess() {
-      return isAdminOrModerator() || isWhitelisted();
+      return isAdmin() || isWhitelisted();
     }
 
     // ===============================================================
@@ -121,22 +113,22 @@ service cloud.firestore {
 
     match /settings/{document=**} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if isAdmin();
     }
 
     match /app_settings/{document=**} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if isAdmin();
     }
 
     match /semesterArchives/{document=**} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if isAdmin();
     }
 
     match /users/{userId}/streakHistory/{document=**} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrModerator());
-      allow write: if isAdminOrModerator();
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
     }
 
     match /allowed_admins/{email} {
@@ -145,20 +137,20 @@ service cloud.firestore {
     }
     
     match /students/{email} {
-      allow read: if isAdminOrModerator() || (isAuthenticated() && (request.auth.uid == email || (request.auth.token.email != null && request.auth.token.email.lower() == email)));
-      allow write: if isAdminOrModerator();
+      allow read: if isAdmin() || (isAuthenticated() && (request.auth.uid == email || (request.auth.token.email != null && request.auth.token.email.lower() == email)));
+      allow write: if isAdmin();
     }
 
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
                     (request.resource.data.role == 'student' || 
-                     (request.resource.data.role in ['admin', 'moderator'] && (isMasterAdmin() || (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower()))))));
-      allow update: if isMasterAdmin() || (isAdminOrModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['examCode', 'name', 'originalName'])) || (isOwner(userId) && isValidUser(request.resource.data) && (
+                     (request.resource.data.role in ['admin'] && (isMasterAdmin() || (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower()))))));
+      allow update: if isMasterAdmin() || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['examCode', 'name', 'originalName'])) || (isOwner(userId) && isValidUser(request.resource.data) && (
                       request.resource.data.role == (resource.data.role != null ? resource.data.role : 'student') ||
-                      (request.resource.data.role in ['admin', 'moderator'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
-                    ) && (isAdminOrModerator() || (!('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', '')))
-                      && (isAdminOrModerator() || (!('examCode' in request.resource.data) || request.resource.data.examCode == resource.data.get('examCode', '')))
+                      (request.resource.data.role in ['admin'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
+                    ) && (isAdmin() || (!('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', '')))
+                      && (isAdmin() || (!('examCode' in request.resource.data) || request.resource.data.examCode == resource.data.get('examCode', '')))
                       && request.resource.data.get('streakCount', 0) == resource.data.get('streakCount', 0)
                       && request.resource.data.get('freezeTokens', 1) == resource.data.get('freezeTokens', 1)
                       && request.resource.data.get('longestStreak', 0) == resource.data.get('longestStreak', 0)
@@ -166,32 +158,32 @@ service cloud.firestore {
     }
 
     match /streak_history/{docId} {
-      allow read: if isAuthenticated() && (isAdminOrModerator() || resource.data.userId == request.auth.uid);
+      allow read: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow write: if false; // Only Cloud Functions / Admin SDK
     }
 
     match /streak_recoveries/{docId} {
-      allow read: if isAdminOrModerator();
+      allow read: if isAdmin();
       allow write: if false; // Only via API
     }
 
     match /pending_streak_resets/{docId} {
-      allow read: if isAdminOrModerator();
+      allow read: if isAdmin();
       allow write: if false; // Only via API
     }
 
     match /degrees/{studentId}/exams/{examId} {
-      allow read: if isAdminOrModerator() || (isAuthenticated() && request.auth.uid == studentId);
-      allow write: if isAdminOrModerator();
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == studentId);
+      allow write: if isAdmin();
     }
 
     match /degreeBatches/{batchId} {
-      allow read, write: if isAdminOrModerator();
+      allow read, write: if isAdmin();
     }
 
     match /lectures/{lectureId} {
       allow read: if hasAccess();
-      allow create, update, delete: if isAdminOrModerator();
+      allow create, update, delete: if isAdmin();
     }
     
     match /chat_presence/{userId} {
@@ -201,18 +193,18 @@ service cloud.firestore {
 
     match /chat_settings/{documentId} {
       allow read: if hasAccess();
-      allow write: if isAdminOrModerator();
+      allow write: if isAdmin();
     }
 
     match /chat_messages/{messageId} {
       allow read: if hasAccess();
-      allow create: if isAdminOrModerator();
-      allow update: if isAdminOrModerator() || (
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
         hasAccess() && 
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'viewers']) &&
         request.auth.token.email != null
       );
-      allow delete: if isAdminOrModerator() || 
+      allow delete: if isAdmin() || 
                     (isAuthenticated() && (
                       resource.data.get('senderId', '') == request.auth.uid ||
                       (request.auth.token.email != null && resource.data.get('senderEmail', '') == request.auth.token.email)
@@ -226,7 +218,7 @@ service cloud.firestore {
 
     match /chat_typing/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isAdminOrModerator();
+      allow write: if isOwner(userId) || isAdmin();
     }
 
     match /inbox_sessions/{sessionId} {
@@ -242,13 +234,13 @@ service cloud.firestore {
 
     match /records/{recordId} {
       allow read: if hasAccess();
-      allow create, update, delete: if isAdminOrModerator();
+      allow create, update, delete: if isAdmin();
     }
 
     match /announcements/{postId} {
       allow read: if hasAccess();
-      allow create, delete: if isAdminOrModerator();
-      allow update: if isAdminOrModerator() || (
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
         hasAccess() && 
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
       );
@@ -256,52 +248,52 @@ service cloud.firestore {
     
     match /homeworks/{homeworkId} {
       allow read: if hasAccess();
-      allow create, update, delete: if isAdminOrModerator();
+      allow create, update, delete: if isAdmin();
     }
     
     match /mcqs/{lectureId} {
       allow read: if hasAccess();
       // Allow Generation (Creation & Write) updates from regular users if permitted
       allow create, update: if hasAccess();
-      allow delete: if isAdminOrModerator();
+      allow delete: if isAdmin();
     }
 
     match /userMCQAnswers/{userId}/lectures/{document=**} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrModerator());
-      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdminOrModerator();
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdmin();
     }
 
     match /userMCQStats/{userId} {
       allow read: if hasAccess();
       // Regular user or Admin can write stats
-      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdminOrModerator();
+      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdmin();
     }
 
     match /systemNotifications/{notificationId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdminOrModerator());
-      allow write: if isAdminOrModerator();
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid; // Allow user to delete their own notifications if needed
     }
 
     match /adminAlerts/{alertId} {
       allow create: if hasAccess(); // E.g., when they trigger an incomplete Generation that requires admin review
-      allow read, update, delete: if isAdminOrModerator();
+      allow read, update, delete: if isAdmin();
     }
 
     match /adminNotifications/{notificationId} {
       allow create: if hasAccess();
-      allow read, update, delete: if isAdminOrModerator();
+      allow read, update, delete: if isAdmin();
     }
 
     match /antiCheatLogs/{logId} {
       allow create: if hasAccess();
-      allow read, update, delete: if isAdminOrModerator();
+      allow read, update, delete: if isAdmin();
     }
     
     match /questionBank/{questionId} {
       allow read: if hasAccess();
-      allow create, delete: if isAdminOrModerator();
-      allow update: if isAdminOrModerator() || (
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
         hasAccess() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isFlagged', 'flaggedReason', 'flaggedBy', 'flaggedAt']) &&
         request.resource.data.isFlagged == true
@@ -309,8 +301,8 @@ service cloud.firestore {
     }
 
     match /userBankAnswers/{userId}/questions/{questionId} {
-      allow read: if isAdminOrModerator() || isOwner(userId);
-      allow write: if isOwner(userId) || isAdminOrModerator();
+      allow read: if isAdmin() || isOwner(userId);
+      allow write: if isOwner(userId) || isAdmin();
     }
     
     match /fcm_tokens/{userId} {

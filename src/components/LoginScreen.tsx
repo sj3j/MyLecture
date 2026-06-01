@@ -170,7 +170,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       if (!userSnap.exists()) {
         // Create new user document
-        const initialName = result.user.displayName || (userRole === 'admin' ? 'Admin' : userRole === 'moderator' ? 'Moderator' : 'Student');
+        const initialName = result.user.displayName || (userRole === 'admin' ? 'Admin' : 'Student');
         await setDoc(userRef, {
           name: initialName,
           originalName: initialName,
@@ -186,7 +186,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       } else {
         // If user exists but role is different from whitelist, update it
         const currentRole = userSnap.data().role;
-        if (currentRole !== userRole && (userRole === 'admin' || userRole === 'moderator')) {
+        if (currentRole !== userRole && (userRole === 'admin')) {
           await setDoc(userRef, { role: userRole }, { merge: true });
         }
       }
@@ -251,7 +251,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       }
       
       if (!userSnap.exists()) {
-        const initialName = studentData.name || (userRole === 'admin' ? 'Admin' : userRole === 'moderator' ? 'Moderator' : 'Student');
+        const initialName = studentData.name || (userRole === 'admin' ? 'Admin' : 'Student');
         
         await setDoc(userRef, {
           name: initialName,
@@ -267,7 +267,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
         });
       } else {
         const currentRole = userSnap.data().role;
-        if (currentRole !== userRole && (userRole === 'admin' || userRole === 'moderator')) {
+        if (currentRole !== userRole && (userRole === 'admin')) {
           await setDoc(userRef, { role: userRole }, { merge: true });
         }
       }

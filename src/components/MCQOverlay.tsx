@@ -254,7 +254,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             onBack={() => setRoute('intro')}
             userId={user.uid}
             userName={user.name}
-            isAdmin={user.role === 'admin' || user.role === 'moderator'}
+            isAdmin={user.role === 'admin'}
           />
         )}
       </AnimatePresence>

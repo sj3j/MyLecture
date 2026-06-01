@@ -111,7 +111,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
     }
   }, [posts.length, isLoading]);
 
-  const isAdminOrModerator = (user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageAnnouncements !== false;
+  const isAdminOrModerator = (user?.role === 'admin') && user?.permissions?.manageAnnouncements !== false;
 
   const [allowedReactions, setAllowedReactions] = useState<string[]>(['👍', '❤️', '🙏', '🔥']);
   const [showReactionsConfig, setShowReactionsConfig] = useState(false);

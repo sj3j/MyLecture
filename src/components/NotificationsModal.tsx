@@ -182,7 +182,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
             });
           });
 
-          if (user.role === 'admin' || user.isMasterAdmin || user.role === 'moderator') {
+          if (user.role === 'admin' || user.isMasterAdmin) {
              const adminSysQuery = query(collection(db, 'adminAlerts'), orderBy('createdAt', 'desc'), limit(20));
              const adminSysSnap = await getDocs(adminSysQuery);
              adminSysSnap.forEach(docSnap => {
@@ -299,7 +299,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
                           <span className="break-words">{item.extraData.reason}</span>
                         </div>
                         
-                        {(user.role === 'admin' || user.isMasterAdmin || user.role === 'moderator') && (
+                        {(user.role === 'admin' || user.isMasterAdmin) && (
                           <div className="mt-4 pt-3 border-t border-slate-200 dark:border-zinc-700">
                             {item.extraData.replied ? (
                               <div className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 p-2 text-xs rounded-lg font-medium border border-emerald-100 dark:border-emerald-800/30">

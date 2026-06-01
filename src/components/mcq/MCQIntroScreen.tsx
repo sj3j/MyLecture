@@ -149,7 +149,7 @@ export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions 
           </div>
         )}
 
-        {((user?.role === 'admin' || user?.role === 'moderator') && user?.permissions?.manageStudents !== false) && (
+        {((user?.role === 'admin') && user?.permissions?.manageStudents !== false) && (
           <div className="bg-white dark:bg-zinc-800 rounded-2xl p-5 border border-slate-100 dark:border-zinc-700 shadow-sm mb-6">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4">أدوات المشرف</h2>
             
