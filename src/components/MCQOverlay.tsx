@@ -208,6 +208,7 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             onFinish={handleFinishQuiz}
             onClose={onClose}
             user={user}
+            onQuestionsUpdated={setQuestions}
           />
         )}
 
@@ -255,6 +256,13 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
             userId={user.uid}
             userName={user.name}
             isAdmin={user.role === 'admin'}
+            onQuestionsUpdated={(updated) => {
+               setBankQuizQuestions(updated);
+               setBankQuestions(prev => prev.map(q => {
+                   const u = updated.find(x => x.id === q.id);
+                   return u ? u : q;
+               }));
+            }}
           />
         )}
       </AnimatePresence>

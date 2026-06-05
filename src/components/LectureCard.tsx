@@ -136,10 +136,16 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
               </span>
             )}
             {lecture.youtubeUrl && (
-              <span className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 flex items-center gap-1">
+              <a 
+                href={lecture.youtubeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 flex items-center gap-1 hover:bg-red-200 dark:hover:bg-red-900/70 transition-colors"
+              >
                 <Youtube className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t.youtubeTag}
-              </span>
+              </a>
             )}
             {isStudied && (
               <span className="text-[9px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 flex items-center gap-1">

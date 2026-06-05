@@ -41,7 +41,7 @@ service cloud.firestore {
 
     function isMasterAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email != null && (request.auth.token.email.lower() == 'almdrydyl335@gmail.com' || request.auth.token.email.lower() == 'fenix.admin@gmail.com')) ||
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'almdrydyl335@gmail.com') ||
         ('role' in request.auth.token && request.auth.token.role == 'master_admin') ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master_admin')
       );
@@ -303,6 +303,12 @@ service cloud.firestore {
     match /userBankAnswers/{userId}/questions/{questionId} {
       allow read: if isAdmin() || isOwner(userId);
       allow write: if isOwner(userId) || isAdmin();
+    }
+    
+    match /adminLogs/{logId} {
+      allow create: if isAdmin();
+      allow read: if isMasterAdmin();
+      allow update, delete: if false;
     }
     
     match /fcm_tokens/{userId} {

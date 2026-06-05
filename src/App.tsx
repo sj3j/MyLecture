@@ -13,6 +13,7 @@ import AdminGradesScreen from './components/grades/AdminGradesScreen';
 import AdminQuestionBankScreen from './components/questionBank/AdminQuestionBankScreen';
 import StudentGradesScreen from './components/grades/StudentGradesScreen';
 import AntiCheatDashboard from './components/AntiCheatDashboard';
+import AdminLogsScreen from './components/AdminLogsScreen';
 import BottomNav, { Tab } from './components/BottomNav';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
@@ -74,6 +75,7 @@ export default function App() {
   const [showAdminGrades, setShowAdminGrades] = useState(false);
   const [showAdminBank, setShowAdminBank] = useState(false);
   const [showAntiCheat, setShowAntiCheat] = useState(false);
+  const [showAdminLogs, setShowAdminLogs] = useState(false);
   const [showStudentGrades, setShowStudentGrades] = useState(false);
 
   useEffect(() => {
@@ -138,7 +140,7 @@ export default function App() {
       if (firebaseUser) {
         const userEmail = firebaseUser.email || firebaseUser.uid;
         const tokenResult = await firebaseUser.getIdTokenResult();
-        const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+        const adminEmails = ["almdrydyl335@gmail.com"];
         const isMasterAdmin = tokenResult.claims.role === 'master_admin' || adminEmails.includes(userEmail?.toLowerCase() || '');
         
         let studentData: any = null;
@@ -543,7 +545,7 @@ export default function App() {
 
 
 
-  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || (mcqLecture !== null);
+  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || (mcqLecture !== null);
 
   return (
     <div className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-20'} font-sans transition-colors duration-300`} dir={isRtl ? 'rtl' : 'ltr'}>
@@ -616,7 +618,7 @@ export default function App() {
         <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} onMobileChatOpenChange={setIsMobileChatOpenApp} />
       )}
       {currentTab === 'profile' && (
-        <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowStreakManage={setShowStreakManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} />
+        <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowStreakManage={setShowStreakManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} setShowAdminLogs={setShowAdminLogs} />
       )}
 
       <AdminUpload 
@@ -632,6 +634,7 @@ export default function App() {
       <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} user={user} />
       <AdminQuestionBankScreen isOpen={showAdminBank} onClose={() => setShowAdminBank(false)} lang={lang} />
       <AntiCheatDashboard isOpen={showAntiCheat} onClose={() => setShowAntiCheat(false)} lang={lang} />
+      <AdminLogsScreen isOpen={showAdminLogs} onClose={() => setShowAdminLogs(false)} lang={lang} />
       <StudentGradesScreen isOpen={showStudentGrades} onClose={() => setShowStudentGrades(false)} />
       
       {showNotificationsModal && user && (

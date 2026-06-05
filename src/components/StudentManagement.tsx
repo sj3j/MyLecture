@@ -5,6 +5,7 @@ import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverT
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { hashPassword } from '../lib/hash';
+import { logAdminAction } from '../services/adminLogService';
 
 interface StudentManagementProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ interface ExamCodeMatch {
 export default function StudentManagement({ isOpen, onClose, lang, user }: StudentManagementProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
-  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com' || user?.email === 'fenix.admin@gmail.com';
+  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com';
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -278,6 +279,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       });
 
       setSuccess(isRtl ? 'تمت إضافة الطالب بنجاح' : 'Student added successfully');
+      await logAdminAction('ADD_STUDENT', `Added new student: ${emailLower}`);
       setName('');
       setEmail('');
       setPassword('');
@@ -296,6 +298,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       await updateDoc(doc(db, 'students', student.id), {
         isActive: !student.isActive
       });
+      await logAdminAction('TOGGLE_STUDENT_STATUS', `${student.isActive ? 'Deactivated' : 'Activated'} student: ${student.email}`);
       setStudents(students.map(s => s.id === student.id ? { ...s, isActive: !s.isActive } : s));
     } catch (err) {
       console.error('Error toggling student status:', err);
@@ -305,6 +308,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const handleDeleteStudent = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'students', id));
+      await logAdminAction('DELETE_STUDENT', `Deleted student record: ${id}`);
       setStudents(students.filter(s => s.id !== id));
       setDeletingId(null);
     } catch (err) {
@@ -350,6 +354,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         batch.delete(doc.ref);
       });
       await batch.commit();
+      await logAdminAction('DELETE_ALL_STUDENTS', `Batch deleted all students`);
       setStudents([]);
       setIsDeletingAll(false);
       setSuccess(isRtl ? 'تم حذف جميع الطلاب بنجاح' : 'All students deleted successfully');
@@ -400,6 +405,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       }
 
       setSuccess(isRtl ? 'تم تحديث الطالب بنجاح' : 'Student updated successfully');
+      await logAdminAction('UPDATE_STUDENT', `Updated student details: ${newEmailLower}`);
       setEditingStudent(null);
       fetchStudents();
     } catch (err: any) {
@@ -457,6 +463,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       }
 
       await batch.commit();
+      await logAdminAction('IMPORT_STUDENTS_CSV', `Imported ${count} students via CSV`);
       setSuccess(isRtl ? `تم استيراد ${count} طالب بنجاح` : `Successfully imported ${count} students`);
       fetchStudents();
     } catch (err: any) {
@@ -605,6 +612,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       }
       if (count > 0) {
         await batch.commit();
+        await logAdminAction('IMPORT_EXAM_CODES', `Imported ${count} exam codes via CSV mapping`);
         setSuccess(isRtl ? `تم الحفظ: استيراد ${count} كود بنجاح` : `Saved: Successfully imported ${count} codes`);
         fetchStudents();
       } else {

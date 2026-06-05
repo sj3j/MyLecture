@@ -137,7 +137,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       if (result.user.email) {
         const emailLower = result.user.email.toLowerCase();
         
-        const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+        const adminEmails = ["almdrydyl335@gmail.com"];
         const isMasterAdmin = adminEmails.includes(emailLower);
         
         if (isMasterAdmin) {
@@ -235,7 +235,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       const allowedDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
       
-      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com"];
       const isMasterAdmin = adminEmails.includes(emailLower);
       
       if (isMasterAdmin) {

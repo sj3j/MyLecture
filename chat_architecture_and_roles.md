@@ -26,7 +26,7 @@ The component implements strict UI-level role checks based on the `user` object.
   * Can delete **any** message in the chat.
 
 ### Master Admin
-* **Definition**: Hardcoded email whitelist: `["almdrydyl335@gmail.com", "fenix.admin@gmail.com"]`.
+* **Definition**: Hardcoded email whitelist: `["almdrydyl335@gmail.com"]`.
 * **Privileges**: 
   * Inherits all Admin/Moderator privileges.
   * **Anonymity Override**: Can click on anonymous messages to reveal the actual sender's email/ID (which is secretly stored in the document payload).

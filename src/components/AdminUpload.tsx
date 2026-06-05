@@ -5,6 +5,7 @@ import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/fi
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, Lecture, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { logAdminAction } from '../services/adminLogService';
 
 interface AdminUploadProps {
   isOpen: boolean;
@@ -225,9 +226,11 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
 
         if (lectureToEdit) {
           await updateDoc(doc(db, 'lectures', lectureToEdit.id), lectureData);
+          await logAdminAction('UPDATE_LECTURE', `Updated lecture: ${lectureData.title}`, lectureToEdit.id);
         } else {
           lectureData.createdAt = serverTimestamp();
-          await addDoc(collection(db, 'lectures'), lectureData);
+          const docRef = await addDoc(collection(db, 'lectures'), lectureData);
+          await logAdminAction('CREATE_LECTURE', `Created lecture: ${lectureData.title}`, docRef.id);
         }
       } else {
         // Multiple files creation mode
@@ -274,7 +277,8 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
             lectureData.number = null;
           }
 
-          await addDoc(collection(db, 'lectures'), lectureData);
+          const docRef = await addDoc(collection(db, 'lectures'), lectureData);
+          await logAdminAction('CREATE_LECTURE_BATCH', `Batch created lecture: ${lectureData.title}`, docRef.id);
         }
       }
 

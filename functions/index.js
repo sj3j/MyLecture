@@ -527,7 +527,7 @@ exports.confirmDegreeBatch = onCall(async (request) => {
     const userRoleDoc = await db.collection('users').doc(request.auth.uid).get();
     const role = userRoleDoc.exists ? userRoleDoc.data().role : null;
     const email = request.auth.token.email;
-    const isMasterAdmin = email === 'almdrydyl335@gmail.com' || email === 'fenix.admin@gmail.com';
+    const isMasterAdmin = email === 'almdrydyl335@gmail.com';
 
     if (!isMasterAdmin && role !== 'admin' && role !== 'moderator') {
       throw new HttpsError('permission-denied', 'Only admins can confirm batches.');
@@ -643,7 +643,7 @@ exports.migrateOriginalNames = onCall(async (request) => {
   const userRoleDoc = await db.collection('users').doc(request.auth.uid).get();
   const role = userRoleDoc.exists ? userRoleDoc.data().role : null;
   const email = request.auth.token.email;
-  const isMasterAdmin = email === 'almdrydyl335@gmail.com' || email === 'fenix.admin@gmail.com';
+  const isMasterAdmin = email === 'almdrydyl335@gmail.com';
 
   if (!isMasterAdmin && role !== 'admin') {
     throw new HttpsError('permission-denied', 'Only admins can run migration.');
@@ -693,7 +693,7 @@ exports.syncRole = onDocumentWritten({
   const uid = event.params.uid;
   const newData = event.data.after.data();
 
-  const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+  const adminEmails = ["almdrydyl335@gmail.com"];
   const email = newData.email || "";
   let role = newData.role ?? 'student';
   

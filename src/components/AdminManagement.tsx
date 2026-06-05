@@ -4,6 +4,7 @@ import { db, auth } from '../lib/firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Language, TRANSLATIONS } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { logAdminAction } from '../services/adminLogService';
 
 interface AdminManagementProps {
   isOpen: boolean;
@@ -109,6 +110,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
         createdBy: auth.currentUser?.uid
       });
 
+      await logAdminAction('CREATE_ADMIN', `Added new admin: ${email.toLowerCase()}`, email.toLowerCase());
+
       // Update users collection if doc exists
       const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase()));
       const userSnap = await getDocs(q);
@@ -141,6 +144,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
         permissions: editPermissions,
       }, { merge: true });
       
+      await logAdminAction('UPDATE_ADMIN_PERMISSIONS', `Updated permissions for admin: ${email}`, id);
+      
       // Update users collection if doc exists
       const q = query(collection(db, 'users'), where('email', '==', email));
       const userSnap = await getDocs(q);
@@ -165,6 +170,8 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const handleDeleteAdmin = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'allowed_admins', id));
+      
+      await logAdminAction('DELETE_ADMIN', `Removed admin role for: ${id}`, id);
       
       // Update users collection to revert to student
       const q = query(collection(db, 'users'), where('email', '==', id));

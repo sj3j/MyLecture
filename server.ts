@@ -97,7 +97,7 @@ async function startServer() {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+    const adminEmails = ["almdrydyl335@gmail.com"];
     if (user.email && adminEmails.includes(user.email.toLowerCase())) {
       return next();
     }
@@ -132,7 +132,7 @@ async function startServer() {
     const user = (req as any).user;
     if (!user || (!user.email)) return res.status(401).json({ error: 'Unauthorized' });
 
-    const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+    const adminEmails = ["almdrydyl335@gmail.com"];
     if (!adminEmails.includes(user.email.toLowerCase())) {
         return res.status(403).json({ error: 'Not an admin email' });
     }
@@ -202,6 +202,65 @@ async function startServer() {
     } catch (error) {
       console.error("Error generating presigned URL:", error);
       res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  // Admin Logs API
+  app.post("/api/admin-logs", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const user = (req as any).user;
+      const { action, details, targetId } = req.body;
+
+      if (!action || !details) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await db.collection('adminLogs').add({
+        adminId: user.uid,
+        adminName: user.name || user.email || 'Unknown',
+        adminEmail: user.email || 'unknown@example.com',
+        action,
+        details,
+        targetId: targetId || null,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to add admin log:", error);
+      return res.status(500).json({ error: "Failed to log action" });
+    }
+  });
+
+  app.get("/api/admin-logs", verifyAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const adminEmails = ["almdrydyl335@gmail.com"];
+      const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+      
+      if (!isMasterAdmin) {
+        return res.status(403).json({ error: "Forbidden: Requires master admin privileges" });
+      }
+
+      const limitCount = parseInt(req.query.limit as string) || 100;
+      const db = admin.firestore();
+      
+      const snapshot = await db.collection('adminLogs')
+        .orderBy('timestamp', 'desc')
+        .limit(limitCount)
+        .get();
+
+      const logs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp ? doc.data().timestamp.toMillis() : Date.now()
+      }));
+
+      return res.json({ logs });
+    } catch (error) {
+      console.error("Failed to read admin logs:", error);
+      return res.status(500).json({ error: "Failed to read logs" });
     }
   });
 
@@ -1227,7 +1286,7 @@ async function startServer() {
       const adminUser = (req as any).user;
 
       // Make sure admin is allowed
-      const adminEmails = ["almdrydyl335@gmail.com", "fenix.admin@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com"];
       if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
         return res.status(403).json({ error: "Master Admin only" });
       }

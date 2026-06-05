@@ -5,6 +5,7 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import StreakHistoryModal from './StreakHistoryModal';
+import { logAdminAction } from '../services/adminLogService';
 
 interface StreakManagementProps {
   isOpen: boolean;
@@ -148,6 +149,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
       if (res.ok && data.success) {
         const msg = isRtl ? 'تم منح دروع التجميد بنجاح' : 'Freeze tokens granted successfully';
         setSuccess(msg); window.alert(msg); setFreezeAmount(0);
+        await logAdminAction('GRANT_FREEZE', `Granted ${freezeAmount} freeze tokens to student`, userUid);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       const msg = err.message || (isRtl ? 'فشل' : 'Failed');
@@ -181,6 +183,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
       if (res.ok && data.success) {
         const msg = isRtl ? 'تم استرجاع الستريك بنجاح' : 'Streak recovered successfully';
         setSuccess(msg); window.alert(msg); setRecoveryReason('');
+        await logAdminAction('STREAK_RECOVERY', `Recovered streak to ${editStreakCount} for student ${studentEmail}`, userUid);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       const msg = err.message || (isRtl ? 'فشل' : 'Failed');
@@ -208,6 +211,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
       if (res.ok && data.success) {
         const msg = isRtl ? 'تم إصلاح التقويم بنجاح' : 'Calendar fixed successfully';
         setSuccess(msg); window.alert(msg);
+        await logAdminAction('FIX_CALENDAR', `Fixed calendar for student`, userUid);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       const msg = err.message || (isRtl ? 'فشل الإصلاح' : 'Failed to fix');
@@ -230,6 +234,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccess(isRtl ? 'تم تحديث الستريك' : 'Pending streak resolved');
+        await logAdminAction('RESOLVE_PENDING_STREAK', `Resolved pending streak via ${action}`, userUid);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       const msg = err.message || (isRtl ? 'فشل التحديث' : 'Failed to resolve');
@@ -253,6 +258,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccess(isRtl ? 'تم منح دروع التجميد بنجاح لجميع المستخدمين' : 'Global freeze tokens granted successfully');
+        await logAdminAction('GRANT_GLOBAL_FREEZE', `Granted 3 freeze tokens to all students`);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       setError(err.message || (isRtl ? 'فشل التحديث' : 'Failed'));
@@ -275,6 +281,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccess(isRtl ? 'تم إيقاف الزمن بنجاح' : 'Time frozen successfully');
+        await logAdminAction('TIME_FREEZE', `Activated global time freeze to recover recent lost streaks`);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       setError(err.message || (isRtl ? 'فشل التحديث' : 'Failed'));
@@ -284,7 +291,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     }
   };
 
-  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com' || user?.email === 'fenix.admin@gmail.com';
+  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com';
 
   const handleToggleVacation = async (enable: boolean) => {
     if (!enable) {
@@ -312,6 +319,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
         setShowVacationModal(false);
         setVacationConfirmText('');
         setSemesterName('');
+        await logAdminAction('TOGGLE_VACATION_MODE', `${enable ? `Enabled vacation mode for semester: ${semesterName}` : 'Disabled vacation mode'}`);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       setError(err.message || 'Failed');

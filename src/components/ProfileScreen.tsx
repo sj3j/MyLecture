@@ -17,10 +17,11 @@ interface ProfileScreenProps {
   setShowStreakManage?: (val: boolean) => void;
   setShowAdminGrades?: (val: boolean) => void;
   setShowStudentGrades?: (val: boolean) => void;
+  setShowAdminLogs?: (val: boolean) => void;
 }
 
 export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage,
-  setShowStreakManage, setShowAdminGrades, setShowStudentGrades }: ProfileScreenProps) {
+  setShowStreakManage, setShowAdminGrades, setShowStudentGrades, setShowAdminLogs }: ProfileScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -501,13 +502,24 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           </div>
 
           {(user?.role === 'admin' && isMasterAdminUser) && setShowAdminManage && (
-            <button
-              onClick={() => setShowAdminManage(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors mt-4"
-            >
-              <Shield className="w-5 h-5" />
-              {t.manageAdmins}
-            </button>
+            <>
+              <button
+                onClick={() => setShowAdminManage(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors mt-4"
+              >
+                <Shield className="w-5 h-5" />
+                {t.manageAdmins}
+              </button>
+              {setShowAdminLogs && (
+                <button
+                  onClick={() => setShowAdminLogs(true)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors mt-4 border border-slate-200 dark:border-zinc-700"
+                >
+                  <FileText className="w-5 h-5" />
+                  {isRtl ? 'سجل الإدارة (Master Admin)' : 'Admin Logs (Master Admin)'}
+                </button>
+              )}
+            </>
           )}
 
           {((user?.role === 'admin') && user?.permissions?.manageStudents !== false) && setShowStudentManage && (

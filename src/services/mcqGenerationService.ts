@@ -7,7 +7,7 @@ import { trackEvent } from '../lib/analytics';
 // Assuming vite env variable for Gemini
 let ai: GoogleGenAI | null = null;
 try {
-  const key = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  const key = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' && process.env ? process.env.GEMINI_API_KEY : undefined);
   if (key) {
     ai = new GoogleGenAI({ apiKey: key });
   }
@@ -94,7 +94,7 @@ async function callGeminiWithBackoff(contents: any, maxRetries = 3) {
   let attempt = 0;
   while (attempt < maxRetries) {
     if (!ai) {
-      throw new Error('الرجاء إضافة مفتاح Gemini API في الإعدادات');
+      throw new Error('الرجاء التأكد من إضافة المفتاح VITE_GEMINI_API_KEY في إعدادات البيئة (Environment Variables) على Vercel وإعادة بناء المشروع (Redeploy).');
     }
     try {
       const response = await ai.models.generateContent({

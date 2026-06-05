@@ -3,6 +3,7 @@ import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy, addDoc,
 import { db, auth } from '../lib/firebase';
 import { X, ShieldAlert, Trash2, Ban, UserX, AlertTriangle, Eye, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS, Language } from '../types';
+import { logAdminAction } from '../services/adminLogService';
 
 interface AntiCheatDashboardProps {
   isOpen: boolean;
@@ -216,6 +217,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
 
         setDialogConfig(null);
         showAlert('نجاح', 'تم إلغاء النتيجة والإرسال إشعار للطالب بنجاح.');
+        await logAdminAction('CANCEL_USER_RESULT', `Cancelled result for student in lecture ${group.lectureId}`, group.userId);
         fetchLogs();
       } catch (e: any) {
         console.error('Cancel result error:', e);
@@ -242,6 +244,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
 
         setDialogConfig(null);
         showAlert('نجاح', 'تم إيقاف الطالب عن الاختبارات وإرسال إشعار له.');
+        await logAdminAction('BAN_USER_MCQ', `Banned student from taking MCQs`, userId);
       } catch (e: any) {
         setDialogConfig(null);
         showAlert('خطأ', 'خطأ: ' + e.message);
@@ -256,6 +259,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
            await deleteDoc(doc(db, 'antiCheatLogs', log.id));
         }
         setDialogConfig(null);
+        await logAdminAction('IGNORE_CHEAT_LOG', `Ignored cheat alerts for student in lecture ${logGroup.lectureId}`, logGroup.userId);
         fetchLogs();
       } catch (e: any) {
         setDialogConfig(null);
