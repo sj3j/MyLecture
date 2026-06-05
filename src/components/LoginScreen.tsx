@@ -243,10 +243,18 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       } else if (allowedDoc.exists()) {
         userRole = allowedDoc.data().role || 'admin';
       } else {
-        const studentDoc = await getDoc(doc(db, 'students', emailLower));
-        if (studentDoc.exists()) {
-          studentData = studentDoc.data() || {};
-          userRole = studentData.role || 'student';
+        try {
+          const studentDoc = await getDoc(doc(db, 'students', emailLower));
+          if (studentDoc.exists()) {
+            studentData = studentDoc.data() || {};
+            userRole = studentData.role || 'student';
+          }
+        } catch (e: any) {
+          if (e.code === 'permission-denied') {
+            console.log("User not in students whitelist or admin collection");
+            throw new Error('غير مصرح لك بالدخول. يرجى التواصل مع الإدارة لإضافة بريدك الإلكتروني.');
+          }
+          throw e; // rethrow other errors
         }
       }
       

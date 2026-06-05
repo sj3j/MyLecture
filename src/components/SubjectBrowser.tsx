@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Lecture, Category, CATEGORIES, Language, TRANSLATIONS, LectureType, UserProfile } from '../types';
+import { Lecture, Category, CATEGORIES, Language, TRANSLATIONS, LectureType, UserProfile, LectureTab } from '../types';
 import LectureCard from './LectureCard';
 import SpotlightTooltip from './SpotlightTooltip';
+import ManageLectureTabsModal from './ManageLectureTabsModal';
+import { db } from '../lib/firebase';
+import { collection, query, getDocs } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, Loader2, SearchX, List, LayoutGrid, Grid } from 'lucide-react';
+import { BookOpen, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, Loader2, SearchX, List, LayoutGrid, Grid, Settings } from 'lucide-react';
 
 interface SubjectBrowserProps {
   lectures: Lecture[];
@@ -23,6 +26,9 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
   
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedType, setSelectedType] = useState<LectureType>('theoretical');
+  const [selectedTabId, setSelectedTabId] = useState<string | 'all'>('all');
+  const [customTabs, setCustomTabs] = useState<LectureTab[]>([]);
+  const [showTabsModal, setShowTabsModal] = useState(false);
   const [gridColumns, setGridColumns] = useState<1 | 2 | 3>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gridColumns');
@@ -36,6 +42,26 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
   useEffect(() => {
     localStorage.setItem('gridColumns', gridColumns.toString());
   }, [gridColumns]);
+
+  const fetchCustomTabs = async () => {
+    try {
+      const q = query(collection(db, 'app_settings', 'lectureTabs', 'tabs'));
+      const snap = await getDocs(q);
+      const loaded: LectureTab[] = [];
+      snap.forEach(d => {
+        loaded.push({ id: d.id, ...d.data() } as LectureTab);
+      });
+      setCustomTabs(loaded);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (!showTabsModal) {
+      fetchCustomTabs();
+    }
+  }, [showTabsModal]);
 
   // If searching, show all matching lectures regardless of category
   if (searchQuery.trim()) {
@@ -166,7 +192,14 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
 
   const currentCategoryData = CATEGORIES.find(c => c.value === selectedCategory);
   const categoryLectures = lectures.filter(l => l.category === selectedCategory);
-  const filteredLectures = categoryLectures.filter(l => l.type === selectedType);
+  let filteredLectures = categoryLectures.filter(l => l.type === selectedType);
+
+  if (selectedTabId !== 'all') {
+    const tabObj = customTabs.find(t => t.id === selectedTabId);
+    if (tabObj) {
+      filteredLectures = filteredLectures.filter(l => tabObj.lectureIds.includes(l.id));
+    }
+  }
 
   // Sort by lecture number
   filteredLectures.sort((a, b) => (a.number || 0) - (b.number || 0));
@@ -185,7 +218,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
         </h2>
       </div>
 
-      <div className="flex gap-2 mb-6 bg-slate-100 dark:bg-zinc-800/50 p-1.5 rounded-2xl">
+      <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-zinc-800/50 p-1.5 rounded-2xl">
         <button
           onClick={() => setSelectedType('theoretical')}
           className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all ${
@@ -206,6 +239,41 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
         >
           {t.practical}
         </button>
+      </div>
+
+      <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+        <button
+          onClick={() => setSelectedTabId('all')}
+          className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${
+            selectedTabId === 'all'
+              ? 'bg-sky-500 text-white shadow-sm'
+              : 'bg-white border border-slate-200 dark:bg-zinc-800 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700'
+          }`}
+        >
+          {isRtl ? 'الكل' : 'All'}
+        </button>
+        {customTabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setSelectedTabId(tab.id)}
+            className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${
+              selectedTabId === tab.id
+                ? 'bg-sky-500 text-white shadow-sm'
+                : 'bg-white border border-slate-200 dark:bg-zinc-800 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700'
+            }`}
+          >
+            {tab.name}
+          </button>
+        ))}
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => setShowTabsModal(true)}
+            className={`px-3 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-1 ${isRtl ? 'mr-auto' : 'ml-auto'} bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700`}
+          >
+            <Settings className="w-4 h-4" />
+            {isRtl ? 'إدارة' : 'Manage'}
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -271,6 +339,12 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
           </div>
         </>
       )}
+      <ManageLectureTabsModal
+        isOpen={showTabsModal}
+        onClose={() => setShowTabsModal(false)}
+        lang={lang}
+        allLectures={lectures}
+      />
     </div>
   );
 }

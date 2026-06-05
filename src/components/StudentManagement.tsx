@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download } from 'lucide-react';
+import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, GitMerge, User, Mail, Calendar, Flame, BookOpen } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
@@ -49,6 +49,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         const [matchedExamCodes, setMatchedExamCodes] = useState<ExamCodeMatch[]>([]);
   const [examCodesCsvName, setExamCodesCsvName] = useState<string>('');
   const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
+  const [mergingBaseId, setMergingBaseId] = useState<string | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
+  const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   
 
 
@@ -200,46 +203,103 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
 
 
+  const handleViewProfile = async (userUid: string) => {
+    setIsFetchingProfile(true);
+    try {
+      const userSnap = await getDoc(doc(db, 'users', userUid));
+      if (userSnap.exists()) {
+        setViewingProfile(userSnap.data() as UserProfile);
+      } else {
+        setError(isRtl ? 'لم يتم العثور على ملف تعريف الطالب' : 'Student profile not found');
+      }
+    } catch (err: any) {
+      console.error('Error fetching profile:', err);
+      setError('Error fetching profile');
+    } finally {
+      setIsFetchingProfile(false);
+    }
+  };
+
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
       const snapshot = await getDocs(collection(db, 'students'));
       const usersSnapshot = await getDocs(collection(db, 'users'));
       
-      const userMap = new Map();
+      const userMap = new Map<string, any[]>();
       usersSnapshot.docs.forEach((doc: any) => {
         const userData = doc.data();
         const userEmail = userData.email || doc.id;
         if (userEmail) {
-          userMap.set(userEmail.toLowerCase().trim(), {
+          const emailLower = userEmail.toLowerCase().trim();
+          if (!userMap.has(emailLower)) {
+            userMap.set(emailLower, []);
+          }
+          userMap.get(emailLower)!.push({
             name: userData.name,
             streakCount: userData.streakCount || 0,
             longestStreak: userData.longestStreak || 0,
             freezeTokens: userData.freezeTokens || 0,
-            userUid: doc.id
+            userUid: doc.id,
+            createdAt: userData.createdAt || null
           });
         }
       });
       
-      const studentsData = snapshot.docs.map((doc: any) => {
+      const studentsData: any[] = [];
+      snapshot.docs.forEach((doc: any) => {
         const data = doc.data();
-        const userProfile = userMap.get((data.email || doc.id).toLowerCase().trim());
-        return {
-          id: doc.id,
-          name: data.name,
-          email: data.email,
-          examCode: data.examCode || '',
-          isActive: data.isActive ?? true,
-          createdAt: data.createdAt,
-          userUid: userProfile?.userUid,
-          currentName: userProfile?.name || data.name,
-          streakCount: userProfile?.streakCount || 0,
-          longestStreak: userProfile?.longestStreak || 0,
-          freezeTokens: userProfile?.freezeTokens || 0
-        };
-      }) as unknown as Student[];
+        const emailLower = (data.email || doc.id).toLowerCase().trim();
+        const userProfiles = userMap.get(emailLower) || [];
+        
+        if (userProfiles.length === 0) {
+          studentsData.push({
+            id: doc.id,
+            name: data.name,
+            email: data.email,
+            examCode: data.examCode || '',
+            isActive: data.isActive ?? true,
+            createdAt: data.createdAt,
+            userUid: undefined,
+            currentName: data.name,
+            streakCount: 0,
+            longestStreak: 0,
+            freezeTokens: 0,
+            isAuthAccountOnly: false
+          });
+        } else {
+          userProfiles.forEach((profile: any, index: number) => {
+            studentsData.push({
+              id: index === 0 ? doc.id : `${doc.id}_dup_${index}_${profile.userUid}`,
+              baseStudentId: doc.id,
+              name: data.name,
+              email: data.email,
+              examCode: data.examCode || '',
+              isActive: data.isActive ?? true,
+              createdAt: profile.createdAt || data.createdAt,
+              userUid: profile.userUid,
+              currentName: profile.name || data.name,
+              streakCount: profile.streakCount || 0,
+              longestStreak: profile.longestStreak || 0,
+              freezeTokens: profile.freezeTokens || 0,
+              isAuthAccountOnly: index > 0,
+              hasMultiple: userProfiles.length > 1
+            });
+          });
+        }
+      });
       
-      setStudents(studentsData);
+      const uniqueStudentsMap = new Map();
+      studentsData.forEach(s => {
+        if (!uniqueStudentsMap.has(s.id)) {
+          uniqueStudentsMap.set(s.id, s);
+        } else {
+          // If a duplicate ID is somehow generated, append a timestamp to make it unique so we don't lose the record
+          const newId = `${s.id}_fallback_${Date.now()}_${Math.random()}`;
+          uniqueStudentsMap.set(newId, { ...s, id: newId });
+        }
+      });
+      setStudents(Array.from(uniqueStudentsMap.values()) as unknown as Student[]);
     } catch (err) {
       console.error('Error fetching students:', err);
     } finally {
@@ -295,11 +355,12 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleToggleActive = async (student: Student) => {
     try {
-      await updateDoc(doc(db, 'students', student.id), {
+      const targetId = student.baseStudentId || student.id;
+      await updateDoc(doc(db, 'students', targetId), {
         isActive: !student.isActive
       });
       await logAdminAction('TOGGLE_STUDENT_STATUS', `${student.isActive ? 'Deactivated' : 'Activated'} student: ${student.email}`);
-      setStudents(students.map(s => s.id === student.id ? { ...s, isActive: !s.isActive } : s));
+      setStudents(students.map(s => (s.baseStudentId || s.id) === targetId ? { ...s, isActive: !s.isActive } : s));
     } catch (err) {
       console.error('Error toggling student status:', err);
     }
@@ -307,12 +368,43 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleDeleteStudent = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'students', id));
-      await logAdminAction('DELETE_STUDENT', `Deleted student record: ${id}`);
-      setStudents(students.filter(s => s.id !== id));
+      const student = students.find(s => s.id === id);
+      if (!student) return;
+
+      if (student.isAuthAccountOnly && student.userUid) {
+        // Delete only the duplicated Auth account via backend
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`/api/admin/users/${student.userUid}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to delete Auth account');
+        }
+        await logAdminAction('DELETE_AUTH_ACCOUNT', `Deleted duplicate Auth account for: ${student.email} (${student.userUid})`);
+      } else {
+        // Delete original student list record
+        await deleteDoc(doc(db, 'students', student.baseStudentId || id));
+        if (student.userUid) {
+          // Also try to delete auth account if exists, but we can't reliably do it from client
+          const token = await auth.currentUser?.getIdToken();
+          await fetch(`/api/admin/users/${student.userUid}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          }).catch(console.error); // Ignore error if it fails
+        }
+        await logAdminAction('DELETE_STUDENT', `Deleted student record: ${student.baseStudentId || id}`);
+      }
+      
+      fetchStudents();
       setDeletingId(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting student:', err);
+      setError(err.message || (isRtl ? 'فشل حذل الطالب' : 'Failed to delete student'));
     }
   };
 
@@ -373,7 +465,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     setSuccess(null);
 
     try {
-      const oldEmail = editingStudent.id;
+      const oldEmail = editingStudent.baseStudentId || editingStudent.id;
       const newEmailLower = editEmail.toLowerCase();
       
       const updateData: any = {
@@ -392,7 +484,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         }
 
         const oldDoc = await getDoc(doc(db, 'students', oldEmail));
-        const oldData = oldDoc.data();
+        const oldData = oldDoc.data() || { createdAt: serverTimestamp() };
 
         await setDoc(doc(db, 'students', newEmailLower), {
           ...oldData,
@@ -1094,16 +1186,28 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       </thead>
                       <tbody>
                         {filteredStudents.map((student) => (
-                          <tr key={student.id} className="border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
+                          <tr key={student.id} className={`border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors ${student.isAuthAccountOnly ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
                             <td className="p-3">
-                              <div className="text-sm font-medium text-slate-900 dark:text-stone-100">{student.name}</div>
+                              <div className="text-sm font-medium text-slate-900 dark:text-stone-100 flex items-center gap-2">
+                                {student.name}
+                                {student.isAuthAccountOnly && (
+                                  <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                    {isRtl ? 'حساب إضافي' : 'Duplicate'}
+                                  </span>
+                                )}
+                              </div>
                               {student.currentName && student.currentName !== student.name && (
                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                                   {isRtl ? 'الاسم الحالي: ' : 'Current: '}{student.currentName}
                                 </div>
                               )}
                             </td>
-                            <td className="p-3 text-sm text-slate-500 dark:text-slate-400">{student.email}</td>
+                            <td className="p-3 text-sm text-slate-500 dark:text-slate-400">
+                              {student.email}
+                              {student.userUid && (
+                                <div className="text-[9px] text-slate-400 mt-0.5 break-all">ID: {student.userUid}</div>
+                              )}
+                            </td>
                             <td className="p-3 text-sm font-mono text-slate-500 dark:text-slate-400">{student.examCode}</td>
                             <td className="p-3 text-center">
                               {student.userUid ? (
@@ -1150,6 +1254,24 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-center gap-1">
+                                  {student.userUid && (
+                                    <button
+                                      onClick={() => handleViewProfile(student.userUid!)}
+                                      className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                                      title={isRtl ? 'عرض الملف الشخصي' : 'View Profile'}
+                                    >
+                                      <User className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {student.hasMultiple && (
+                                    <button
+                                      onClick={() => setMergingBaseId(student.baseStudentId || student.id)}
+                                      className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
+                                      title={isRtl ? 'دمج الحسابات' : 'Merge Accounts'}
+                                    >
+                                      <GitMerge className="w-4 h-4" />
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => {
                                       setEditingStudent(student);
@@ -1183,6 +1305,232 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               </div>
                 </div>
               )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {mergingBaseId && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-[24px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-zinc-800">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <GitMerge className="w-6 h-6 text-amber-500" />
+                {isRtl ? 'دمج الحسابات المكررة' : 'Merge Duplicate Accounts'}
+              </h2>
+              <button
+                onClick={() => setMergingBaseId(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto">
+              <p className="text-sm text-slate-600 dark:text-zinc-400 mb-6">
+                {isRtl 
+                  ? 'تم العثور على حسابات متعددة لنفس البريد الإلكتروني. اختر الحساب الأساسي الذي تريد الاحتفاظ به. سيتم حذف الحساب الآخر ودمج تقدمه (النقاط، المحاضرات، إلخ) في الحساب الأساسي الذي تم الاحتفاظ به.' 
+                  : 'Multiple accounts found for the same email. Choose the primary account to KEEP. The other will be DELETED, and its progress (scores, lectures, etc) will be merged into the kept account.'}
+              </p>
+
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-sm flex items-start gap-3 border border-red-200 dark:border-red-900/50">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <p>{error}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {students.filter(s => (s.baseStudentId || s.id) === mergingBaseId).map((acc) => (
+                  <div key={acc.id} className="border-2 border-slate-200 dark:border-zinc-700 rounded-xl p-5 flex flex-col gap-4 relative">
+                    {acc.isAuthAccountOnly ? (
+                      <span className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider`}>
+                        {isRtl ? 'حساب مصادقة إضافي' : 'Duplicate Auth Account'}
+                      </span>
+                    ) : (
+                      <span className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider`}>
+                        {isRtl ? 'ملف الطالب الأصلي' : 'Original Student List'}
+                      </span>
+                    )}
+                    
+                    <div>
+                      <div className="text-sm text-slate-500 mb-1">{isRtl ? 'البريد الإلكتروني' : 'Email'}</div>
+                      <div className="font-bold text-slate-900 dark:text-white break-all">{acc.email}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500 mb-1">{isRtl ? 'معرف المستخدم (UID)' : 'User ID (UID)'}</div>
+                      <div className="font-mono text-xs text-slate-700 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 p-2 rounded-lg break-all">
+                        {acc.userUid || (isRtl ? 'غير متوفر (لم يسجل الدخول)' : 'N/A (Never logged in)')}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-sm text-slate-500 mb-1">{isRtl ? 'الاسم الظاهر' : 'Display Name'}</div>
+                        <div className="font-medium text-slate-900 dark:text-white">{acc.currentName}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-500 mb-1">{isRtl ? 'النقاط / التسلسل' : 'Streaks'}</div>
+                        <div className="font-medium text-slate-900 dark:text-white flex items-center gap-2">
+                          <span className="text-orange-500 font-bold">{acc.streakCount || 0}</span>
+                          <span className="text-slate-300">|</span>
+                          <span className="text-slate-500 text-xs">Max: {acc.longestStreak || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-auto pt-4 border-t border-slate-100 dark:border-zinc-800 flex gap-2">
+                      <button
+                        onClick={async () => {
+                          const duplicates = students.filter(s => (s.baseStudentId || s.id) === mergingBaseId);
+                          const deleteAcc = duplicates.find(d => d.id !== acc.id);
+                          if (!deleteAcc) return;
+                          
+                          if (!acc.userUid) {
+                            setError(isRtl ? 'لا يمكنك الاحتفاظ بحساب لا يحتوي على معرف مستخدم (UID).' : 'Cannot keep an account without a User ID (UID).');
+                            return;
+                          }
+                          if (!deleteAcc.userUid) {
+                            setError(isRtl ? 'الحساب المكرر لا يحتوي على معرف مستخدم (UID)، لا فائدة من الدمج هنا.' : 'Duplicate account has no UID, nothing to merge from Auth side.');
+                            return;
+                          }
+
+                          setIsSubmitting(true);
+                          setError(null);
+                          try {
+                            const token = await auth.currentUser?.getIdToken();
+                            const res = await fetch(`/api/admin/users/merge`, {
+                              method: 'POST',
+                              headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify({ keepUid: acc.userUid, deleteUid: deleteAcc.userUid })
+                            });
+                            
+                            if (!res.ok) {
+                              const data = await res.json();
+                              throw new Error(data.error || 'Failed to merge');
+                            }
+                            
+                            await logAdminAction('MERGE_DUPLICATES', `Merged accounts for ${acc.email} (Kept: ${acc.userUid})`);
+                            setSuccess(isRtl ? 'تم دمج الحسابات بنجاح!' : 'Accounts merged successfully!');
+                            fetchStudents();
+                            setMergingBaseId(null);
+                          } catch (err: any) {
+                            console.error(err);
+                            setError(err.message || 'Error merging accounts');
+                          } finally {
+                            setIsSubmitting(false);
+                          }
+                        }}
+                        disabled={isSubmitting}
+                        className="flex-1 px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center"
+                      >
+                        {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (isRtl ? 'الاحتفاظ بهذا ودمج الآخر' : 'Keep this & Merge')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      {viewingProfile && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-[24px] shadow-2xl overflow-hidden flex flex-col"
+          >
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-zinc-800 bg-indigo-50 dark:bg-indigo-900/10">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <User className="w-6 h-6 text-indigo-500" />
+                {isRtl ? 'الملف الشخصي' : 'Student Profile'}
+              </h2>
+              <button
+                onClick={() => setViewingProfile(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-white/50 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-20 h-20 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center overflow-hidden border border-indigo-200 dark:border-indigo-800/50 flex-shrink-0">
+                  {viewingProfile.photoUrl ? (
+                    <img src={viewingProfile.photoUrl} alt={viewingProfile.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-10 h-10 text-indigo-400" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{viewingProfile.name}</h3>
+                  {viewingProfile.originalName && viewingProfile.name !== viewingProfile.originalName && (
+                    <div className="text-sm text-slate-500 dark:text-slate-400">
+                      {isRtl ? 'الاسم الأصلي:' : 'Original Name:'} {viewingProfile.originalName}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mt-1">
+                    <Mail className="w-4 h-4" />
+                    <span className="text-sm">{viewingProfile.email}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800">
+                  <div className="flex items-center gap-2 text-rose-500 mb-2">
+                    <Flame className="w-5 h-5" />
+                    <span className="font-bold">{isRtl ? 'الالتزام الحالي' : 'Current Streak'}</span>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900 dark:text-white">{viewingProfile.streakCount || 0}</div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    {isRtl ? 'أطول سلسلة:' : 'Longest:'} {viewingProfile.longestStreak || 0}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800">
+                  <div className="flex items-center gap-2 text-sky-500 mb-2">
+                    <BookOpen className="w-5 h-5" />
+                    <span className="font-bold">{isRtl ? 'الدروس المكتملة' : 'Studied'}</span>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900 dark:text-white">
+                    {(viewingProfile.studied?.length || 0)}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    {isRtl ? 'المهام الأسبوعية:' : 'Weekly Tasks:'} {(viewingProfile.completedWeeklyTasks?.length || 0)}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800 col-span-2">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'الفرقة/المجموعة' : 'Group/Year'}</span>
+                      <span className="font-bold text-slate-900 dark:text-white">{viewingProfile.group || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'كود الامتحانات' : 'Exam Code'}</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white bg-slate-200 dark:bg-zinc-700 px-2 py-0.5 rounded">{viewingProfile.examCode || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'تاريخ التسجيل' : 'Joined'}</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {(viewingProfile as any).createdAt?.toDate ? new Date((viewingProfile as any).createdAt.toDate()).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         </div>

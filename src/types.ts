@@ -1,6 +1,12 @@
 export type Category = 'pharmacology' | 'pharmacognosy' | 'organic_chemistry' | 'biochemistry' | 'cosmetics';
 export type LectureType = 'theoretical' | 'practical';
 
+export interface LectureTab {
+  id: string;
+  name: string;
+  lectureIds: string[];
+}
+
 export interface Lecture {
   id: string;
   title: string;
@@ -102,6 +108,9 @@ export interface Student {
   currentName?: string; // Appended from users collection
   streakCount?: number;
   userUid?: string;
+  baseStudentId?: string;
+  isAuthAccountOnly?: boolean;
+  hasMultiple?: boolean;
 }
 
 export interface Homework {

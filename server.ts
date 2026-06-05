@@ -692,6 +692,131 @@ async function startServer() {
     }
   });
 
+  // Admin Delete User Account Permanently
+  app.delete("/api/admin/users/:uid", verifyAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const adminEmails = ["almdrydyl335@gmail.com"];
+      const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+      
+      if (!isMasterAdmin) {
+        return res.status(403).json({ error: "Forbidden: Requires master admin privileges to delete Auth accounts" });
+      }
+
+      if (!admin.apps.length) {
+        return res.status(500).json({ error: "Firebase Admin is not configured." });
+      }
+
+      const { uid } = req.params;
+      const db = admin.firestore();
+      
+      await db.collection('users').doc(uid).delete();
+      await admin.auth().deleteUser(uid);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete user account error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin Merge User Accounts
+  app.post("/api/admin/users/merge", verifyAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const adminEmails = ["almdrydyl335@gmail.com"];
+      const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+      
+      if (!isMasterAdmin) {
+        return res.status(403).json({ error: "Forbidden: Requires master admin privileges" });
+      }
+
+      if (!admin.apps.length) {
+        return res.status(500).json({ error: "Firebase Admin is not configured." });
+      }
+
+      const { keepUid, deleteUid } = req.body;
+      if (!keepUid || !deleteUid) {
+        return res.status(400).json({ error: "keepUid and deleteUid are required" });
+      }
+
+      const db = admin.firestore();
+      
+      // Fetch both user docs
+      const keepUserRef = db.collection('users').doc(keepUid);
+      const deleteUserRef = db.collection('users').doc(deleteUid);
+      
+      const [keepUserSnap, deleteUserSnap] = await Promise.all([
+        keepUserRef.get(),
+        deleteUserRef.get()
+      ]);
+
+      if (!deleteUserSnap.exists) {
+        return res.status(404).json({ error: "Delete user not found" });
+      }
+
+      const deleteUserData = deleteUserSnap.data() || {};
+      const keepUserData = keepUserSnap.data() || {};
+
+      // Merge data
+      const updateData: any = {};
+      
+      // Arrays
+      const mergeArrays = (field: string) => {
+        const keepArr = Array.isArray(keepUserData[field]) ? keepUserData[field] : [];
+        const deleteArr = Array.isArray(deleteUserData[field]) ? deleteUserData[field] : [];
+        if (deleteArr.length > 0) {
+          updateData[field] = Array.from(new Set([...keepArr, ...deleteArr]));
+        }
+      };
+      
+      mergeArrays('studied');
+      mergeArrays('favorites');
+      mergeArrays('completedWeeklyTasks');
+      mergeArrays('favoriteLectures'); // Just in case it's named this way
+      
+      // Numbers
+      if ((deleteUserData.streakCount || 0) > (keepUserData.streakCount || 0)) {
+        updateData.streakCount = deleteUserData.streakCount;
+      }
+      if ((deleteUserData.longestStreak || 0) > (keepUserData.longestStreak || 0)) {
+        updateData.longestStreak = deleteUserData.longestStreak;
+      }
+      if ((deleteUserData.freezeTokens || 0) > (keepUserData.freezeTokens || 0)) {
+        updateData.freezeTokens = deleteUserData.freezeTokens;
+      }
+
+      // Merge user doc
+      if (Object.keys(updateData).length > 0) {
+        await keepUserRef.set(updateData, { merge: true });
+      }
+
+      // Move subcollection: streakHistory
+      const streakDocs = await deleteUserRef.collection('streakHistory').get();
+      if (!streakDocs.empty) {
+        const batch = db.batch();
+        streakDocs.forEach(doc => {
+          batch.set(keepUserRef.collection('streakHistory').doc(doc.id), doc.data(), { merge: true });
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+      }
+
+      // Delete the duplicate user from Firestore and Auth
+      await deleteUserRef.delete();
+      try {
+        await admin.auth().deleteUser(deleteUid);
+      } catch (authError: any) {
+        console.error("Auth user delete error (may not exist):", authError);
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Merge user accounts error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Check Whitelist (used by client to bypass security rules)
   app.post("/api/check-whitelist", async (req, res) => {
     if (!admin.apps.length) {

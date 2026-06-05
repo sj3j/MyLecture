@@ -552,7 +552,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {user?.role === 'student' && setShowStudentGrades && (
+          {setShowStudentGrades && (
             <button
               onClick={() => setShowStudentGrades(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors mt-4"
