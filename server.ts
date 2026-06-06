@@ -735,9 +735,12 @@ async function startServer() {
         return res.status(500).json({ error: "Firebase Admin is not configured." });
       }
 
-      const { keepUid, deleteUid } = req.body;
+      const { primaryUid, secondaryUid } = req.body;
+      const keepUid = primaryUid || req.body.keepUid;
+      const deleteUid = secondaryUid || req.body.deleteUid;
+      
       if (!keepUid || !deleteUid) {
-        return res.status(400).json({ error: "keepUid and deleteUid are required" });
+        return res.status(400).json({ error: "primaryUid and secondaryUid are required" });
       }
 
       const db = admin.firestore();
@@ -751,12 +754,8 @@ async function startServer() {
         deleteUserRef.get()
       ]);
 
-      if (!deleteUserSnap.exists) {
-        return res.status(404).json({ error: "Delete user not found" });
-      }
-
-      const deleteUserData = deleteUserSnap.data() || {};
-      const keepUserData = keepUserSnap.data() || {};
+      const deleteUserData = deleteUserSnap.exists ? deleteUserSnap.data() || {} : {};
+      const keepUserData = keepUserSnap.exists ? keepUserSnap.data() || {} : {};
 
       // Merge data
       const updateData: any = {};
@@ -794,12 +793,71 @@ async function startServer() {
       // Move subcollection: streakHistory
       const streakDocs = await deleteUserRef.collection('streakHistory').get();
       if (!streakDocs.empty) {
-        const batch = db.batch();
-        streakDocs.forEach(doc => {
-          batch.set(keepUserRef.collection('streakHistory').doc(doc.id), doc.data(), { merge: true });
-          batch.delete(doc.ref);
-        });
-        await batch.commit();
+        for (const doc of streakDocs.docs) {
+          await keepUserRef.collection('streakHistory').doc(doc.id).set(doc.data(), { merge: true });
+          await doc.ref.delete();
+        }
+      }
+
+      // Merge MCQ Stats
+      const deleteMcqStatsRef = db.collection('userMCQStats').doc(deleteUid);
+      const keepMcqStatsRef = db.collection('userMCQStats').doc(keepUid);
+      const delMcqStatsSnap = await deleteMcqStatsRef.get();
+      if (delMcqStatsSnap.exists) {
+        const keepMcqStatsSnap = await keepMcqStatsRef.get();
+        const delMcqData = delMcqStatsSnap.data() || {};
+        const mergedMcqData = keepMcqStatsSnap.exists ? keepMcqStatsSnap.data() || {} : { userId: keepUid };
+        
+        mergedMcqData.mcqLeaderboardScore = Math.max((mergedMcqData.mcqLeaderboardScore || 0), (delMcqData.mcqLeaderboardScore || 0));
+        mergedMcqData.totalFirstAttemptCorrect = Math.max((mergedMcqData.totalFirstAttemptCorrect || 0), (delMcqData.totalFirstAttemptCorrect || 0));
+        mergedMcqData.accuracy = Math.max((mergedMcqData.accuracy || 0), (delMcqData.accuracy || 0));
+        mergedMcqData.lecturesAttempted = Math.max((mergedMcqData.lecturesAttempted || 0), (delMcqData.lecturesAttempted || 0));
+        
+        if (delMcqData.subjectStats) {
+          mergedMcqData.subjectStats = mergedMcqData.subjectStats || {};
+          for (const key of Object.keys(delMcqData.subjectStats)) {
+            if (!mergedMcqData.subjectStats[key]) {
+               mergedMcqData.subjectStats[key] = delMcqData.subjectStats[key];
+            } else {
+               mergedMcqData.subjectStats[key].correct = Math.max(mergedMcqData.subjectStats[key].correct, delMcqData.subjectStats[key].correct);
+               mergedMcqData.subjectStats[key].total = Math.max(mergedMcqData.subjectStats[key].total, delMcqData.subjectStats[key].total);
+               mergedMcqData.subjectStats[key].lecturesAttempted = Math.max(mergedMcqData.subjectStats[key].lecturesAttempted, delMcqData.subjectStats[key].lecturesAttempted);
+            }
+          }
+        }
+        await keepMcqStatsRef.set(mergedMcqData, { merge: true });
+        await deleteMcqStatsRef.delete();
+      }
+
+      // Merge MCQ Answers
+      const delAnswersLecturesDocs = await db.collection('userMCQAnswers').doc(deleteUid).collection('lectures').get();
+      if (!delAnswersLecturesDocs.empty) {
+        const keepAnswersAnswersRef = db.collection('userMCQAnswers').doc(keepUid).collection('lectures');
+        for (const doc of delAnswersLecturesDocs.docs) {
+          await keepAnswersAnswersRef.doc(doc.id).set({ ...doc.data(), userId: keepUid }, { merge: true });
+          await doc.ref.delete();
+        }
+        await db.collection('userMCQAnswers').doc(deleteUid).delete();
+      }
+
+      // Move global streak_history
+      const streakHistoryDocsSnap = await db.collection('streak_history').where('userId', '==', deleteUid).get();
+      if (!streakHistoryDocsSnap.empty) {
+        for (const doc of streakHistoryDocsSnap.docs) {
+          const data = doc.data();
+          const targetDateStr = doc.id.split('_')[1]; // format is {uid}_{date}
+          if (targetDateStr) {
+             await db.collection('streak_history').doc(`${keepUid}_${targetDateStr}`).set({ ...data, userId: keepUid }, { merge: true });
+          }
+          await doc.ref.delete();
+        }
+      }
+
+      // Move pending_streak_resets
+      const pendingDeleteSnap = await db.collection('pending_streak_resets').doc(deleteUid).get();
+      if (pendingDeleteSnap.exists) {
+        await db.collection('pending_streak_resets').doc(keepUid).set(pendingDeleteSnap.data() || {}, { merge: true });
+        await pendingDeleteSnap.ref.delete();
       }
 
       // Delete the duplicate user from Firestore and Auth

@@ -94,7 +94,7 @@ const SearchableStudentSelect = ({
               const showA = s.name && s.originalName && !s.originalName.includes(s.name) && s.originalName !== s.name;
               return (
                 <div 
-                  key={s.uid}
+                  key={s.uid || s.id || `unreg-${Math.random()}`}
                   onClick={() => { onChange(s.uid); setIsOpen(false); }}
                   className={`px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors flex flex-col gap-0.5 ${value === s.uid ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-bold' : 'text-gray-700 dark:text-gray-300'}`}
                 >
