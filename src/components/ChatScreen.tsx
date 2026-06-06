@@ -2003,7 +2003,7 @@ export default function ChatScreen({
                 <div className="pt-3 border-t border-slate-200 dark:border-zinc-800">
                   <div className="mb-4 space-y-2">
                     {(settings.privateAccounts || []).map((acc, idx) => (
-                      <div key={acc.id} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center bg-white dark:bg-zinc-800 p-3 rounded-lg border border-slate-100 dark:border-zinc-700">
+                      <div key={acc.id || `acc-${idx}`} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center bg-white dark:bg-zinc-800 p-3 rounded-lg border border-slate-100 dark:border-zinc-700">
                         <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div className="text-xs font-bold text-sky-600">{acc.title}</div>
                           <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{acc.name}</div>

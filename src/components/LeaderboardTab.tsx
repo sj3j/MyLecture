@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { collection, query, orderBy, limit, getDocs, where, documentId, getCountFromServer, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile, Language } from '../types';
-import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw, Palmtree } from 'lucide-react';
+import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw, Palmtree, MoreVertical } from 'lucide-react';
 import { UserMCQStats } from '../types/mcq.types';
 import Podium from './ui/Podium';
 
@@ -17,6 +17,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
   const [streakLeaders, setStreakLeaders] = useState<UserProfile[]>([]);
   const [mcqLeaders, setMcqLeaders] = useState<(UserMCQStats & { profile?: UserProfile })[]>([]);
   const [userStreakRank, setUserStreakRank] = useState<number | null>(null);
+  const [userMcqRank, setUserMcqRank] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isVacationMode, setIsVacationMode] = useState(false);
@@ -72,17 +73,34 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             const q = query(collection(db, 'users'), orderBy('streakCount', 'desc'), limit(20));
             const snap = await getDocs(q);
             const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
-            setStreakLeaders(data);
-          }
-        }
-        if (user) {
-          const myStreak = user.streakCount || 0;
-          if (myStreak > 0) {
-            const countQ = query(collection(db, 'users'), where('streakCount', '>', myStreak));
-            const countSnap = await getCountFromServer(countQ);
-            setUserStreakRank(countSnap.data().count + 1);
-          } else {
-            setUserStreakRank(null);
+            
+            let updatedStreakLeaders = [...data];
+            const isUserInTop = updatedStreakLeaders.some(r => (r.uid || r.userId) === user?.uid);
+            
+            if (user && !vacation && !isUserInTop) {
+              const myStreak = user.streakCount || 0;
+              if (myStreak > 0) {
+                const countQ = query(collection(db, 'users'), where('streakCount', '>', myStreak));
+                const countSnap = await getCountFromServer(countQ);
+                const myRank = countSnap.data().count + 1;
+                setUserStreakRank(myRank);
+                // @ts-ignore
+                updatedStreakLeaders.push({ uid: user.uid, ...user, _actualRank: myRank });
+              } else {
+                setUserStreakRank(null);
+              }
+            } else if (user) {
+              const myStreak = user.streakCount || 0;
+              if (myStreak > 0) {
+                const countQ = query(collection(db, 'users'), where('streakCount', '>', myStreak));
+                const countSnap = await getCountFromServer(countQ);
+                setUserStreakRank(countSnap.data().count + 1);
+              } else {
+                setUserStreakRank(null);
+              }
+            }
+            
+            setStreakLeaders(updatedStreakLeaders);
           }
         }
       } else {
@@ -91,7 +109,43 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
           const snap = await getDocs(q);
           const rawData = snap.docs.map(doc => doc.data() as UserMCQStats);
           
-          const userIds = rawData.map(r => r.userId);
+          let updatedMcqLeaders = [...rawData];
+          const isUserInTop = updatedMcqLeaders.some(r => r.userId === user?.uid);
+          
+          if (user && !isUserInTop) {
+            const myMcqDoc = await getDoc(doc(db, 'userMCQStats', user.uid));
+            if (myMcqDoc.exists()) {
+              const score = myMcqDoc.data().mcqLeaderboardScore || 0;
+              if (score > 0) {
+                const countQ = query(collection(db, 'userMCQStats'), where('mcqLeaderboardScore', '>', score));
+                const countSnap = await getCountFromServer(countQ);
+                const myRank = countSnap.data().count + 1;
+                setUserMcqRank(myRank);
+                // @ts-ignore
+                updatedMcqLeaders.push({ ...myMcqDoc.data(), _actualRank: myRank });
+              } else {
+                setUserMcqRank(null);
+              }
+            } else {
+              setUserMcqRank(null);
+            }
+          } else if (user) {
+            const myMcqDoc = await getDoc(doc(db, 'userMCQStats', user.uid));
+            if (myMcqDoc.exists()) {
+              const score = myMcqDoc.data().mcqLeaderboardScore || 0;
+              if (score > 0) {
+                const countQ = query(collection(db, 'userMCQStats'), where('mcqLeaderboardScore', '>', score));
+                const countSnap = await getCountFromServer(countQ);
+                setUserMcqRank(countSnap.data().count + 1);
+              } else {
+                setUserMcqRank(null);
+              }
+            } else {
+              setUserMcqRank(null);
+            }
+          }
+
+          const userIds = updatedMcqLeaders.map(r => r.userId);
           if (userIds.length > 0) {
             const userMap = new Map<string, UserProfile>();
             
@@ -106,7 +160,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
               }
             }
             
-            const merged = rawData.map(stat => ({
+            const merged = updatedMcqLeaders.map(stat => ({
               ...stat,
               profile: userMap.get(stat.userId)
             }));
@@ -184,7 +238,10 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
               ) : null
             ) : (
               <div className="space-y-3">
-              {streakLeaders.map((leader, index) => {
+              {streakLeaders.map((leader, idx) => {
+                 const actualRank = (leader as any)._actualRank || (idx + 1);
+                 const index = actualRank - 1;
+                 const isAppendedUser = (leader as any)._actualRank && (leader as any)._actualRank > 20;
                  const isMe = user?.uid === (leader.userId || leader.uid);
                  const hideName = leader.hideNameOnLeaderboard;
                  const hidePhoto = leader.hidePhotoOnLeaderboard;
@@ -193,8 +250,13 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                const displayPhoto = hidePhoto && !isMe ? null : (leader.photoUrl || (leader as any).photoURL);
                
                return (
+                 <React.Fragment key={(leader.userId || leader.uid) || idx}>
+                   {isAppendedUser && (
+                      <div className="flex justify-center py-2">
+                        <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />
+                      </div>
+                   )}
                  <div 
-                   key={(leader.userId || leader.uid) || index}
                    className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
                      isMe 
                        ? 'bg-[#2196F3]/10 border border-[#2196F3]/30 dark:bg-[#2196F3]/20 dark:border-[#2196F3]/40' 
@@ -230,6 +292,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                      </span>
                    </div>
                  </div>
+                </React.Fragment>
                );
             })}
             </div>
@@ -247,8 +310,11 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                 <p className="text-slate-500 font-medium">{isRtl ? 'بعدك م حلّيت ولا MCQ، حل حتى ترفع تصنيفك' : 'No MCQ attempts yet, start solving to rank up'}</p>
               </div>
             ) : mcqLeaders.slice(3).map((leader, idx) => {
-              const index = idx + 3;
+              const actualRank = (leader as any)._actualRank || (idx + 4);
+              const index = actualRank - 1;
+              const isAppendedUser = (leader as any)._actualRank && (leader as any)._actualRank > 10;
               const isMe = user?.uid === leader.userId;
+
             const hideName = leader.profile?.hideNameOnLeaderboard;
             const hidePhoto = leader.profile?.hidePhotoOnLeaderboard;
             
@@ -256,8 +322,13 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             const displayPhoto = hidePhoto && !isMe ? null : (leader.profile?.photoUrl || (leader.profile as any)?.photoURL);
             
             return (
-              <div 
-                 key={leader.userId}
+              <React.Fragment key={leader.userId || idx}>
+                {isAppendedUser && (
+                   <div className="flex justify-center py-2">
+                     <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />
+                   </div>
+                )}
+                <div 
                  className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
                    isMe 
                      ? 'bg-sky-50 dark:bg-sky-900/20 border-2 border-sky-100 dark:border-sky-900/50' 
@@ -297,43 +368,13 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                   </div>
                 </div>
               </div>
+              </React.Fragment>
             );
           })}
           </div>
           </>
         )}
       </div>
-
-      {/* Sticky Bottom Rank Chip */}
-      {user && (
-         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40">
-           {activeTab === 'mcq' ? (
-             mcqLeaders.findIndex(l => l.userId === user.uid) !== -1 ? (
-               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-3">
-                 <span className="font-bold text-sm opacity-80">{isRtl ? 'مرتبتك الحالية' : 'Your Rank'}</span>
-                 <div className="w-px h-4 bg-slate-700" />
-                 <span className="font-black text-lg text-sky-400">#{mcqLeaders.findIndex(l => l.userId === user.uid) + 1}</span>
-               </div>
-             ) : (
-               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-2 text-sm font-bold">
-                 <span>{isRtl ? 'لم تقم بحل أي MCQ بعد' : 'No MCQ solved yet'}</span>
-               </div>
-             )
-           ) : (
-             userStreakRank !== null ? (
-               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-3">
-                 <span className="font-bold text-sm opacity-80">{isRtl ? 'مرتبتك الحالية' : 'Your Rank'}</span>
-                 <div className="w-px h-4 bg-slate-700" />
-                 <span className="font-black text-lg text-orange-400">#{userStreakRank}</span>
-               </div>
-             ) : (
-               <div className="bg-slate-900/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-2 text-sm font-bold">
-                 <span>{isRtl ? 'ليس لديك ستريك حالياً' : 'You have no streak yet'}</span>
-               </div>
-             )
-           )}
-         </div>
-      )}
     </div>
   );
 }

@@ -85,7 +85,7 @@ export default function Podium({ topStudents, isRtl, type }: PodiumProps) {
         </div>
       )}
 
-      {podiumOrder.map((student) => {
+      {podiumOrder.map((student, idx) => {
         const isFirst = student.place === 1;
         const isSecond = student.place === 2;
         const isThird = student.place === 3;
@@ -124,7 +124,7 @@ export default function Podium({ topStudents, isRtl, type }: PodiumProps) {
 
         return (
           <motion.div 
-            key={student.userId || student.uid}
+            key={student.userId || student.uid || idx}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: student.place * 0.1 }}

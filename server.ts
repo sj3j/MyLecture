@@ -438,6 +438,39 @@ async function startServer() {
     }
   });
 
+  // Automatically merge new Google account into old Email/Pass account
+  app.post("/api/auth/google-merge", verifyAuth, async (req, res) => {
+    try {
+      const newUid = (req as any).user.uid;
+      const email = (req as any).user.email;
+      
+      if (!email) {
+        return res.status(400).json({ error: "No email associated." });
+      }
+
+      const emailLower = email.toLowerCase();
+      const usersSnap = await admin.firestore().collection('users').where('email', '==', emailLower).get();
+      const oldUsers = usersSnap.docs.filter(d => d.id !== newUid);
+
+      if (oldUsers.length === 0) {
+        return res.json({ merged: false });
+      }
+
+      const oldUid = oldUsers[0].id; // The existing account's UID
+
+      // 1. DELETE the new Google user immediately
+      await admin.auth().deleteUser(newUid);
+
+      // 2. Generate custom token for the old user
+      const customToken = await admin.auth().createCustomToken(oldUid);
+
+      res.json({ merged: true, token: customToken });
+    } catch (error) {
+      console.error("Google merge error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Admin Create Student
   app.post("/api/admin/students", async (req, res) => {
     if (!admin.apps.length) {
@@ -793,10 +826,12 @@ async function startServer() {
       // Move subcollection: streakHistory
       const streakDocs = await deleteUserRef.collection('streakHistory').get();
       if (!streakDocs.empty) {
+        const promises: Promise<any>[] = [];
         for (const doc of streakDocs.docs) {
-          await keepUserRef.collection('streakHistory').doc(doc.id).set(doc.data(), { merge: true });
-          await doc.ref.delete();
+          promises.push(keepUserRef.collection('streakHistory').doc(doc.id).set(doc.data(), { merge: true }));
+          promises.push(doc.ref.delete());
         }
+        await Promise.all(promises);
       }
 
       // Merge MCQ Stats
@@ -833,24 +868,28 @@ async function startServer() {
       const delAnswersLecturesDocs = await db.collection('userMCQAnswers').doc(deleteUid).collection('lectures').get();
       if (!delAnswersLecturesDocs.empty) {
         const keepAnswersAnswersRef = db.collection('userMCQAnswers').doc(keepUid).collection('lectures');
+        const promises: Promise<any>[] = [];
         for (const doc of delAnswersLecturesDocs.docs) {
-          await keepAnswersAnswersRef.doc(doc.id).set({ ...doc.data(), userId: keepUid }, { merge: true });
-          await doc.ref.delete();
+          promises.push(keepAnswersAnswersRef.doc(doc.id).set({ ...doc.data(), userId: keepUid }, { merge: true }));
+          promises.push(doc.ref.delete());
         }
+        await Promise.all(promises);
         await db.collection('userMCQAnswers').doc(deleteUid).delete();
       }
 
       // Move global streak_history
       const streakHistoryDocsSnap = await db.collection('streak_history').where('userId', '==', deleteUid).get();
       if (!streakHistoryDocsSnap.empty) {
+        const promises: Promise<any>[] = [];
         for (const doc of streakHistoryDocsSnap.docs) {
           const data = doc.data();
           const targetDateStr = doc.id.split('_')[1]; // format is {uid}_{date}
           if (targetDateStr) {
-             await db.collection('streak_history').doc(`${keepUid}_${targetDateStr}`).set({ ...data, userId: keepUid }, { merge: true });
+             promises.push(db.collection('streak_history').doc(`${keepUid}_${targetDateStr}`).set({ ...data, userId: keepUid }, { merge: true }));
           }
-          await doc.ref.delete();
+          promises.push(doc.ref.delete());
         }
+        await Promise.all(promises);
       }
 
       // Move pending_streak_resets

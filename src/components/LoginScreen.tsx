@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { signInWithPopup, GoogleAuthProvider, signInWithCustomToken, UserCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { Language, TRANSLATIONS } from '../types';
 import { Loader2, GraduationCap, Mail, Lock, LogIn } from 'lucide-react';
 
@@ -131,11 +131,33 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       
-      // Check whitelist
       let userRole = 'student';
 
       if (result.user.email) {
         const emailLower = result.user.email.toLowerCase();
+        
+        // CHECK FOR EXISTING ACCOUNT
+        const q = query(collection(db, 'users'), where('email', '==', emailLower));
+        const snap = await getDocs(q);
+        const otherAccounts = snap.docs.filter(d => d.id !== result.user.uid);
+        
+        if (otherAccounts.length > 0) {
+           // We have an old account! Call backend to merge/swap and sign out of new account.
+           const idToken = await result.user.getIdToken();
+           const res = await fetch("/api/auth/google-merge", {
+             method: "POST",
+             headers: { "Authorization": `Bearer ${idToken}` }
+           });
+           
+           if (res.ok) {
+             const data = await res.json();
+             if (data.merged && data.token) {
+               await signInWithCustomToken(auth, data.token);
+               // Successfully signed into the old account
+               return; 
+             }
+           }
+        }
         
         const adminEmails = ["almdrydyl335@gmail.com"];
         const isMasterAdmin = adminEmails.includes(emailLower);
