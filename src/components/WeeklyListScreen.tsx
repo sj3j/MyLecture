@@ -80,7 +80,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       unsubscribe();
       unsubscribeSettings();
     };
-  }, [user]);
+  }, [user?.uid, user?.role, user?.group]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

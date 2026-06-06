@@ -26,7 +26,7 @@ interface ExamCodeMatch {
 export default function StudentManagement({ isOpen, onClose, lang, user }: StudentManagementProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
-  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com';
+  const isMasterAdmin = ['almdrydyl335@gmail.com', 'jempe.kn@gmail.com'].includes(user?.email?.toLowerCase() || '') || user?.role === 'master_admin';
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -241,15 +241,19 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
             longestStreak: userData.longestStreak || 0,
             freezeTokens: userData.freezeTokens || 0,
             userUid: doc.id,
-            createdAt: userData.createdAt || null
+            createdAt: userData.createdAt || null,
+            role: userData.role || 'student'
           });
         }
       });
       
       const studentsData: any[] = [];
+      const processedEmails = new Set<string>();
+      
       snapshot.docs.forEach((doc: any) => {
         const data = doc.data();
         const emailLower = (data.email || doc.id).toLowerCase().trim();
+        processedEmails.add(emailLower);
         const userProfiles = userMap.get(emailLower) || [];
         
         if (userProfiles.length === 0) {
@@ -283,8 +287,34 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               longestStreak: profile.longestStreak || 0,
               freezeTokens: profile.freezeTokens || 0,
               isAuthAccountOnly: index > 0,
-              hasMultiple: userProfiles.length > 1
+              hasMultiple: userProfiles.length > 1,
+              role: profile.role
             });
+          });
+        }
+      });
+      
+      // Add all other users (e.g. admins or master admins) not in students collection
+      userMap.forEach((profiles, email) => {
+        if (!processedEmails.has(email)) {
+          profiles.forEach((profile: any, index: number) => {
+             studentsData.push({
+                id: `auth_only_${profile.userUid}`,
+                baseStudentId: `auth_only_${profile.userUid}`,
+                name: profile.name || email,
+                email: email,
+                examCode: profile.examCode || '',
+                isActive: true, // Auth-only users don't have a status in students collection
+                createdAt: profile.createdAt || null,
+                userUid: profile.userUid,
+                currentName: profile.name || email,
+                streakCount: profile.streakCount || 0,
+                longestStreak: profile.longestStreak || 0,
+                freezeTokens: profile.freezeTokens || 0,
+                isAuthAccountOnly: true,
+                hasMultiple: profiles.length > 1,
+                role: profile.role
+             });
           });
         }
       });
@@ -384,11 +414,15 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         if (!res.ok) {
           const text = await res.text();
           let errorMsg = 'Failed to delete Auth account';
-          try {
-            const data = JSON.parse(text);
-            errorMsg = data.error || errorMsg;
-          } catch (e) {
-            errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}`;
+          if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+            errorMsg = `Server returned an HTML error page (Status ${res.status}). Server may be restarting.`;
+          } else {
+            try {
+              const data = JSON.parse(text);
+              errorMsg = data.error || errorMsg;
+            } catch (e) {
+              errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}`;
+            }
           }
           throw new Error(errorMsg);
         }
@@ -1202,6 +1236,11 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                                     {isRtl ? 'حساب إضافي' : 'Duplicate'}
                                   </span>
                                 )}
+                                {student.role && student.role !== 'student' && (
+                                  <span className="text-[9px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-1.5 py-0.5 rounded-full whitespace-nowrap capitalize">
+                                    {student.role.replace('_', ' ')}
+                                  </span>
+                                )}
                               </div>
                               {student.currentName && student.currentName !== student.name && (
                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
@@ -1232,13 +1271,16 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                             )}
                             <td className="p-3 text-center">
                               <button
-                                onClick={() => handleToggleActive(student)}
+                                onClick={() => student.isAuthAccountOnly ? null : handleToggleActive(student)}
+                                disabled={student.isAuthAccountOnly}
                                 className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
-                                  student.isActive 
-                                    ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                                    : 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+                                  student.isAuthAccountOnly 
+                                    ? 'bg-slate-100 text-slate-400 dark:bg-zinc-800 cursor-not-allowed'
+                                    : student.isActive 
+                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                                      : 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
                                 }`}
-                                title={student.isActive ? (isRtl ? 'تعطيل' : 'Deactivate') : (isRtl ? 'تفعيل' : 'Activate')}
+                                title={student.isAuthAccountOnly ? (isRtl ? 'غير متوفر لحساب إضافي' : 'Not available for duplicate accounts') : student.isActive ? (isRtl ? 'تعطيل' : 'Deactivate') : (isRtl ? 'تفعيل' : 'Activate')}
                               >
                                 {student.isActive ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                               </button>
@@ -1424,11 +1466,15 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                             if (!res.ok) {
                               const text = await res.text();
                               let errorMsg = 'Failed to merge';
-                              try {
-                                const data = JSON.parse(text);
-                                errorMsg = data.error || errorMsg;
-                              } catch (e) {
-                                errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}`;
+                              if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+                                errorMsg = `Server returned an HTML error page (Status ${res.status}). The server might be restarting or unavailable. Please reload the app and try again.`;
+                              } else {
+                                try {
+                                  const data = JSON.parse(text);
+                                  errorMsg = data.error || errorMsg;
+                                } catch (e) {
+                                  errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}`;
+                                }
                               }
                               throw new Error(errorMsg);
                             }

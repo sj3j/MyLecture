@@ -109,7 +109,7 @@ export default function HomeScreen({
     } else {
       setPendingDaysLeft(null);
     }
-  }, [user]);
+  }, [user?.uid, user?.hasPendingStreakReset]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();

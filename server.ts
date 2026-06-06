@@ -97,7 +97,7 @@ async function startServer() {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const adminEmails = ["almdrydyl335@gmail.com"];
+    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
     if (user.email && adminEmails.includes(user.email.toLowerCase())) {
       return next();
     }
@@ -132,7 +132,7 @@ async function startServer() {
     const user = (req as any).user;
     if (!user || (!user.email)) return res.status(401).json({ error: 'Unauthorized' });
 
-    const adminEmails = ["almdrydyl335@gmail.com"];
+    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
     if (!adminEmails.includes(user.email.toLowerCase())) {
         return res.status(403).json({ error: 'Not an admin email' });
     }
@@ -236,7 +236,7 @@ async function startServer() {
   app.get("/api/admin-logs", verifyAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const adminEmails = ["almdrydyl335@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
       const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
       
       if (!isMasterAdmin) {
@@ -425,8 +425,14 @@ async function startServer() {
         return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
       }
 
+      let targetUid = email.toLowerCase();
+      const usersQuery = await db.collection('users').where('email', '==', email.toLowerCase()).limit(1).get();
+      if (!usersQuery.empty) {
+        targetUid = usersQuery.docs[0].id;
+      }
+
       // Create custom token with email claim
-      const customToken = await admin.auth().createCustomToken(email.toLowerCase(), {
+      const customToken = await admin.auth().createCustomToken(targetUid, {
         email: email.toLowerCase()
       });
       
@@ -458,7 +464,7 @@ async function startServer() {
       const emailLower = email.toLowerCase();
       const db = admin.firestore();
       
-      const adminEmails = ["almdrydyl335@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
       const isMasterAdmin = adminEmails.includes(emailLower);
       
       let isAllowed = false;
@@ -481,7 +487,13 @@ async function startServer() {
         }
       }
 
-      const customToken = await admin.auth().createCustomToken(emailLower, { email: emailLower });
+      let targetUid = emailLower;
+      const usersQuery = await db.collection('users').where('email', '==', emailLower).limit(1).get();
+      if (!usersQuery.empty) {
+        targetUid = usersQuery.docs[0].id;
+      }
+
+      const customToken = await admin.auth().createCustomToken(targetUid, { email: emailLower });
       res.json({ token: customToken });
 
     } catch (error) {
@@ -748,7 +760,7 @@ async function startServer() {
   app.delete("/api/admin/users/:uid", verifyAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const adminEmails = ["almdrydyl335@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
       const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
       
       if (!isMasterAdmin) {
@@ -776,7 +788,7 @@ async function startServer() {
   app.post("/api/admin/users/merge", verifyAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const adminEmails = ["almdrydyl335@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
       const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
       
       if (!isMasterAdmin) {
@@ -1527,7 +1539,7 @@ async function startServer() {
       const adminUser = (req as any).user;
 
       // Make sure admin is allowed
-      const adminEmails = ["almdrydyl335@gmail.com"];
+      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
       if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
         return res.status(403).json({ error: "Master Admin only" });
       }

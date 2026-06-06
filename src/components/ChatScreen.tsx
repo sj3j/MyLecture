@@ -780,21 +780,6 @@ export default function ChatScreen({
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  // Presence Tracking
-  useEffect(() => {
-    if (!user) return;
-    const updatePresence = () => {
-      updateDoc(doc(db, "users", user.uid), {
-        lastActiveDate: new Date().toISOString(),
-      }).catch(() => {});
-    };
-    updatePresence();
-    const interval = setInterval(updatePresence, 60000); // Heartbeat every 1 minute
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [user]);
 
   // Fetch Total Students Count
   useEffect(() => {
@@ -1722,7 +1707,7 @@ export default function ChatScreen({
     messageElements.forEach((el) => observer.observe(el));
 
     return () => observer.disconnect();
-  }, [messages, user, db]);
+  }, [messages, user?.email, db]);
 
   return (
     <div

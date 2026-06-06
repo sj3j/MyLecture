@@ -137,6 +137,10 @@ export default function App() {
     let userUnsubscribe: (() => void) | undefined;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (userUnsubscribe) {
+        userUnsubscribe();
+      }
+
       // If we are in the middle of Google login, the user instance is the generic Google one.
       // We ignore it and wait for the custom token login to trigger onAuthStateChanged again.
       if (sessionStorage.getItem('googleLoginInProgress') === 'true') {
@@ -146,7 +150,7 @@ export default function App() {
       if (firebaseUser) {
         const userEmail = firebaseUser.email || firebaseUser.uid;
         const tokenResult = await firebaseUser.getIdTokenResult();
-        const adminEmails = ["almdrydyl335@gmail.com"];
+        const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
         const isMasterAdmin = tokenResult.claims.role === 'master_admin' || adminEmails.includes(userEmail?.toLowerCase() || '');
         
         let studentData: any = null;
@@ -221,7 +225,15 @@ export default function App() {
         }
 
         // Listen to user document
-        userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), (userDoc) => {
+        userUnsubscribe = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
+          if (!userDoc.exists() && !firebaseUser.uid.includes('@')) {
+            await signOut(auth);
+            setLoginError(isRtl ? 'يرجى إعادة تسجيل الدخول' : 'Please sign in again');
+            setUser(null);
+            setIsAuthReady(true);
+            return;
+          }
+
           if (userDoc.exists()) {
             const whitelistRole = studentData?.role === 'admin' ? studentData.role : null;
             
@@ -256,7 +268,7 @@ export default function App() {
               isMasterAdmin,
               photoUrl: userDoc.data().photoUrl || firebaseUser.photoURL || undefined,
               streakCount: userDoc.data().streakCount || 0,
-              lastActiveDate: userDoc.data().lastActiveDate || undefined,
+
               lastStreakDate: userDoc.data().lastStreakDate || undefined,
               examCode: studentData?.examCode || userDoc.data().examCode || undefined,
               group: userDoc.data().group || undefined,
@@ -427,7 +439,7 @@ export default function App() {
     // Optional polling every 60 seconds
     const interval = setInterval(checkInbox, 60000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user?.uid, user?.role]);
 
   // Announcements Listener for Notifications
   useEffect(() => {
@@ -449,7 +461,7 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
     return () => unsubscribe();
-  }, [currentTab, user]);
+  }, [currentTab, user?.uid, user?.group, user?.role]);
 
   useEffect(() => {
     if (currentTab === 'announcements') {
@@ -478,7 +490,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.group, user?.role]);
 
   const filteredLectures = React.useMemo(() => {
     let base = lectures.filter(lecture => {

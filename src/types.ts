@@ -70,7 +70,7 @@ export interface UserProfile {
   streakCount?: number;
   longestStreak?: number;
   freezeTokens?: number;
-  lastActiveDate?: string;
+
   lastStreakDate?: string;
   examCode?: string;
   group?: string;
