@@ -70,12 +70,11 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasAll(['name', 'email', 'role']) &&
-             data.name is string && data.name.size() > 0 &&
-             data.email is string && (data.email == '' || data.email.matches(".*@.*")) &&
-             data.role in ['admin', 'student'] &&
+      return (!('name' in data) || data.name is string) &&
+             (!('email' in data) || data.email is string) &&
+             (!('role' in data) || data.role in ['admin', 'student', 'master_admin']) &&
              (!('originalName' in data) || data.originalName is string) &&
-             (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.matches(".*"))) &&
+             (!('photoUrl' in data) || data.photoUrl == null || data.photoUrl is string) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
              (!('favorites' in data) || data.favorites is list) &&
              (!('studied' in data) || data.studied is list) &&
@@ -87,12 +86,6 @@ service cloud.firestore {
              (!('hasPendingStreakReset' in data) || data.hasPendingStreakReset is bool) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
-             (!('notificationPreferences' in data) || (data.notificationPreferences is map && 
-               (!('lectures' in data.notificationPreferences) || data.notificationPreferences.lectures is bool) &&
-               (!('announcements' in data.notificationPreferences) || data.notificationPreferences.announcements is bool) &&
-               (!('chat' in data.notificationPreferences) || data.notificationPreferences.chat is bool) &&
-               (!('records' in data.notificationPreferences) || data.notificationPreferences.records is bool) &&
-               (!('homeworks' in data.notificationPreferences) || data.notificationPreferences.homeworks is bool))) &&
              (!('permissions' in data) || data.permissions is map);
     }
 
@@ -146,15 +139,17 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
                     (request.resource.data.role == 'student' || 
                      (request.resource.data.role in ['admin'] && (isMasterAdmin() || (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower()))))));
-      allow update: if isMasterAdmin() || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['examCode', 'name', 'originalName'])) || (isOwner(userId) && isValidUser(request.resource.data) && (
-                      request.resource.data.role == (resource.data.role != null ? resource.data.role : 'student') ||
-                      (request.resource.data.role in ['admin'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
-                    ) && (isAdmin() || (!('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', '')))
-                      && (isAdmin() || (!('examCode' in request.resource.data) || request.resource.data.examCode == resource.data.get('examCode', '')))
-                      && request.resource.data.get('streakCount', 0) == resource.data.get('streakCount', 0)
-                      && request.resource.data.get('freezeTokens', 1) == resource.data.get('freezeTokens', 1)
-                      && request.resource.data.get('longestStreak', 0) == resource.data.get('longestStreak', 0)
-                      && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', ''));
+      allow update: if isMasterAdmin() || 
+                      (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['examCode', 'name', 'originalName'])) || 
+                      (isOwner(userId) && isValidUser(request.resource.data) && (
+                        (!('role' in request.resource.data) || request.resource.data.role == resource.data.get('role', 'student')) ||
+                        (request.resource.data.role in ['admin', 'master_admin'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
+                      ) && (!('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', ''))
+                        && (!('examCode' in request.resource.data) || request.resource.data.examCode == resource.data.get('examCode', ''))
+                        && request.resource.data.get('streakCount', 0) == resource.data.get('streakCount', 0)
+                        && request.resource.data.get('freezeTokens', 1) == resource.data.get('freezeTokens', 1)
+                        && request.resource.data.get('longestStreak', 0) == resource.data.get('longestStreak', 0)
+                        && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', ''));
     }
 
     match /streak_history/{docId} {

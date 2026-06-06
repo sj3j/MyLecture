@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, signInWithCustomToken, UserCredential } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signInWithCustomToken, UserCredential, deleteUser } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { Language, TRANSLATIONS } from '../types';
 import { Loader2, GraduationCap, Mail, Lock, LogIn } from 'lucide-react';
@@ -128,36 +128,44 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     setError(null);
     if (onClearError) onClearError();
     try {
+      sessionStorage.setItem('googleLoginInProgress', 'true');
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
+      const popupResult = await signInWithPopup(auth, provider);
+      
+      const idToken = await popupResult.user.getIdToken();
+      
+      // Immediately sign out from the Google Auth provider instance
+      await auth.signOut();
+
+      // Exchange Google token for custom token where UID = email
+      const res = await fetch("/api/google-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken })
+      });
+
+      if (!res.ok) {
+        sessionStorage.removeItem('googleLoginInProgress');
+        let errStr = "Authentication failed on backend";
+        try {
+          const errObj = await res.json();
+          if (errObj.error) errStr = errObj.error;
+        } catch (e) {}
+        throw new Error(errStr);
+      }
+
+      const { token } = await res.json();
+      
+      // We must remove the flag before signing in with custom token 
+      // so that App's onAuthStateChanged listener picks it up.
+      sessionStorage.removeItem('googleLoginInProgress');
+      // Sign in again using custom token
+      const result = await signInWithCustomToken(auth, token);
       
       let userRole = 'student';
 
-      if (result.user.email) {
-        const emailLower = result.user.email.toLowerCase();
-        
-        // CHECK FOR EXISTING ACCOUNT
-        const q = query(collection(db, 'users'), where('email', '==', emailLower));
-        const snap = await getDocs(q);
-        const otherAccounts = snap.docs.filter(d => d.id !== result.user.uid);
-        
-        if (otherAccounts.length > 0) {
-           // We have an old account! Call backend to merge/swap and sign out of new account.
-           const idToken = await result.user.getIdToken();
-           const res = await fetch("/api/auth/google-merge", {
-             method: "POST",
-             headers: { "Authorization": `Bearer ${idToken}` }
-           });
-           
-           if (res.ok) {
-             const data = await res.json();
-             if (data.merged && data.token) {
-               await signInWithCustomToken(auth, data.token);
-               // Successfully signed into the old account
-               return; 
-             }
-           }
-        }
+      if (result.user.email || popupResult.user.email) {
+        const emailLower = (result.user.email || popupResult.user.email || '').toLowerCase();
         
         const adminEmails = ["almdrydyl335@gmail.com"];
         const isMasterAdmin = adminEmails.includes(emailLower);
@@ -175,12 +183,8 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
             const studentDoc = await getDoc(doc(db, 'students', emailLower));
             if (studentDoc.exists()) {
               const data = studentDoc.data();
-              if (!data.isActive) {
-                return; // App.tsx will handle sign out
-              }
+              if (data.isActive === false) return; // shouldn't reach here since API checks it
               userRole = data.role || 'student';
-            } else {
-              return; // App.tsx will handle sign out
             }
           }
         }
@@ -192,13 +196,13 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       if (!userSnap.exists()) {
         // Create new user document
-        const initialName = result.user.displayName || (userRole === 'admin' ? 'Admin' : 'Student');
+        const initialName = popupResult.user.displayName || (userRole === 'admin' ? 'Admin' : 'Student');
         await setDoc(userRef, {
           name: initialName,
           originalName: initialName,
-          email: result.user.email,
+          email: result.user.email || popupResult.user.email,
           role: userRole,
-          photoUrl: result.user.photoURL,
+          photoUrl: popupResult.user.photoURL,
           createdAt: serverTimestamp(),
           favorites: [],
           studied: [],
@@ -221,12 +225,15 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
             setError(isRtl 
               ? 'خطأ في الشبكة. لحل المشكلة (خاصة لمستخدمي الآيفون):\n١- افتح الرابط في متصفح سفاري (Safari) أو كروم وليس من داخل التليجرام أو تطبيقات أخرى.\n٢- تأكد من صحة تاريخ ووقت الجهاز.\n٣- قم بإيقاف (Private Relay) من إعدادات الـ iCloud.\n٤- جرب شبكة إنترنت مختلفة.' 
               : 'Network error. Troubleshooting (iOS):\n1- Open directly in Safari/Chrome (not in-app browsers).\n2- Check device date/time.\n3- Disable Private Relay.\n4- Try a different network.');
+          } else if (error.code === 'auth/account-exists-with-different-credential') {
+            setError(isRtl ? 'هذا البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول باستخدام البريد الإلكتروني وكلمة المرور' : 'This email is already registered. Please sign in using your email and password.');
           } else {
             setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
           }
         }
       }
     } finally {
+      sessionStorage.removeItem('googleLoginInProgress');
       if (!externalError) {
         setIsLoading(false);
       }

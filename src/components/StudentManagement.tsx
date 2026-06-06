@@ -382,8 +382,15 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         });
         
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Failed to delete Auth account');
+          const text = await res.text();
+          let errorMsg = 'Failed to delete Auth account';
+          try {
+            const data = JSON.parse(text);
+            errorMsg = data.error || errorMsg;
+          } catch (e) {
+            errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}`;
+          }
+          throw new Error(errorMsg);
         }
         await logAdminAction('DELETE_AUTH_ACCOUNT', `Deleted duplicate Auth account for: ${student.email} (${student.userUid})`);
       } else {
@@ -877,8 +884,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedExamCodes.map((result) => (
-                        <tr key={result.rowId} className="border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
+                      {sortedExamCodes.map((result, idx) => (
+                        <tr key={`${result.rowId}-${idx}`} className="border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
                           <td className="p-3">
                             <div className="font-bold text-slate-900 dark:text-white">📄 {result.csvName}</div>
                           </td>
@@ -902,10 +909,10 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                                `}
                             >
                               <option value="">{isRtl ? 'غير متطابق (لن يتم الحفظ)' : 'No Match (will not save)'}</option>
-                              {students.filter(s => !selectedStudentIds.has(s.id) || s.id === result.matchedStudentId).map(s => {
+                              {students.filter(s => !selectedStudentIds.has(s.id) || s.id === result.matchedStudentId).map((s, idx) => {
                                 const showAlias = s.currentName && s.currentName !== s.name;
                                 return (
-                                  <option key={s.id} value={s.id}>
+                                  <option key={`${s.id}-${idx}`} value={s.id}>
                                     {s.name} {showAlias ? `(الاسم بحسابه: ${s.currentName})` : ''} - {s.email}
                                   </option>
                                 );
@@ -1185,8 +1192,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredStudents.map((student) => (
-                          <tr key={student.id} className={`border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors ${student.isAuthAccountOnly ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
+                        {filteredStudents.map((student, idx) => (
+                          <tr key={`${student.id}-${idx}`} className={`border-b border-slate-200 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors ${student.isAuthAccountOnly ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
                             <td className="p-3">
                               <div className="text-sm font-medium text-slate-900 dark:text-stone-100 flex items-center gap-2">
                                 {student.name}
@@ -1346,8 +1353,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {students.filter(s => (s.baseStudentId || s.id) === mergingBaseId).map((acc) => (
-                  <div key={acc.id} className="border-2 border-slate-200 dark:border-zinc-700 rounded-xl p-5 flex flex-col gap-4 relative">
+                {students.filter(s => (s.baseStudentId || s.id) === mergingBaseId).map((acc, idx) => (
+                  <div key={`${acc.id}-${idx}`} className="border-2 border-slate-200 dark:border-zinc-700 rounded-xl p-5 flex flex-col gap-4 relative">
                     {acc.isAuthAccountOnly ? (
                       <span className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider`}>
                         {isRtl ? 'حساب مصادقة إضافي' : 'Duplicate Auth Account'}
@@ -1415,8 +1422,15 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                             });
                             
                             if (!res.ok) {
-                              const data = await res.json();
-                              throw new Error(data.error || 'Failed to merge');
+                              const text = await res.text();
+                              let errorMsg = 'Failed to merge';
+                              try {
+                                const data = JSON.parse(text);
+                                errorMsg = data.error || errorMsg;
+                              } catch (e) {
+                                errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}`;
+                              }
+                              throw new Error(errorMsg);
                             }
                             
                             await logAdminAction('MERGE_DUPLICATES', `Merged accounts for ${acc.email} (Kept: ${acc.userUid})`);

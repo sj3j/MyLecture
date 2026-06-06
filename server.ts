@@ -438,35 +438,54 @@ async function startServer() {
     }
   });
 
-  // Automatically merge new Google account into old Email/Pass account
-  app.post("/api/auth/google-merge", verifyAuth, async (req, res) => {
+
+
+  app.post("/api/google-login", express.json(), async (req, res) => {
     try {
-      const newUid = (req as any).user.uid;
-      const email = (req as any).user.email;
-      
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ error: "Missing idToken" });
+      }
+
+      // Verify the Google ID token (Firebase ID token from the client)
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      const email = decodedToken.email;
+
       if (!email) {
-        return res.status(400).json({ error: "No email associated." });
+         return res.status(400).json({ error: "No email associated." });
       }
 
       const emailLower = email.toLowerCase();
-      const usersSnap = await admin.firestore().collection('users').where('email', '==', emailLower).get();
-      const oldUsers = usersSnap.docs.filter(d => d.id !== newUid);
+      const db = admin.firestore();
+      
+      const adminEmails = ["almdrydyl335@gmail.com"];
+      const isMasterAdmin = adminEmails.includes(emailLower);
+      
+      let isAllowed = false;
 
-      if (oldUsers.length === 0) {
-        return res.json({ merged: false });
+      if (isMasterAdmin) {
+        isAllowed = true;
+      } else {
+        const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
+        if (adminDoc.exists) {
+           isAllowed = true;
+        } else {
+           const studentDoc = await db.collection('students').doc(emailLower).get();
+           if (!studentDoc.exists) {
+              return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
+           }
+           if (studentDoc.data()?.isActive === false) {
+              return res.status(401).json({ error: "الحساب معطل" });
+           }
+           isAllowed = true;
+        }
       }
 
-      const oldUid = oldUsers[0].id; // The existing account's UID
+      const customToken = await admin.auth().createCustomToken(emailLower, { email: emailLower });
+      res.json({ token: customToken });
 
-      // 1. DELETE the new Google user immediately
-      await admin.auth().deleteUser(newUid);
-
-      // 2. Generate custom token for the old user
-      const customToken = await admin.auth().createCustomToken(oldUid);
-
-      res.json({ merged: true, token: customToken });
     } catch (error) {
-      console.error("Google merge error:", error);
+      console.error("Google login error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -854,9 +873,9 @@ async function startServer() {
             if (!mergedMcqData.subjectStats[key]) {
                mergedMcqData.subjectStats[key] = delMcqData.subjectStats[key];
             } else {
-               mergedMcqData.subjectStats[key].correct = Math.max(mergedMcqData.subjectStats[key].correct, delMcqData.subjectStats[key].correct);
-               mergedMcqData.subjectStats[key].total = Math.max(mergedMcqData.subjectStats[key].total, delMcqData.subjectStats[key].total);
-               mergedMcqData.subjectStats[key].lecturesAttempted = Math.max(mergedMcqData.subjectStats[key].lecturesAttempted, delMcqData.subjectStats[key].lecturesAttempted);
+               mergedMcqData.subjectStats[key].correct = Math.max((mergedMcqData.subjectStats[key].correct || 0), (delMcqData.subjectStats[key].correct || 0));
+               mergedMcqData.subjectStats[key].total = Math.max((mergedMcqData.subjectStats[key].total || 0), (delMcqData.subjectStats[key].total || 0));
+               mergedMcqData.subjectStats[key].lecturesAttempted = Math.max((mergedMcqData.subjectStats[key].lecturesAttempted || 0), (delMcqData.subjectStats[key].lecturesAttempted || 0));
             }
           }
         }

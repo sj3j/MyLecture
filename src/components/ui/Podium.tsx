@@ -124,7 +124,7 @@ export default function Podium({ topStudents, isRtl, type }: PodiumProps) {
 
         return (
           <motion.div 
-            key={student.userId || student.uid || idx}
+            key={`${student.userId || student.uid || 'podium'}-${idx}`}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: student.place * 0.1 }}

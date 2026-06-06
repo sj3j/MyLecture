@@ -75,7 +75,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
             
             let updatedStreakLeaders = [...data];
-            const isUserInTop = updatedStreakLeaders.some(r => (r.uid || r.userId) === user?.uid);
+            const isUserInTop = updatedStreakLeaders.some(r => ((r as any).uid || (r as any).userId) === user?.uid);
             
             if (user && !vacation && !isUserInTop) {
               const myStreak = user.streakCount || 0;
@@ -107,7 +107,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
         if (mcqLeaders.length === 0 || force) {
           const q = query(collection(db, 'userMCQStats'), orderBy('mcqLeaderboardScore', 'desc'), limit(10));
           const snap = await getDocs(q);
-          const rawData = snap.docs.map(doc => doc.data() as UserMCQStats);
+          const rawData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
           
           let updatedMcqLeaders = [...rawData];
           const isUserInTop = updatedMcqLeaders.some(r => r.userId === user?.uid);
@@ -122,7 +122,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                 const myRank = countSnap.data().count + 1;
                 setUserMcqRank(myRank);
                 // @ts-ignore
-                updatedMcqLeaders.push({ ...myMcqDoc.data(), _actualRank: myRank });
+                updatedMcqLeaders.push({ id: myMcqDoc.id, ...myMcqDoc.data(), _actualRank: myRank } as any);
               } else {
                 setUserMcqRank(null);
               }
@@ -250,7 +250,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
                const displayPhoto = hidePhoto && !isMe ? null : (leader.photoUrl || (leader as any).photoURL);
                
                return (
-                 <React.Fragment key={(leader.userId || leader.uid) || idx}>
+                 <React.Fragment key={`${leader.userId || leader.uid || 'leader'}-${idx}`}>
                    {isAppendedUser && (
                       <div className="flex justify-center py-2">
                         <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />
@@ -322,7 +322,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             const displayPhoto = hidePhoto && !isMe ? null : (leader.profile?.photoUrl || (leader.profile as any)?.photoURL);
             
             return (
-              <React.Fragment key={leader.userId || idx}>
+              <React.Fragment key={`${leader.id || leader.userId || 'mcq'}-${idx}`}>
                 {isAppendedUser && (
                    <div className="flex justify-center py-2">
                      <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />

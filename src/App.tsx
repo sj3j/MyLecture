@@ -137,6 +137,12 @@ export default function App() {
     let userUnsubscribe: (() => void) | undefined;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // If we are in the middle of Google login, the user instance is the generic Google one.
+      // We ignore it and wait for the custom token login to trigger onAuthStateChanged again.
+      if (sessionStorage.getItem('googleLoginInProgress') === 'true') {
+        return;
+      }
+
       if (firebaseUser) {
         const userEmail = firebaseUser.email || firebaseUser.uid;
         const tokenResult = await firebaseUser.getIdTokenResult();
@@ -201,8 +207,11 @@ export default function App() {
               setIsAuthReady(true);
               return;
             }
-          } catch (error) {
+          } catch (error: any) {
             console.error("Error checking student whitelist:", error);
+            if (sessionStorage.getItem('googleLoginInProgress') === 'true') {
+               return; // Ignore error during rapid sign-out for Google auth bypass
+            }
             await signOut(auth);
             setLoginError(isRtl ? 'حدث خطأ أثناء التحقق من الحساب.' : 'Error verifying account.');
             setUser(null);
