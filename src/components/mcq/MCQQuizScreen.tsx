@@ -2,12 +2,14 @@ import React, { useReducer, useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lecture } from '../../types';
 import { MCQQuestion } from '../../types/mcq.types';
-import { Check, X, ChevronUp, ArrowUp, Loader2, ShieldAlert, AlertTriangle, CheckCircle, MessageSquare } from 'lucide-react';
+import { Check, X, ChevronUp, ArrowUp, Loader2, ShieldAlert, AlertTriangle, CheckCircle, MessageSquare, Edit2, ImagePlus } from 'lucide-react';
 import { trackEvent } from '../../lib/analytics';
 import { auth, db } from '../../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { lockSingleAnswer, getLockedAnswers } from '../../services/mcqAnswerService';
 import { enableAntiScreenshot, disableAntiScreenshot } from '../../services/antiCheatService';
+import { modifyQuestionWithAI } from '../../services/mcqGenerationService';
+import MCQManualEditModal from './MCQManualEditModal';
 
 interface Props {
   onQuestionsUpdated?: (questions: any[]) => void;
@@ -140,11 +142,39 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
   const [modifyAnswerCheck, setModifyAnswerCheck] = useState(false);
   const [modifyExplanationCheck, setModifyExplanationCheck] = useState(false);
 
+  const [manualEditQuestion, setManualEditQuestion] = useState<MCQQuestion | null>(null);
+  const [isManualEditing, setIsManualEditing] = useState(false);
+
   // Derive admin
   const isAdmin = user?.role === 'admin';
 
   const [localQuestions, setLocalQuestions] = useState(questions);
   useEffect(() => { setLocalQuestions(questions) }, [questions]);
+
+  const submitManualEdit = async (updatedData: Partial<MCQQuestion>) => {
+    if (!manualEditQuestion || !isAdmin) return;
+    setIsManualEditing(true);
+    try {
+      const docRef = doc(db, 'lecture_mcqs', lecture.id);
+      const newQuestions = localQuestions.map(q => 
+        q.id === manualEditQuestion.id ? { ...q, ...updatedData } : q
+      );
+
+      await updateDoc(docRef, {
+        questions: newQuestions
+      });
+
+      setLocalQuestions(newQuestions);
+      setShowEditSuccess(true);
+      setTimeout(() => setShowEditSuccess(false), 3000);
+      setManualEditQuestion(null);
+    } catch (e) {
+      console.error(e);
+      alert('حدث خطأ أثناء التعديل');
+    } finally {
+      setIsManualEditing(false);
+    }
+  };
 
   const submitAiEdit = async () => {
     if (!editPromptQuestion || (!editPromptText.trim() && !modifyQuestionCheck && !modifyAnswerCheck && !modifyExplanationCheck) || !isAdmin) return;
@@ -371,14 +401,24 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
                   </div>
                   <div className="flex items-center gap-2">
                     {isAdmin && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setEditPromptQuestion(question); }}
-                        className="text-xs font-bold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-400 px-2 py-1 flex items-center gap-1 rounded-md transition-colors"
-                        title="تعديل بالذكاء الاصطناعي"
-                      >
-                        <MessageSquare className="w-3 h-3" />
-                        AI
-                      </button>
+                      <>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setManualEditQuestion(question); }}
+                          className="text-xs font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-300 px-2 py-1 flex items-center gap-1 rounded-md transition-colors"
+                          title="تعديل يدوي"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          تعديل
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setEditPromptQuestion(question); }}
+                          className="text-xs font-bold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-400 px-2 py-1 flex items-center gap-1 rounded-md transition-colors"
+                          title="تعديل بالذكاء الاصطناعي"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          AI
+                        </button>
+                      </>
                     )}
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleReport(question); }}
@@ -410,6 +450,12 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
                   {question.stemFormat === 'regarding' && <span className="inline-block px-1.5 py-0.5 mr-2 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-xs font-black rounded uppercase">Regarding</span>}
                   {question.stem}
                 </h3>
+
+                {question.imageUrl && (
+                  <div className="mb-5 bg-slate-50 dark:bg-zinc-800 rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700 flex justify-center p-2 isolate relative" onContextMenu={(e) => e.preventDefault()}>
+                     <img src={question.imageUrl} alt="Question Graphic" className="max-h-[300px] object-contain select-none pointer-events-none" />
+                  </div>
+                )}
 
                 {/* Choices */}
                 <div className="space-y-2">
@@ -589,6 +635,15 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
               </div>
             </motion.div>
           </div>
+        )}
+
+        {manualEditQuestion && (
+          <MCQManualEditModal
+            question={manualEditQuestion}
+            onClose={() => setManualEditQuestion(null)}
+            onSubmit={submitManualEdit}
+            isSubmitting={isManualEditing}
+          />
         )}
 
         {reportQuestion && (

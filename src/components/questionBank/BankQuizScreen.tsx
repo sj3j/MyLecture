@@ -4,6 +4,7 @@ import { Check, X, ArrowRight, CheckCircle, AlertTriangle, MessageSquare, Loader
 import { BankQuestion } from '../../types/questionBank.types';
 import { saveUserBankAnswer } from '../../services/questionBankService';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import BankQuestionManualEditModal from './BankQuestionManualEditModal';
 
 interface Props {
   onQuestionsUpdated?: (questions: any[]) => void;
@@ -27,6 +28,9 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
   const [isReporting, setIsReporting] = useState(false);
   const [showReportSuccess, setShowReportSuccess] = useState(false);
   
+  const [manualEditQuestion, setManualEditQuestion] = useState<BankQuestion | null>(null);
+  const [isManualEditing, setIsManualEditing] = useState(false);
+
   const [editPromptQuestion, setEditPromptQuestion] = useState<BankQuestion | null>(null);
   const [editPromptText, setEditPromptText] = useState('');
   const [isAiEditing, setIsAiEditing] = useState(false);
@@ -35,6 +39,27 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
   const [modifyQuestionCheck, setModifyQuestionCheck] = useState(false);
   const [modifyAnswerCheck, setModifyAnswerCheck] = useState(false);
   const [modifyExplanationCheck, setModifyExplanationCheck] = useState(false);
+
+  const submitManualEdit = async (updatedData: Partial<BankQuestion>) => {
+    if (!manualEditQuestion || !isAdmin) return;
+    setIsManualEditing(true);
+    try {
+      const { editBankQuestion } = await import('../../services/questionBankService');
+      await editBankQuestion(manualEditQuestion.id, updatedData);
+      
+      const newQuestions = questions.map(q => q.id === manualEditQuestion.id ? { ...q, ...updatedData } : q);
+      setQuestions(newQuestions);
+      if (onQuestionsUpdated) onQuestionsUpdated(newQuestions);
+      setManualEditQuestion(null);
+      setShowEditSuccess(true);
+      setTimeout(() => setShowEditSuccess(false), 3000);
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل التعديل اليدوي: ' + e.message);
+    } finally {
+      setIsManualEditing(false);
+    }
+  };
 
   const submitAiEdit = async () => {
     if (!editPromptQuestion || (!editPromptText.trim() && !modifyQuestionCheck && !modifyAnswerCheck && !modifyExplanationCheck) || !isAdmin) return;
@@ -65,11 +90,10 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
       const newQuestionData = await modifyQuestionWithAI(editPromptQuestion, finalPrompt, pdfUrl);
       await editBankQuestion(editPromptQuestion.id, newQuestionData);
       
-      setQuestions(prev => {
-        const next = prev.map(q => q.id === editPromptQuestion.id ? { ...q, ...newQuestionData } : q);
-        if (onQuestionsUpdated) onQuestionsUpdated(next);
-        return next;
-      });
+      const newQuestions = questions.map(q => q.id === editPromptQuestion.id ? { ...q, ...newQuestionData } : q);
+      setQuestions(newQuestions);
+      if (onQuestionsUpdated) onQuestionsUpdated(newQuestions);
+      
       setEditPromptQuestion(null);
       setEditPromptText('');
       setShowEditSuccess(true);
@@ -178,14 +202,23 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
             <div key={q.id} className="bg-white dark:bg-zinc-800 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-zinc-700 relative group">
               <div className="absolute top-4 left-4 flex items-center gap-1">
                 {isAdmin && (
-                  <button 
-                    onClick={() => setEditPromptQuestion(q)} 
-                    className="p-1.5 text-slate-300 hover:text-sky-500 hover:bg-sky-50 dark:text-zinc-500 dark:hover:text-sky-400 dark:hover:bg-sky-900/30 rounded-lg transition-colors flex items-center gap-1"
-                    title="تعديل بالذكاء الاصطناعي"
-                  >
-                    <MessageSquare className="w-4 h-4" />
-                    <span className="text-[10px] font-bold">AI</span>
-                  </button>
+                  <>
+                    <button 
+                      onClick={() => setManualEditQuestion(q)} 
+                      className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 dark:text-zinc-500 dark:hover:text-slate-300 dark:hover:bg-zinc-700/50 rounded-lg transition-colors flex items-center gap-1"
+                      title="تعديل يدوي"
+                    >
+                      <span className="text-[10px] font-bold">تعديل</span>
+                    </button>
+                    <button 
+                      onClick={() => setEditPromptQuestion(q)} 
+                      className="p-1.5 text-slate-300 hover:text-sky-500 hover:bg-sky-50 dark:text-zinc-500 dark:hover:text-sky-400 dark:hover:bg-sky-900/30 rounded-lg transition-colors flex items-center gap-1"
+                      title="تعديل بالذكاء الاصطناعي"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span className="text-[10px] font-bold">AI</span>
+                    </button>
+                  </>
                 )}
                 <button 
                   onClick={() => handleReport(q)} 
@@ -224,6 +257,12 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
               
               <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 select-none" dir="auto">{q.stem}</h3>
               
+              {q.imageUrl && (
+                <div className="mb-5 bg-slate-50 dark:bg-zinc-800 rounded-xl overflow-hidden border border-slate-100 dark:border-zinc-700 flex justify-center p-2 isolate relative" onContextMenu={(e) => e.preventDefault()}>
+                   <img src={q.imageUrl} alt="Question Graphic" className="max-h-[300px] object-contain select-none pointer-events-none" />
+                </div>
+              )}
+
               <div className="space-y-2">
                 {q.choices.map((c, i) => {
                   let btnClass = "w-full text-right p-4 rounded-2xl font-bold transition-all border-2 ";
@@ -297,6 +336,15 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
         cancelText="العودة للاختبار"
         isDestructive={false}
       />
+
+      {manualEditQuestion && (
+        <BankQuestionManualEditModal
+          question={manualEditQuestion}
+          onClose={() => setManualEditQuestion(null)}
+          onSubmit={submitManualEdit}
+          isSubmitting={isManualEditing}
+        />
+      )}
 
       {editPromptQuestion && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">

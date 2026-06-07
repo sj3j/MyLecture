@@ -18,6 +18,7 @@ export interface MCQQuestion {
   difficulty: MCQDifficulty;
   addedBy: 'ai' | 'admin';
   createdAt: any; // Firestore Timestamp
+  imageUrl?: string; // Optional image (e.g., structure)
 }
 
 export interface LectureMCQSets {

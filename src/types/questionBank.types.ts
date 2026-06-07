@@ -29,6 +29,7 @@ export interface BankQuestion {
   correctAnswer: string;
   explanation: string;
   difficulty: Difficulty;
+  imageUrl?: string;
   
   // Meta
   addedBy: string;
