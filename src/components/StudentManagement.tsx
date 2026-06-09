@@ -26,7 +26,7 @@ interface ExamCodeMatch {
 export default function StudentManagement({ isOpen, onClose, lang, user }: StudentManagementProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
-  const isMasterAdmin = ['almdrydyl335@gmail.com', 'jempe.kn@gmail.com'].includes(user?.email?.toLowerCase() || '') || user?.role === 'master_admin';
+  const isMasterAdmin = ['almdrydyl335@gmail.com', 'jempe.kn@gmail.com'].includes(user?.email?.toLowerCase() || '') || user?.isMasterAdmin;
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');

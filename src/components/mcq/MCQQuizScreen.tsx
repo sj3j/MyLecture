@@ -151,6 +151,30 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
   const [localQuestions, setLocalQuestions] = useState(questions);
   useEffect(() => { setLocalQuestions(questions) }, [questions]);
 
+  const [isDeletingManual, setIsDeletingManual] = useState(false);
+
+  const deleteManualQuestion = async () => {
+    if (!manualEditQuestion || !isAdmin) return;
+    setIsDeletingManual(true);
+    try {
+      const docRef = doc(db, 'lecture_mcqs', lecture.id);
+      const newQuestions = localQuestions.filter(q => q.id !== manualEditQuestion.id);
+
+      await updateDoc(docRef, {
+        questions: newQuestions
+      });
+
+      setLocalQuestions(newQuestions);
+      if (onQuestionsUpdated) onQuestionsUpdated(newQuestions);
+      setManualEditQuestion(null);
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل الحذف: ' + e.message);
+    } finally {
+      setIsDeletingManual(false);
+    }
+  };
+
   const submitManualEdit = async (updatedData: Partial<MCQQuestion>) => {
     if (!manualEditQuestion || !isAdmin) return;
     setIsManualEditing(true);
@@ -163,6 +187,24 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
       await updateDoc(docRef, {
         questions: newQuestions
       });
+
+      try {
+        const questionText = updatedData.stem || manualEditQuestion.stem;
+        let announcementText = `نعتذر عن الخطأ الذي ورد مسبقاً.
+تم تصحيح السؤال في محاضرة "${lecture.title}":
+
+${questionText}`;
+
+        await addDoc(collection(db, 'announcements'), {
+          type: 'announcement',
+          text: announcementText,
+          authorName: user?.name || user?.originalName || 'Admin',
+          createdAt: serverTimestamp(),
+          date: Date.now()
+        });
+      } catch (announcementErr) {
+        console.error("Failed to post announcement", announcementErr);
+      }
 
       setLocalQuestions(newQuestions);
       setShowEditSuccess(true);
@@ -643,6 +685,8 @@ export default function MCQQuizScreen({ lecture, questions, onFinish, onClose, u
             onClose={() => setManualEditQuestion(null)}
             onSubmit={submitManualEdit}
             isSubmitting={isManualEditing}
+            onDelete={deleteManualQuestion}
+            isDeleting={isDeletingManual}
           />
         )}
 

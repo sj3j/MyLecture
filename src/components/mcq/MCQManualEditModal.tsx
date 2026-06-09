@@ -1,25 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { MCQQuestion, MCQChoice, MCQDifficulty, MCQStemFormat } from '../../types/mcq.types';
-import { X, Loader2, ImagePlus } from 'lucide-react';
+import { X, Loader2, ImagePlus, Trash } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { uploadBytes, getDownloadURL, ref } from 'firebase/storage';
 import { storage } from '../../lib/firebase';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 interface Props {
   question: MCQQuestion;
   onClose: () => void;
   onSubmit: (updated: Partial<MCQQuestion>) => Promise<void>;
   isSubmitting: boolean;
+  onDelete?: () => Promise<void>;
+  isDeleting?: boolean;
 }
 
-export default function MCQManualEditModal({ question, onClose, onSubmit, isSubmitting }: Props) {
+export default function MCQManualEditModal({ question, onClose, onSubmit, isSubmitting, onDelete, isDeleting }: Props) {
   const [stem, setStem] = useState(question.stem);
   const [stemFormat, setStemFormat] = useState<MCQStemFormat>(question.stemFormat);
   const [explanation, setExplanation] = useState(question.explanation);
   const [difficulty, setDifficulty] = useState<MCQDifficulty>(question.difficulty);
   const [correctAnswer, setCorrectAnswer] = useState(question.correctAnswer);
   
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+
   // MCQ specific
   const [choices, setChoices] = useState<MCQChoice[]>(question.type === 'mcq' ? [...question.choices] : [
     { label: 'A', text: '' },
@@ -28,6 +33,26 @@ export default function MCQManualEditModal({ question, onClose, onSubmit, isSubm
     { label: 'D', text: '' },
     { label: 'E', text: '' }
   ]);
+
+  const addChoice = () => {
+    const nextLabel = String.fromCharCode(65 + choices.length); // A, B, C...
+    setChoices([...choices, { label: nextLabel, text: '' }]);
+  };
+
+  const removeChoice = (indexToRemove: number) => {
+    if (choices.length <= 2) {
+      alert("يجب أن يحتوي السؤال على خيارين على الأقل");
+      return;
+    }
+    const newChoices = choices
+      .filter((_, i) => i !== indexToRemove)
+      .map((c, i) => ({ ...c, label: String.fromCharCode(65 + i) })); // Re-assign labels A, B, C...
+    const removedChoiceLabel = choices[indexToRemove].label;
+    if (correctAnswer === removedChoiceLabel) {
+      setCorrectAnswer(newChoices[0].label);
+    }
+    setChoices(newChoices);
+  };
 
   const [imageUrl, setImageUrl] = useState(question.imageUrl || '');
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -151,9 +176,18 @@ export default function MCQManualEditModal({ question, onClose, onSubmit, isSubm
 
           {question.type === 'mcq' && (
              <div className="space-y-4">
-               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">الخيارات</label>
+               <div className="flex items-center justify-between mb-2">
+                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">الخيارات</label>
+                 <button 
+                   onClick={addChoice} 
+                   type="button" 
+                   className="text-sm font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 flex items-center gap-1"
+                 >
+                   <span className="text-xl">+</span> إضافة خيار
+                 </button>
+               </div>
                {choices.map((c, i) => (
-                 <div key={c.label} className="flex gap-2">
+                 <div key={c.label} className="flex gap-2 relative group">
                     <div className="flex-shrink-0 w-10 flex flex-col justify-center items-center">
                        <span className="font-bold text-slate-600 dark:text-slate-400 mb-1">{c.label}</span>
                        <input 
@@ -176,6 +210,16 @@ export default function MCQManualEditModal({ question, onClose, onSubmit, isSubm
                       dir="auto"
                       placeholder={`خيار ${c.label}`}
                     />
+                    {choices.length > 2 && (
+                      <button 
+                        type="button" 
+                        onClick={() => removeChoice(i)} 
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex-shrink-0 self-center"
+                        title="حذف الخيار"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
                  </div>
                ))}
                <p className="text-xs text-slate-500 mt-1">* تأكد من تحديد الجواب الصحيح باستخدام زر الاختيار (Radio)</p>
@@ -220,17 +264,28 @@ export default function MCQManualEditModal({ question, onClose, onSubmit, isSubm
           </div>
 
           <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-zinc-800">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => setShowConfirmDelete(true)}
+                disabled={isSubmitting || isDeleting}
+                className="py-3 px-4 rounded-xl font-bold bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 transition-colors flex items-center justify-center"
+                title="حذف السؤال"
+              >
+                {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash className="w-5 h-5" />}
+              </button>
+            )}
             <button 
               type="button"
               onClick={onClose}
               className="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-100 dark:bg-zinc-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isDeleting}
             >
               إلغاء
             </button>
             <button 
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isDeleting}
               className="flex-1 py-3 px-4 rounded-xl font-bold bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
               {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'حفظ التعديلات'}
@@ -238,6 +293,19 @@ export default function MCQManualEditModal({ question, onClose, onSubmit, isSubm
           </div>
         </form>
       </motion.div>
+
+      <ConfirmModal
+        isOpen={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        onConfirm={() => {
+          if (onDelete) onDelete();
+        }}
+        title="تأكيد الحذف"
+        message="هل أنت متأكد من رغبتك في حذف هذا السؤال نهائياً؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmText="حذف نهائي"
+        cancelText="إلغاء التراجع"
+        isDestructive={true}
+      />
     </div>
   );
 }

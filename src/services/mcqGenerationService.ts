@@ -82,7 +82,19 @@ function extractJson(text: string): any {
   try {
     return JSON.parse(text);
   } catch (e) {
-    const match = text.match(/\{[\s\S]*\}/);
+    const mdMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (mdMatch) {
+      try {
+        return JSON.parse(mdMatch[1]);
+      } catch (err) {} // ignore and try fallback
+    }
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    let isArray = false;
+    if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+      isArray = true;
+    }
+    const match = isArray ? text.match(/\[[\s\S]*\]/) : text.match(/\{[\s\S]*\}/);
     if (match) {
       return JSON.parse(match[0]);
     }
@@ -223,16 +235,14 @@ export async function extractMCQsFromPDFFile(base64Data: string, prompt: string)
   console.log("Raw Gemini JSON response:", responseText);
   let extractedData;
   try {
-    extractedData = JSON.parse(responseText);
+    extractedData = extractJson(responseText);
   } catch (e) {
-    const match = responseText.match(/\{[\s\S]*\}/);
-    if (match) {
-      extractedData = JSON.parse(match[0]);
-    } else {
-      throw new Error('فشل تحليل البيانات المستخرجة');
-    }
+    throw new Error('فشل تحليل البيانات المستخرجة');
   }
 
+  if (Array.isArray(extractedData)) {
+    return extractedData;
+  }
   return extractedData.questions || [];
 }
 
@@ -402,7 +412,7 @@ async function doGenerateMCQsForLecture(lectureId: string, subjectId: string, pd
     
     try {
       const extracted = extractJson(responseText);
-      parsedQuestions = extracted.questions || [];
+      parsedQuestions = Array.isArray(extracted) ? extracted : (extracted.questions || []);
       
       // Auto-assign IDs to questions
       parsedQuestions = parsedQuestions.map((q: any, index: number) => ({

@@ -283,6 +283,61 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+app.post("/api/google-login", async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ error: "Missing idToken" });
+    }
+
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const email = decodedToken.email;
+
+    if (!email) {
+       return res.status(400).json({ error: "No email associated." });
+    }
+
+    const emailLower = email.toLowerCase();
+    const db = admin.firestore();
+    
+    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+    const isMasterAdmin = adminEmails.includes(emailLower);
+    
+    let isAllowed = false;
+
+    if (isMasterAdmin) {
+      isAllowed = true;
+    } else {
+      const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
+      if (adminDoc.exists) {
+         isAllowed = true;
+      } else {
+         const studentDoc = await db.collection('students').doc(emailLower).get();
+         if (!studentDoc.exists) {
+            return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
+         }
+         if (studentDoc.data()?.isActive === false) {
+            return res.status(401).json({ error: "الحساب معطل" });
+         }
+         isAllowed = true;
+      }
+    }
+
+    let targetUid = decodedToken.uid;
+    const usersQuery = await db.collection('users').where('email', '==', emailLower).limit(1).get();
+    if (!usersQuery.empty) {
+      targetUid = usersQuery.docs[0].id;
+    }
+
+    const customToken = await admin.auth().createCustomToken(targetUid, { email: emailLower });
+    res.json({ token: customToken });
+
+  } catch (error) {
+    console.error("Google login error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Admin Create Student
 app.post("/api/admin/students", async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });

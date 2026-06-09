@@ -487,7 +487,7 @@ async function startServer() {
         }
       }
 
-      let targetUid = emailLower;
+      let targetUid = decodedToken.uid;
       const usersQuery = await db.collection('users').where('email', '==', emailLower).limit(1).get();
       if (!usersQuery.empty) {
         targetUid = usersQuery.docs[0].id;

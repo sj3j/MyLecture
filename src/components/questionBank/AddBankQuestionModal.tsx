@@ -39,6 +39,29 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
   ]);
   const [correctAnswerIndex, setCorrectAnswerIndex] = useState<number>(0);
   const [explanation, setExplanation] = useState<string>('');
+
+  const addChoice = () => {
+    const nextLabel = String.fromCharCode(65 + choices.length); // A, B, C...
+    setChoices([...choices, { label: nextLabel, text: '' }]);
+  };
+
+  const removeChoice = (indexToRemove: number) => {
+    if (choices.length <= 2) {
+      alert("يجب أن يحتوي السؤال على خيارين على الأقل");
+      return;
+    }
+    const newChoices = choices
+      .filter((_, i) => i !== indexToRemove)
+      .map((c, i) => ({ ...c, label: String.fromCharCode(65 + i) })); // Re-assign labels A, B, C...
+    setChoices(newChoices);
+    
+    // adjust correct answer index if needed
+    if (correctAnswerIndex === indexToRemove) {
+      setCorrectAnswerIndex(0);
+    } else if (correctAnswerIndex > indexToRemove) {
+      setCorrectAnswerIndex(correctAnswerIndex - 1);
+    }
+  };
   
   const [lectures, setLectures] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -335,18 +358,27 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
           {/* Choices */}
           {type === 'mcq' && (
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">الخيارات & الإجابة الصحيحة</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">الخيارات & الإجابة الصحيحة</label>
+                <button 
+                  onClick={addChoice} 
+                  type="button" 
+                  className="text-sm font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 flex items-center gap-1"
+                >
+                  <span className="text-xl">+</span> إضافة خيار
+                </button>
+              </div>
               <div className="space-y-3">
                 {choices.map((c, idx) => (
-                  <div key={idx} className="flex gap-2 items-center">
+                  <div key={idx} className="flex gap-2 items-center relative group">
                     <input 
                       type="radio" 
                       name="correctChoice" 
                       checked={correctAnswerIndex === idx}
                       onChange={() => setCorrectAnswerIndex(idx)}
-                      className="w-5 h-5"
+                      className="w-5 h-5 flex-shrink-0"
                     />
-                    <span className="font-bold w-6">{c.label}</span>
+                    <span className="font-bold w-6 flex-shrink-0 text-center">{c.label}</span>
                     <input 
                       type="text" 
                       value={c.text} 
@@ -355,6 +387,16 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
                       dir="ltr"
                       className="flex-1 p-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800"
                     />
+                    {choices.length > 2 && (
+                      <button 
+                        type="button" 
+                        onClick={() => removeChoice(idx)} 
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex-shrink-0"
+                        title="حذف الخيار"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

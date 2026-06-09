@@ -40,6 +40,27 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
   const [modifyAnswerCheck, setModifyAnswerCheck] = useState(false);
   const [modifyExplanationCheck, setModifyExplanationCheck] = useState(false);
 
+  const [isDeletingManual, setIsDeletingManual] = useState(false);
+
+  const deleteManualQuestion = async () => {
+    if (!manualEditQuestion || !isAdmin) return;
+    setIsDeletingManual(true);
+    try {
+      const { softDeleteBankQuestion } = await import('../../services/questionBankService');
+      await softDeleteBankQuestion(manualEditQuestion.id);
+      
+      const newQuestions = questions.filter(q => q.id !== manualEditQuestion.id);
+      setQuestions(newQuestions);
+      if (onQuestionsUpdated) onQuestionsUpdated(newQuestions);
+      setManualEditQuestion(null);
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل الحذف: ' + e.message);
+    } finally {
+      setIsDeletingManual(false);
+    }
+  };
+
   const submitManualEdit = async (updatedData: Partial<BankQuestion>) => {
     if (!manualEditQuestion || !isAdmin) return;
     setIsManualEditing(true);
@@ -50,6 +71,35 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
       const newQuestions = questions.map(q => q.id === manualEditQuestion.id ? { ...q, ...updatedData } : q);
       setQuestions(newQuestions);
       if (onQuestionsUpdated) onQuestionsUpdated(newQuestions);
+
+      try {
+        const { getDoc, doc, addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        let lectureTitle = 'محاضرة';
+        if (manualEditQuestion.lectureId) {
+          const lectureDoc = await getDoc(doc(db, 'lectures', manualEditQuestion.lectureId));
+          if (lectureDoc.exists()) {
+            lectureTitle = lectureDoc.data().title || lectureTitle;
+          }
+        }
+
+        const questionText = updatedData.stem || manualEditQuestion.stem;
+        let announcementText = `نعتذر عن الخطأ الذي ورد مسبقاً.
+تم تصحيح السؤال في "${lectureTitle}":
+
+${questionText}`;
+
+        await addDoc(collection(db, 'announcements'), {
+          type: 'announcement',
+          text: announcementText,
+          authorName: userName || 'Admin',
+          createdAt: serverTimestamp(),
+          date: Date.now()
+        });
+      } catch (announcementErr) {
+        console.error("Failed to post announcement", announcementErr);
+      }
+
       setManualEditQuestion(null);
       setShowEditSuccess(true);
       setTimeout(() => setShowEditSuccess(false), 3000);
@@ -343,6 +393,8 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
           onClose={() => setManualEditQuestion(null)}
           onSubmit={submitManualEdit}
           isSubmitting={isManualEditing}
+          onDelete={deleteManualQuestion}
+          isDeleting={isDeletingManual}
         />
       )}
 

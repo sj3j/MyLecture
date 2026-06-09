@@ -228,7 +228,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           } else if (error.code === 'auth/account-exists-with-different-credential') {
             setError(isRtl ? 'هذا البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول باستخدام البريد الإلكتروني وكلمة المرور' : 'This email is already registered. Please sign in using your email and password.');
           } else {
-            setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Error signing in');
+            setError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول: ' + errorMsg : 'Error signing in: ' + errorMsg);
           }
         }
       }
