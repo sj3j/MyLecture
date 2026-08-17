@@ -95,6 +95,7 @@ export interface UserProfile {
   memberSince?: any;
   hideNameOnLeaderboard?: boolean;
   hidePhotoOnLeaderboard?: boolean;
+  subgroup?: string;
 }
 
 export interface Student {
@@ -111,6 +112,8 @@ export interface Student {
   baseStudentId?: string;
   isAuthAccountOnly?: boolean;
   hasMultiple?: boolean;
+  group?: string;
+  subgroup?: string;
 }
 
 export interface Homework {

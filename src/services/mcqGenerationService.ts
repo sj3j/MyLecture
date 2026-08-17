@@ -111,8 +111,10 @@ async function callGeminiWithBackoff(contents: any, maxRetries = 3) {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
-        contents,
-        config: { responseMimeType: 'application/json' }
+        contents: contents,
+        config: {
+          responseMimeType: 'application/json',
+        }
       });
       return response;
     } catch (error: any) {

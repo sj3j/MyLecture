@@ -32,6 +32,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [examCode, setExamCode] = useState('');
+  const [subgroup, setSubgroup] = useState('');
   
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,7 +46,10 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editExamCode, setEditExamCode] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
+  const [editSubgroup, setEditSubgroup] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState('All');
+  const [selectedSubgroupFilter, setSelectedSubgroupFilter] = useState('All');
         const [matchedExamCodes, setMatchedExamCodes] = useState<ExamCodeMatch[]>([]);
   const [examCodesCsvName, setExamCodesCsvName] = useState<string>('');
   const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
@@ -262,6 +266,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
             name: data.name,
             email: data.email,
             examCode: data.examCode || '',
+            subgroup: data.subgroup || '',
             isActive: data.isActive ?? true,
             createdAt: data.createdAt,
             userUid: undefined,
@@ -279,6 +284,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               name: data.name,
               email: data.email,
               examCode: data.examCode || '',
+              subgroup: data.subgroup || '',
               isActive: data.isActive ?? true,
               createdAt: profile.createdAt || data.createdAt,
               userUid: profile.userUid,
@@ -343,6 +349,16 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (selectedGroupFilter !== 'All') {
+      if (selectedSubgroupFilter !== 'All') {
+         setSubgroup(selectedSubgroupFilter);
+      } else if (!subgroup.startsWith(selectedGroupFilter)) {
+         setSubgroup(`${selectedGroupFilter}1`);
+      }
+    }
+  }, [selectedGroupFilter, selectedSubgroupFilter]);
+
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -364,6 +380,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         email: emailLower,
         password: hashedPassword,
         examCode,
+        subgroup,
         isActive: true,
         createdAt: serverTimestamp()
       });
@@ -374,6 +391,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       setEmail('');
       setPassword('');
       setExamCode('');
+      setSubgroup('');
       fetchStudents();
     } catch (err: any) {
       console.error('Error adding student:', err);
@@ -512,6 +530,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       const updateData: any = {
         name: editName,
         examCode: editExamCode,
+        subgroup: editSubgroup,
       };
 
       if (editPassword) {
@@ -780,12 +799,21 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     document.body.removeChild(link);
   };
 
-  const filteredStudents = students.filter(student => 
-    student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (student.examCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (student.currentName && student.currentName.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredStudents = students.filter(student => {
+    const matchesSearch = student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (student.examCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (student.subgroup || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (student.currentName && student.currentName.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+    if (selectedGroupFilter !== 'All') {
+      // subgroup looks like "A1", "B2". We check if it starts with the selected group.
+      const studentGroup = (student.subgroup || '').charAt(0).toUpperCase();
+      if (studentGroup !== selectedGroupFilter) return false;
+    }
+    
+    return matchesSearch;
+  });
 
   const sortedExamCodes = [...matchedExamCodes].sort((a, b) => {
     if (sortUnmatchedFirst) {
@@ -802,20 +830,12 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" dir={isRtl ? 'rtl' : 'ltr'}>
+        <div className="fixed inset-0 z-[110] flex bg-slate-50 dark:bg-zinc-950" dir={isRtl ? 'rtl' : 'ltr'}>
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-          />
-          
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-zinc-800"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="relative w-full h-full bg-white dark:bg-zinc-900 overflow-hidden flex flex-col shadow-2xl"
           >
             <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-600 dark:bg-sky-600 text-white">
               <h2 className="text-xl font-bold flex items-center gap-2">
@@ -963,9 +983,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                 </div>
               </div>
             ) : (
-            <div className="p-6 overflow-y-auto flex-1 flex flex-col md:flex-row gap-8">
+            <div className="p-6 overflow-hidden flex-1 flex flex-col lg:flex-row gap-8">
               {/* Add/Edit Student Form */}
-              <div className="w-full md:w-1/3 space-y-6">
+              <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto pr-2 space-y-6">
                 {editingStudent ? (
                   <form onSubmit={handleEditStudent} className="space-y-4 bg-sky-50 dark:bg-sky-900/10 p-4 rounded-2xl border border-sky-100 dark:border-sky-900/30">
                     <div className="flex items-center justify-between mb-2">
@@ -1025,6 +1045,20 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         onChange={(e) => setEditExamCode(e.target.value)}
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       />
+                      <select
+                        value={editSubgroup}
+                        onChange={(e) => setEditSubgroup(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
+                      >
+                        <option value="">{isRtl ? 'بدون مجموعة (اختياري)' : 'No Group (Optional)'}</option>
+                        {['A', 'B', 'C', 'D'].map(group => 
+                          [1, 2, 3, 4, 5, 6, 7, 8].map(num => (
+                            <option key={`${group}${num}`} value={`${group}${num}`}>
+                              {isRtl ? `المجموعة ${group}${num}` : `Group ${group}${num}`}
+                            </option>
+                          ))
+                        )}
+                      </select>
                       
                       <button
                         disabled={isSubmitting}
@@ -1087,6 +1121,20 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       onChange={(e) => setExamCode(e.target.value)}
                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                     />
+                    <select
+                      value={subgroup}
+                      onChange={(e) => setSubgroup(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
+                    >
+                      <option value="">{isRtl ? 'بدون مجموعة (اختياري)' : 'No Group (Optional)'}</option>
+                      {['A', 'B', 'C', 'D'].map(group => 
+                        [1, 2, 3, 4, 5, 6, 7, 8].map(num => (
+                          <option key={`${group}${num}`} value={`${group}${num}`}>
+                            {isRtl ? `المجموعة ${group}${num}` : `Group ${group}${num}`}
+                          </option>
+                        ))
+                      )}
+                    </select>
                     <button
                       disabled={isSubmitting}
                       type="submit"
@@ -1141,7 +1189,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               </div>
 
               {/* Student List */}
-              <div className="w-full md:w-2/3 flex flex-col">
+              <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
                   <div className="flex items-center gap-4 flex-1">
                     <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
@@ -1199,7 +1247,59 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                     </div>
                   )}
                 </div>
-                
+                  
+                <div className="flex flex-col gap-2 mb-4 mt-4">
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin px-1">
+                    {['All', 'A', 'B', 'C', 'D'].map(group => (
+                      <button
+                        key={group}
+                        onClick={() => {
+                          setSelectedGroupFilter(group);
+                          setSelectedSubgroupFilter('All');
+                        }}
+                        className={`px-5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
+                          selectedGroupFilter === group 
+                            ? 'bg-sky-600 text-white shadow-lg shadow-sky-200 dark:shadow-none scale-105' 
+                            : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:bg-sky-50 dark:hover:bg-sky-900/20'
+                        }`}
+                      >
+                        {group === 'All' ? (isRtl ? 'الكل' : 'All') : (isRtl ? `المجموعة ${group}` : `Group ${group}`)}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {selectedGroupFilter !== 'All' && (
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin px-1">
+                      <button
+                        onClick={() => setSelectedSubgroupFilter('All')}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                          selectedSubgroupFilter === 'All'
+                            ? 'bg-sky-500 text-white shadow-md'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        {isRtl ? 'الكل' : 'All'}
+                      </button>
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                        const sub = `${selectedGroupFilter}${num}`;
+                        return (
+                          <button
+                            key={sub}
+                            onClick={() => setSelectedSubgroupFilter(sub)}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                              selectedSubgroupFilter === sub
+                                ? 'bg-sky-500 text-white shadow-md'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                            }`}
+                          >
+                            {sub}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex-1 overflow-auto bg-slate-50 dark:bg-zinc-800/50 rounded-2xl border border-slate-200 dark:border-zinc-700">
                   {isLoading ? (
                     <div className="flex justify-center items-center h-full py-12">
@@ -1216,6 +1316,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         <tr>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'الاسم' : 'Name'}</th>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'البريد' : 'Email'}</th>
+                          <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'المجموعة' : 'Group'}</th>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'الكود' : 'Code'}</th>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300 text-center">{isRtl ? 'تسجيل الدخول' : 'Signed In'}</th>
                           {user?.isMasterAdmin && (
@@ -1254,6 +1355,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                                 <div className="text-[9px] text-slate-400 mt-0.5 break-all">ID: {student.userUid}</div>
                               )}
                             </td>
+                            <td className="p-3 text-sm font-bold text-sky-600 dark:text-sky-400">{student.subgroup || '-'}</td>
                             <td className="p-3 text-sm font-mono text-slate-500 dark:text-slate-400">{student.examCode}</td>
                             <td className="p-3 text-center">
                               {student.userUid ? (
@@ -1328,7 +1430,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                                       setEditEmail(student.email);
                                       setEditPassword('');
                                       setEditExamCode(student.examCode || '');
-                                      
+                                      setEditSubgroup(student.subgroup || '');
                                     }}
                                     className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
                                   >
