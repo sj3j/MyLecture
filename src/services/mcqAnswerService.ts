@@ -238,8 +238,13 @@ export async function finalizeFirstAttempt(
          }
       }
 
+      const userRef = doc(db, `users/${userId}`);
+      const userDoc = await transaction.get(userRef);
+      const userStageId = userDoc.exists() ? userDoc.data().stageId : undefined;
+
       const statsData: Partial<UserMCQStats> = {
           userId,
+          ...(userStageId && { stageId: userStageId }),
           totalFirstAttemptCorrect: newTotalCorrect,
           totalFirstAttemptAnswered: newTotalAnswered,
           lecturesAttempted: newLecturesAttempted,

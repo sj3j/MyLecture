@@ -6,6 +6,7 @@ import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { hashPassword } from '../lib/hash';
 import { logAdminAction } from '../services/adminLogService';
+import { useStageContext } from '../contexts/StageContext';
 
 interface StudentManagementProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const isMasterAdmin = ['almdrydyl335@gmail.com', 'jempe.kn@gmail.com'].includes(user?.email?.toLowerCase() || '') || user?.isMasterAdmin;
+  const { currentAppStage } = useStageContext();
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -227,8 +229,13 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const snapshot = await getDocs(collection(db, 'students'));
-      const usersSnapshot = await getDocs(collection(db, 'users'));
+      // NOTE: students collection doesn't have stageId by default yet in Phase 2, but users does. 
+      // We will filter users by stageId, and students by stageId if possible.
+      // But if we just filter users, students who haven't logged in won't be filtered by stage. 
+      // Let's assume students collection has stageId or we only filter users for now.
+      // Wait, let's filter both.
+      const snapshot = await getDocs(query(collection(db, 'students'), where('stageId', '==', currentAppStage)));
+      const usersSnapshot = await getDocs(query(collection(db, 'users'), where('stageId', '==', currentAppStage)));
       
       const userMap = new Map<string, any[]>();
       usersSnapshot.docs.forEach((doc: any) => {
@@ -382,6 +389,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         examCode,
         subgroup,
         isActive: true,
+        stageId: currentAppStage,
         createdAt: serverTimestamp()
       });
 
@@ -499,7 +507,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleDeleteAllStudents = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'students'));
+      const snapshot = await getDocs(query(collection(db, 'students'), where('stageId', '==', currentAppStage)));
       const batch = writeBatch(db);
       snapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);
@@ -608,6 +616,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
             password: hashedPassword,
             examCode: csvExamCode,
             isActive: true,
+            stageId: currentAppStage,
             createdAt: serverTimestamp()
           });
           count++;

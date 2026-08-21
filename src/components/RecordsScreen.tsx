@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { RecordItem, Language, TRANSLATIONS, UserProfile, Category, CATEGORIES, LectureType } from '../types';
 import { Loader2, Mic, Search, Play, Pause, Plus, HardDrive, Clock, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -72,8 +71,19 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     }
   };
 
+  const { currentAppStage } = useStageContext();
+  const effectiveStageId = React.useMemo(() => {
+    if (!user) return null;
+    if (user.isMasterAdmin) return currentAppStage;
+    if (user.role === 'admin' && user.managedStageId) return user.managedStageId;
+    return user.stageId || null;
+  }, [user, currentAppStage]);
+
   useEffect(() => {
-    const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
+    let q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
+    if (effectiveStageId) {
+      q = query(collection(db, 'records'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
+    }
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as RecordItem));
       setRecords(docs);
@@ -84,7 +94,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [effectiveStageId]);
 
   let baseRecords = records.filter(record => {
     const matchesCategory = selectedCategory === 'all' || record.category === selectedCategory;

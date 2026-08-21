@@ -4,7 +4,8 @@ import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info, Flame, Calendar as CalendarIcon } from 'lucide-react';
+import { IS_STORE_BUILD } from '../lib/platform';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info, Flame, Calendar as CalendarIcon, Crown, CreditCard } from 'lucide-react';
 import ProfileStreakCalendar from './ProfileStreakCalendar';
 import SemesterHistoryList from './SemesterHistoryList';
 
@@ -18,10 +19,12 @@ interface ProfileScreenProps {
   setShowAdminGrades?: (val: boolean) => void;
   setShowStudentGrades?: (val: boolean) => void;
   setShowAdminLogs?: (val: boolean) => void;
+  setShowSubManage?: (val: boolean) => void;
+  onNavigateToSubscription?: () => void;
 }
 
 export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage,
-  setShowStreakManage, setShowAdminGrades, setShowStudentGrades, setShowAdminLogs }: ProfileScreenProps) {
+  setShowStreakManage, setShowAdminGrades, setShowStudentGrades, setShowAdminLogs, setShowSubManage, onNavigateToSubscription }: ProfileScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -392,6 +395,49 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           )}
         </div>
 
+        {/* Subscription Status Card (for non-admins, or if they have a subscription) */}
+        {(!isMasterAdminUser && user?.role !== 'admin' && !IS_STORE_BUILD) && (
+          <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700 mb-6">
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'حالة الاشتراك' : 'Subscription Status'}</h3>
+            <div 
+              onClick={onNavigateToSubscription}
+              className={`p-5 rounded-2xl border cursor-pointer transition-all hover:shadow-md ${
+              user?.isSubscribed 
+                ? 'bg-gradient-to-br from-emerald-50 dark:from-emerald-900/20 to-teal-50 dark:to-teal-900/20 border-emerald-200 dark:border-emerald-800/50 hover:border-emerald-300 dark:hover:border-emerald-700' 
+                : 'bg-slate-50 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600 hover:bg-slate-100 dark:hover:bg-zinc-800/50'
+            }`}>
+              <div className="flex flex-col sm:flex-row items-center gap-4 justify-between relative">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                    user?.isSubscribed ? 'bg-emerald-100 dark:bg-emerald-800/50 text-emerald-600 dark:text-emerald-400' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-slate-500'
+                  }`}>
+                    {user?.isSubscribed ? <Crown className="w-6 h-6" /> : <CreditCard className="w-6 h-6" />}
+                  </div>
+                  <div className="text-center sm:text-left rtl:sm:text-right">
+                    <h4 className="font-bold text-slate-900 dark:text-white">
+                      {user?.isSubscribed ? (isRtl ? 'اشتراك فعال' : 'Active Subscription') : (isRtl ? 'لا يوجد اشتراك فعال' : 'No Active Subscription')}
+                    </h4>
+                    {user?.isSubscribed && user.subscriptionEnd && (
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        {isRtl ? 'ينتهي في:' : 'Expires on:'} {
+                          new Date(user.subscriptionEnd.toDate ? user.subscriptionEnd.toDate() : user.subscriptionEnd).toLocaleDateString(isRtl ? 'ar-IQ' : 'en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })
+                        }
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className={`absolute top-1/2 -translate-y-1/2 ${isRtl ? 'left-2' : 'right-2'} text-slate-400 dark:text-slate-500`}>
+                  <ChevronRight className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-zinc-700">
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'إعدادات الإشعارات' : 'Notification Settings'}</h3>
           
@@ -517,6 +563,15 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
                 >
                   <FileText className="w-5 h-5" />
                   {isRtl ? 'سجل الإدارة (Master Admin)' : 'Admin Logs (Master Admin)'}
+                </button>
+              )}
+              {setShowSubManage && (
+                <button
+                  onClick={() => setShowSubManage(true)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors mt-4"
+                >
+                  <Crown className="w-5 h-5" />
+                  {isRtl ? 'إدارة الاشتراكات' : 'Manage Subscriptions'}
                 </button>
               )}
             </>

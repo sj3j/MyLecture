@@ -86,7 +86,10 @@ service cloud.firestore {
              (!('hasPendingStreakReset' in data) || data.hasPendingStreakReset is bool) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
-             (!('permissions' in data) || data.permissions is map);
+             (!('permissions' in data) || data.permissions is map) &&
+             (!('isSubscribed' in data) || data.isSubscribed is bool) &&
+             (!('subscriptionEnd' in data) || data.subscriptionEnd == null || data.subscriptionEnd is timestamp) &&
+             (!('subscriptionPlan' in data) || data.subscriptionPlan == null || data.subscriptionPlan in ['monthly', 'seasonal', 'semi_annual']);
     }
 
     function isWhitelisted() {
@@ -98,6 +101,20 @@ service cloud.firestore {
 
     function hasAccess() {
       return isAdmin() || isWhitelisted();
+    }
+    
+    function isRepresentativeFor(stageId) {
+      return isAdmin() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStageId == stageId;
+    }
+
+    function hasStageAccess(stageId, subjectId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let user = userDoc != null ? userDoc.data : null;
+      return user != null && (
+        user.stageId == stageId || 
+        (user.tahmeelSubjects != null && subjectId in user.tahmeelSubjects)
+      );
     }
 
     // ===============================================================
@@ -149,7 +166,10 @@ service cloud.firestore {
                         && request.resource.data.get('streakCount', 0) == resource.data.get('streakCount', 0)
                         && request.resource.data.get('freezeTokens', 1) == resource.data.get('freezeTokens', 1)
                         && request.resource.data.get('longestStreak', 0) == resource.data.get('longestStreak', 0)
-                        && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', ''));
+                        && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', '')) ||
+                      // Allow updating progression fields if season is active
+                      (isOwner(userId) && get(/databases/$(database)/documents/settings/app_settings).data.isProgressionSeasonActive == true &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stageId', 'tahmeelSubjects', 'hasCompletedProgression', 'lastProgressionYear']));
     }
 
     match /streak_history/{docId} {
@@ -176,9 +196,32 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /stages/{stageId} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterAdmin();
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterAdmin() || (isAdmin() && isRepresentativeFor(resource.data.stageId));
+    }
+
     match /lectures/{lectureId} {
-      allow read: if hasAccess();
-      allow create, update, delete: if isAdmin();
+      // For backwards compatibility and migration, we allow access if stageId is missing.
+      allow read: if hasAccess() && (
+        !('stageId' in resource.data) || resource.data.stageId == null ||
+        isMasterAdmin() || isRepresentativeFor(resource.data.stageId) || hasStageAccess(resource.data.stageId, resource.data.subjectId)
+      );
+      
+      allow create: if isMasterAdmin() || (
+        isAdmin() && (!('stageId' in request.resource.data) || request.resource.data.stageId == null || isRepresentativeFor(request.resource.data.stageId))
+      );
+      
+      allow update, delete: if isMasterAdmin() || (
+        isAdmin() && 
+        (!('stageId' in resource.data) || resource.data.stageId == null || isRepresentativeFor(resource.data.stageId)) &&
+        (!('stageId' in request.resource.data) || request.resource.data == null || request.resource.data.stageId == null || isRepresentativeFor(request.resource.data.stageId))
+      );
     }
     
     match /chat_presence/{userId} {
@@ -308,6 +351,24 @@ service cloud.firestore {
     
     match /fcm_tokens/{userId} {
       allow read, write: if isOwner(userId);
+    }
+
+    // ===============================================================
+    // Subscriptions
+    // ===============================================================
+    match /subscriptions/{subId} {
+      // Users can read their own subscriptions, admins can read all
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      // Users can create pending subscriptions for themselves (SuperKey flow)
+      allow create: if isAdmin() || (
+        isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid && 
+        request.resource.data.status == 'pending'
+      );
+      // Only admins (and Admin SDK via webhooks) can update subscriptions
+      allow update: if isAdmin();
+      // No deletes
+      allow delete: if false;
     }
   }
 }

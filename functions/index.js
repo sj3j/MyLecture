@@ -800,3 +800,128 @@ exports.archiveOldMessages = onSchedule('every 24 hours', async (event) => {
   await batch.commit();
   console.log(`Archived ${old.docs.length} messages`);
 });
+
+// ============================================================================
+// Subscription Cron Jobs
+// ============================================================================
+
+/**
+ * Runs daily to expire subscriptions that have passed their end date.
+ * Updates the subscription status to 'inactive' and clears user subscription flags.
+ */
+exports.expireSubscriptions = onSchedule('every 24 hours', async (event) => {
+  const now = admin.firestore.Timestamp.now();
+
+  const expiredSubs = await db.collection('subscriptions')
+    .where('status', '==', 'active')
+    .where('endDate', '<=', now)
+    .get();
+
+  if (expiredSubs.empty) {
+    console.log('No expired subscriptions found.');
+    return;
+  }
+
+  console.log(`Expiring ${expiredSubs.size} subscriptions...`);
+  
+  // Firestore batch limit is 500
+  const batches = [];
+  let currentBatch = db.batch();
+  let count = 0;
+
+  for (const doc of expiredSubs.docs) {
+    const data = doc.data();
+    
+    // Update subscription document
+    currentBatch.update(doc.ref, {
+      status: 'inactive',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Update user document to remove active status
+    const userRef = db.collection('users').doc(data.userId);
+    currentBatch.update(userRef, {
+      isSubscribed: false,
+      subscriptionEnd: null,
+      subscriptionPlan: null
+    });
+
+    // Send expiry notification
+    const fcmDoc = await db.collection('fcm_tokens').doc(data.userId).get();
+    if (fcmDoc.exists && fcmDoc.data().token) {
+       admin.messaging().send({
+          token: fcmDoc.data().token,
+          notification: {
+            title: 'انتهى اشتراكك ⏰',
+            body: 'انتهت صلاحية اشتراكك. جدّد الآن للاستمرار في استخدام ميزات الأسئلة.',
+          },
+          data: { type: 'subscription', event: 'expired' },
+       }).catch(err => console.error('FCM error on expiry:', err));
+    }
+
+    count++;
+    if (count === 400) {
+      batches.push(currentBatch);
+      currentBatch = db.batch();
+      count = 0;
+    }
+  }
+
+  if (count > 0) {
+    batches.push(currentBatch);
+  }
+
+  await Promise.all(batches.map(batch => batch.commit()));
+  console.log(`Successfully expired ${expiredSubs.size} subscriptions.`);
+});
+
+/**
+ * Runs daily to send reminders to users whose subscriptions will expire in 3 days.
+ */
+exports.sendExpiryReminders = onSchedule('every 24 hours', async (event) => {
+  const now = new Date();
+  const threeDaysFromNowStart = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000));
+  threeDaysFromNowStart.setHours(0, 0, 0, 0);
+  
+  const threeDaysFromNowEnd = new Date(threeDaysFromNowStart);
+  threeDaysFromNowEnd.setHours(23, 59, 59, 999);
+
+  const startTimestamp = admin.firestore.Timestamp.fromDate(threeDaysFromNowStart);
+  const endTimestamp = admin.firestore.Timestamp.fromDate(threeDaysFromNowEnd);
+
+  const expiringSubs = await db.collection('subscriptions')
+    .where('status', '==', 'active')
+    .where('endDate', '>=', startTimestamp)
+    .where('endDate', '<=', endTimestamp)
+    .get();
+
+  if (expiringSubs.empty) {
+    console.log('No subscriptions expiring in 3 days.');
+    return;
+  }
+
+  console.log(`Sending expiry reminders for ${expiringSubs.size} subscriptions...`);
+
+  let successCount = 0;
+  for (const doc of expiringSubs.docs) {
+    const data = doc.data();
+    try {
+      const fcmDoc = await db.collection('fcm_tokens').doc(data.userId).get();
+      if (fcmDoc.exists && fcmDoc.data().token) {
+        await admin.messaging().send({
+          token: fcmDoc.data().token,
+          notification: {
+            title: 'تذكير: اقترب موعد انتهاء الاشتراك ⚠️',
+            body: 'اشتراكك سينتهي خلال 3 أيام. بادر بالتجديد لضمان عدم انقطاع الخدمة.',
+          },
+          data: { type: 'subscription', event: 'reminder' },
+        });
+        successCount++;
+      }
+    } catch (err) {
+      console.error(`Failed to send reminder to ${data.userId}:`, err);
+    }
+  }
+
+  console.log(`Successfully sent ${successCount} expiry reminders.`);
+});

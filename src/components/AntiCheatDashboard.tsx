@@ -4,6 +4,7 @@ import { db, auth } from '../lib/firebase';
 import { X, ShieldAlert, Trash2, Ban, UserX, AlertTriangle, Eye, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS, Language } from '../types';
 import { logAdminAction } from '../services/adminLogService';
+import { useStageContext } from '../contexts/StageContext';
 
 interface AntiCheatDashboardProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
   const [errorMsg, setErrorMsg] = useState('');
   const [lecturesMap, setLecturesMap] = useState<Record<string, string>>({});
   const [usersMap, setUsersMap] = useState<Record<string, string>>({});
+  const { currentAppStage } = useStageContext();
 
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -57,8 +59,9 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
       });
       setLecturesMap(lMap);
 
-      // Fetch users for mapping
-      const usersSnap = await getDocs(collection(db, 'users'));
+      // Fetch users for mapping (filtered by current stage)
+      const usersQuery = query(collection(db, 'users'), where('stageId', '==', currentAppStage));
+      const usersSnap = await getDocs(usersQuery);
       const uMap: Record<string, string> = {};
       usersSnap.forEach(d => {
         uMap[d.id] = d.data().name || d.data().email || d.id;
@@ -69,8 +72,10 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // Group by user+lecture
+      // Group by user+lecture (only for users in the current stage)
       const grouped = data.reduce((acc: any, log: any) => {
+        if (!uMap[log.userId]) return acc; // Skip logs for users not in this stage
+        
         const key = `${log.userId}_${log.lectureId}`;
         if (!acc[key]) {
           acc[key] = {

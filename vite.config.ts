@@ -136,6 +136,7 @@ export default defineConfig(({mode}) => {
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      '__NATIVE_BUILD__': JSON.stringify(mode === 'native'),
     },
     resolve: {
       alias: {

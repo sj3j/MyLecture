@@ -5,6 +5,7 @@ import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebas
 import { StudentDegree } from '../../types/grades.types';
 import { CATEGORIES, TRANSLATIONS } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { useStageContext } from '../../contexts/StageContext';
 
 export interface StudentGradesScreenProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
   const [degrees, setDegrees] = useState<StudentDegree[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'current' | 'archive'>('current');
+  const { currentAppStage } = useStageContext();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -37,9 +40,16 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     return () => unsub();
   }, [isOpen]);
 
-  const filteredDegrees = degrees.filter(d => 
-    d.examName.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredDegrees = degrees.filter(d => {
+    const matchesSearch = d.examName.toLowerCase().includes(search.toLowerCase());
+    const dStage = d.stageId;
+    // If degree has no stageId, it's legacy (assume it belongs to current/default stage for now, so it shows up)
+    const matchesStage = viewMode === 'current' 
+      ? (!dStage || dStage === currentAppStage) 
+      : (dStage && dStage !== currentAppStage);
+      
+    return matchesSearch && matchesStage;
+  });
 
   const groupedDegrees = filteredDegrees.reduce((acc, degree) => {
     const mat = degree.material || 'other';
@@ -145,9 +155,33 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
             </button>
 
             <div className="p-4 sm:p-6 lg:p-8">
-              <div className="mb-6 sm:mb-8 mt-2">
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">السعيّات والدرجات</h1>
-                <p className="text-gray-500 dark:text-zinc-400">سجل بجميع الدرجات المعتمدة من الكلية.</p>
+              <div className="mb-6 sm:mb-8 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">السعيّات والدرجات</h1>
+                  <p className="text-gray-500 dark:text-zinc-400">سجل بجميع الدرجات المعتمدة من الكلية.</p>
+                </div>
+                <div className="flex bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl self-start sm:self-auto">
+                  <button
+                    onClick={() => setViewMode('current')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                      viewMode === 'current'
+                        ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    العام الحالي
+                  </button>
+                  <button
+                    onClick={() => setViewMode('archive')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                      viewMode === 'archive'
+                        ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    الأرشيف السنوي
+                  </button>
+                </div>
               </div>
 
       <div className="mb-8 relative">

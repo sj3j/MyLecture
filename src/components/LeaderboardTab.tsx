@@ -5,6 +5,7 @@ import { UserProfile, Language } from '../types';
 import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw, Palmtree, MoreVertical } from 'lucide-react';
 import { UserMCQStats } from '../types/mcq.types';
 import Podium from './ui/Podium';
+import { useStageContext } from '../contexts/StageContext';
 
 interface LeaderboardTabProps {
   user: UserProfile | null;
@@ -21,6 +22,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isVacationMode, setIsVacationMode] = useState(false);
+  const { currentAppStage } = useStageContext();
 
   const fetchLeaderboard = async (force = false) => {
     setLoading(true);
@@ -70,7 +72,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
               }
             }
           } else {
-            const q = query(collection(db, 'users'), orderBy('streakCount', 'desc'), limit(20));
+            const q = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage), orderBy('streakCount', 'desc'), limit(20));
             const snap = await getDocs(q);
             const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
             
@@ -80,7 +82,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             if (user && !vacation && !isUserInTop) {
               const myStreak = user.streakCount || 0;
               if (myStreak > 0) {
-                const countQ = query(collection(db, 'users'), where('streakCount', '>', myStreak));
+                const countQ = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage), where('streakCount', '>', myStreak));
                 const countSnap = await getCountFromServer(countQ);
                 const myRank = countSnap.data().count + 1;
                 setUserStreakRank(myRank);
@@ -92,7 +94,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             } else if (user) {
               const myStreak = user.streakCount || 0;
               if (myStreak > 0) {
-                const countQ = query(collection(db, 'users'), where('streakCount', '>', myStreak));
+                const countQ = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage), where('streakCount', '>', myStreak));
                 const countSnap = await getCountFromServer(countQ);
                 setUserStreakRank(countSnap.data().count + 1);
               } else {
@@ -105,7 +107,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
         }
       } else {
         if (mcqLeaders.length === 0 || force) {
-          const q = query(collection(db, 'userMCQStats'), orderBy('mcqLeaderboardScore', 'desc'), limit(10));
+          const q = query(collection(db, 'userMCQStats'), where('stageId', '==', currentAppStage), orderBy('mcqLeaderboardScore', 'desc'), limit(10));
           const snap = await getDocs(q);
           const rawData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
           
@@ -117,7 +119,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             if (myMcqDoc.exists()) {
               const score = myMcqDoc.data().mcqLeaderboardScore || 0;
               if (score > 0) {
-                const countQ = query(collection(db, 'userMCQStats'), where('mcqLeaderboardScore', '>', score));
+                const countQ = query(collection(db, 'userMCQStats'), where('stageId', '==', currentAppStage), where('mcqLeaderboardScore', '>', score));
                 const countSnap = await getCountFromServer(countQ);
                 const myRank = countSnap.data().count + 1;
                 setUserMcqRank(myRank);
@@ -134,7 +136,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
             if (myMcqDoc.exists()) {
               const score = myMcqDoc.data().mcqLeaderboardScore || 0;
               if (score > 0) {
-                const countQ = query(collection(db, 'userMCQStats'), where('mcqLeaderboardScore', '>', score));
+                const countQ = query(collection(db, 'userMCQStats'), where('stageId', '==', currentAppStage), where('mcqLeaderboardScore', '>', score));
                 const countSnap = await getCountFromServer(countQ);
                 setUserMcqRank(countSnap.data().count + 1);
               } else {

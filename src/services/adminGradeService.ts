@@ -9,7 +9,8 @@ export async function confirmDegreeBatchClient(
   maxDegree?: number | string,
   material?: string,
   existingBatchId?: string,
-  allStudentIds?: string[]
+  allStudentIds?: string[],
+  stageId?: string
 ) {
   const user = auth.currentUser;
   if (!user) throw new Error("يجب تسجيل الدخول");
@@ -91,6 +92,7 @@ export async function confirmDegreeBatchClient(
           examName,
           degree: record.degree,
           batchId: batchId,
+          stageId, // Add this for filtering degrees by stage
           createdAt: serverTimestamp()
         };
         if (maxDegree) degreeData.maxDegree = maxDegree;
@@ -113,6 +115,7 @@ export async function confirmDegreeBatchClient(
           createdBy: user.uid,
           status: 'confirmed',
           studentIds: studentIdsArr,
+          stageId,
           stats: {
             totalRows: confirmedResults.length,
             // saved here tracks matched in the file
@@ -140,6 +143,7 @@ export async function confirmDegreeBatchClient(
         createdBy: user.uid,
         status: 'confirmed',
         studentIds: [],
+        stageId,
         stats: {
           totalRows: 0,
           matched: 0,

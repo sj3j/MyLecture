@@ -8,6 +8,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -1686,6 +1687,423 @@ async function startServer() {
     } catch (e) {
       console.error("Cron streak warnings error", e);
       res.status(500).json({ error: "Error sending warnings" });
+    }
+  });
+
+  // ===================================================================
+  // SUBSCRIPTION ENDPOINTS
+  // ===================================================================
+
+  const PLAN_CONFIG: Record<string, { days: number; price: number }> = {
+    monthly: { days: 30, price: 1000 },
+    seasonal: { days: 90, price: 3000 },
+    semi_annual: { days: 180, price: 5000 },
+  };
+
+  /** Helper: activate subscription and update user cache */
+  async function activateSubscription(
+    db: admin.firestore.Firestore,
+    subId: string,
+    userId: string,
+    plan: string,
+    approvedBy?: string
+  ) {
+    const config = PLAN_CONFIG[plan];
+    if (!config) throw new Error(`Invalid plan: ${plan}`);
+
+    // Check if user has existing active subscription to stack time
+    const existingSubs = await db.collection('subscriptions')
+      .where('userId', '==', userId)
+      .where('status', '==', 'active')
+      .get();
+
+    let startDate = admin.firestore.Timestamp.now();
+    let endBaseDate = new Date();
+
+    // Stack: if active sub exists, extend from its end date
+    if (!existingSubs.empty) {
+      const activeSub = existingSubs.docs[0];
+      const activeEndDate = activeSub.data().endDate?.toDate();
+      if (activeEndDate && activeEndDate > new Date()) {
+        endBaseDate = activeEndDate;
+      }
+      // Mark old subscription as replaced
+      await activeSub.ref.update({
+        status: 'inactive',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        notes: `Replaced by subscription ${subId}`,
+      });
+    }
+
+    const endDate = new Date(endBaseDate.getTime() + config.days * 24 * 60 * 60 * 1000);
+
+    const updateData: any = {
+      status: 'active',
+      startDate,
+      endDate: admin.firestore.Timestamp.fromDate(endDate),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (approvedBy) updateData.approvedBy = approvedBy;
+
+    await db.collection('subscriptions').doc(subId).update(updateData);
+
+    // Update user cache
+    await db.collection('users').doc(userId).update({
+      isSubscribed: true,
+      subscriptionEnd: admin.firestore.Timestamp.fromDate(endDate),
+      subscriptionPlan: plan,
+    });
+
+    // Send FCM notification
+    await sendSubscriptionNotification(db, userId, 'activated', plan);
+  }
+
+  /** Helper: send subscription FCM notification */
+  async function sendSubscriptionNotification(
+    db: admin.firestore.Firestore,
+    userId: string,
+    event: 'activated' | 'expired' | 'approved' | 'rejected',
+    plan?: string
+  ) {
+    try {
+      const tokenDoc = await db.collection('fcm_tokens').doc(userId).get();
+      if (!tokenDoc.exists || !tokenDoc.data()?.token) return;
+
+      const token = tokenDoc.data()!.token;
+      const planLabel = plan ? (PLAN_CONFIG[plan] ? plan : '') : '';
+
+      const titles: Record<string, string> = {
+        activated: 'تم تفعيل الاشتراك! ✅',
+        expired: 'انتهى اشتراكك ⏰',
+        approved: 'تمت الموافقة على الدفع ✅',
+        rejected: 'تم رفض طلب الدفع ❌',
+      };
+
+      const bodies: Record<string, string> = {
+        activated: `تم تفعيل اشتراكك بنجاح. يمكنك الآن الوصول إلى جميع ميزات الأسئلة.`,
+        expired: 'انتهت صلاحية اشتراكك. جدّد الآن للاستمرار في استخدام ميزات الأسئلة.',
+        approved: 'تمت الموافقة على دفعتك عبر سوبر كي. تم تفعيل اشتراكك.',
+        rejected: 'تم رفض طلب الدفع الخاص بك. تواصل مع الدعم لمزيد من المعلومات.',
+      };
+
+      await admin.messaging().send({
+        token,
+        notification: {
+          title: titles[event] || 'محاضراتي',
+          body: bodies[event] || '',
+        },
+        data: { type: 'subscription', event },
+      });
+    } catch (err) {
+      console.error('FCM notification error:', err);
+    }
+  }
+
+  // --- ZainCash: Initiate Payment ---
+  app.post('/api/zaincash/init', verifyAuth, async (req, res) => {
+    try {
+      const { plan } = req.body;
+      const user = (req as any).user;
+      const config = PLAN_CONFIG[plan];
+
+      if (!config) {
+        return res.status(400).json({ error: 'Invalid plan' });
+      }
+
+      const merchantId = process.env.ZAINCASH_MERCHANT_ID;
+      const secret = process.env.ZAINCASH_SECRET;
+      const msisdn = process.env.ZAINCASH_MSISDN;
+      const apiUrl = process.env.ZAINCASH_API_URL || 'https://api.zaincash.iq/transaction/init';
+      const redirectUrl = process.env.ZAINCASH_REDIRECT_URL || `${process.env.APP_URL || 'http://localhost:3000'}/api/zaincash/callback`;
+
+      if (!merchantId || !secret || !msisdn) {
+        return res.status(500).json({ error: 'ZainCash not configured' });
+      }
+
+      // Create a pending subscription first
+      const db = admin.firestore();
+      const subRef = await db.collection('subscriptions').add({
+        userId: user.uid,
+        userEmail: user.email || '',
+        plan,
+        status: 'pending',
+        paymentMethod: 'zaincash',
+        amount: config.price,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Create ZainCash JWT token
+      const tokenData = {
+        amount: config.price,
+        serviceType: 'محاضراتي - اشتراك',
+        msisdn,
+        orderId: subRef.id,
+        redirectUrl,
+        lang: 'ar',
+      };
+
+      const zaincashToken = jwt.sign(tokenData, secret, { expiresIn: '4h' });
+
+      // Call ZainCash API
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: zaincashToken,
+          merchantId,
+          lang: 'ar',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.id) {
+        // Update subscription with ZainCash transaction ID
+        await subRef.update({ transactionId: data.id });
+        const paymentUrl = `https://api.zaincash.iq/transaction/pay?id=${data.id}`;
+        return res.json({ redirectUrl: paymentUrl, subscriptionId: subRef.id });
+      } else {
+        // Clean up failed subscription
+        await subRef.delete();
+        return res.status(400).json({ error: data.err?.msg || 'ZainCash initiation failed' });
+      }
+    } catch (error) {
+      console.error('ZainCash init error:', error);
+      res.status(500).json({ error: 'Payment initiation failed' });
+    }
+  });
+
+  // --- ZainCash: Webhook Callback ---
+  app.post('/api/zaincash/callback', async (req, res) => {
+    try {
+      const { token } = req.body;
+      const secret = process.env.ZAINCASH_SECRET;
+
+      if (!token || !secret) {
+        return res.status(400).json({ error: 'Invalid callback' });
+      }
+
+      // Verify the ZainCash JWT
+      const decoded = jwt.verify(token, secret) as any;
+      const { orderId, status: txStatus } = decoded;
+
+      if (!orderId) {
+        return res.status(400).json({ error: 'Missing orderId' });
+      }
+
+      const db = admin.firestore();
+      const subDoc = await db.collection('subscriptions').doc(orderId).get();
+
+      if (!subDoc.exists) {
+        return res.status(404).json({ error: 'Subscription not found' });
+      }
+
+      const subData = subDoc.data()!;
+
+      if (txStatus === 'success') {
+        // Activate the subscription
+        await activateSubscription(db, orderId, subData.userId, subData.plan);
+        return res.json({ success: true });
+      } else {
+        // Mark as failed
+        await db.collection('subscriptions').doc(orderId).update({
+          status: 'cancelled',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          notes: `ZainCash payment failed: ${txStatus}`,
+        });
+        return res.json({ success: false, reason: txStatus });
+      }
+    } catch (error) {
+      console.error('ZainCash callback error:', error);
+      res.status(500).json({ error: 'Callback processing failed' });
+    }
+  });
+
+  // --- ZainCash: Success redirect page ---
+  app.get('/api/zaincash/success', (req, res) => {
+    res.send(`
+      <html dir="rtl" lang="ar">
+        <head><meta charset="utf-8"><title>تم الدفع بنجاح</title>
+        <style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f9ff;margin:0;}
+        .card{background:white;border-radius:16px;padding:40px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px;}
+        .icon{font-size:64px;margin-bottom:16px;}
+        h1{color:#059669;font-size:24px;margin-bottom:8px;}
+        p{color:#6b7280;margin-bottom:24px;}
+        a{background:#2196F3;color:white;padding:12px 32px;border-radius:12px;text-decoration:none;font-weight:bold;display:inline-block;}
+        </style></head>
+        <body><div class="card">
+          <div class="icon">✅</div>
+          <h1>تم الدفع بنجاح!</h1>
+          <p>تم تفعيل اشتراكك. يمكنك الآن استخدام جميع ميزات الأسئلة.</p>
+          <a href="/">العودة للتطبيق</a>
+        </div></body>
+      </html>
+    `);
+  });
+
+  // --- Admin: Grant free subscription ---
+  app.post('/api/subscriptions/grant', verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { userId, plan, notes } = req.body;
+      const adminUser = (req as any).user;
+      const config = PLAN_CONFIG[plan];
+
+      if (!userId || !config) {
+        return res.status(400).json({ error: 'Invalid userId or plan' });
+      }
+
+      const db = admin.firestore();
+
+      // Check target user exists
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const userData = userDoc.data()!;
+      const subRef = await db.collection('subscriptions').add({
+        userId,
+        userEmail: userData.email || '',
+        userName: userData.name || '',
+        plan,
+        status: 'pending', // will be activated by helper
+        paymentMethod: 'admin_grant',
+        amount: 0,
+        notes: notes || 'Admin grant',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      await activateSubscription(db, subRef.id, userId, plan, adminUser.uid);
+
+      res.json({ success: true, subscriptionId: subRef.id });
+    } catch (error) {
+      console.error('Grant subscription error:', error);
+      res.status(500).json({ error: 'Failed to grant subscription' });
+    }
+  });
+
+  // --- Admin: Approve pending SuperKey subscription ---
+  app.post('/api/subscriptions/:id/approve', verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminUser = (req as any).user;
+      const db = admin.firestore();
+
+      const subDoc = await db.collection('subscriptions').doc(id).get();
+      if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+      const subData = subDoc.data()!;
+      if (subData.status !== 'pending') {
+        return res.status(400).json({ error: 'Subscription is not pending' });
+      }
+
+      await activateSubscription(db, id, subData.userId, subData.plan, adminUser.uid);
+
+      // Send approval notification
+      await sendSubscriptionNotification(db, subData.userId, 'approved', subData.plan);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Approve subscription error:', error);
+      res.status(500).json({ error: 'Failed to approve subscription' });
+    }
+  });
+
+  // --- Admin: Reject pending subscription ---
+  app.post('/api/subscriptions/:id/reject', verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const db = admin.firestore();
+
+      const subDoc = await db.collection('subscriptions').doc(id).get();
+      if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+      const subData = subDoc.data()!;
+      if (subData.status !== 'pending') {
+        return res.status(400).json({ error: 'Subscription is not pending' });
+      }
+
+      await db.collection('subscriptions').doc(id).update({
+        status: 'cancelled',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        notes: 'Rejected by admin',
+      });
+
+      await sendSubscriptionNotification(db, subData.userId, 'rejected');
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Reject subscription error:', error);
+      res.status(500).json({ error: 'Failed to reject subscription' });
+    }
+  });
+
+  // --- Admin: Extend subscription ---
+  app.post('/api/subscriptions/:id/extend', verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { days } = req.body;
+      const db = admin.firestore();
+
+      if (!days || days <= 0 || days > 365) {
+        return res.status(400).json({ error: 'Invalid days (1-365)' });
+      }
+
+      const subDoc = await db.collection('subscriptions').doc(id).get();
+      if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+      const subData = subDoc.data()!;
+      if (subData.status !== 'active') {
+        return res.status(400).json({ error: 'Can only extend active subscriptions' });
+      }
+
+      const currentEnd = subData.endDate?.toDate() || new Date();
+      const newEnd = new Date(currentEnd.getTime() + days * 24 * 60 * 60 * 1000);
+
+      await db.collection('subscriptions').doc(id).update({
+        endDate: admin.firestore.Timestamp.fromDate(newEnd),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Update user cache
+      await db.collection('users').doc(subData.userId).update({
+        subscriptionEnd: admin.firestore.Timestamp.fromDate(newEnd),
+      });
+
+      res.json({ success: true, newEndDate: newEnd.toISOString() });
+    } catch (error) {
+      console.error('Extend subscription error:', error);
+      res.status(500).json({ error: 'Failed to extend subscription' });
+    }
+  });
+
+  // --- Admin: Cancel subscription ---
+  app.post('/api/subscriptions/:id/cancel', verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const db = admin.firestore();
+
+      const subDoc = await db.collection('subscriptions').doc(id).get();
+      if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+      const subData = subDoc.data()!;
+
+      await db.collection('subscriptions').doc(id).update({
+        status: 'cancelled',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Update user cache
+      await db.collection('users').doc(subData.userId).update({
+        isSubscribed: false,
+        subscriptionEnd: null,
+        subscriptionPlan: null,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Cancel subscription error:', error);
+      res.status(500).json({ error: 'Failed to cancel subscription' });
     }
   });
 

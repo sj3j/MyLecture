@@ -4,6 +4,8 @@ import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from
 import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit, updateDoc } from 'firebase/firestore';
 import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS, LectureType } from './types';
 import Navbar from './components/Navbar';
+import { useStageContext } from './contexts/StageContext';
+import ProgressionModal from './components/ProgressionModal';
 import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
 import AdminManagement from './components/AdminManagement';
@@ -28,6 +30,9 @@ import OnboardingSlides from './components/OnboardingSlides';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import MCQOverlay from './components/MCQOverlay';
 import NotificationsModal from './components/NotificationsModal';
+import SubscriptionScreen from './components/SubscriptionScreen';
+import SubscriptionManagement from './components/SubscriptionManagement';
+import SubscriptionPaywall from './components/SubscriptionPaywall';
 import { Loader2, BookOpen, SearchX, Lock, Shield, Users, UserCircle, AlertCircle, ArrowUp, ArrowDown, Flame, GraduationCap, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Fuse from 'fuse.js';
@@ -41,6 +46,8 @@ export default function App() {
   const [lang, setLang] = useState<Language>('ar');
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+  
+  const { currentAppStage } = useStageContext();
 
   useEffect(() => {
     // Attempt to sync any offline MCQ submissions when the app loads or comes online
@@ -56,6 +63,16 @@ export default function App() {
 
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
+  const [isProgressionSeasonActive, setIsProgressionSeasonActive] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'app_settings'), (docSnap) => {
+      if (docSnap.exists()) {
+        setIsProgressionSeasonActive(docSnap.data().isProgressionSeasonActive === true);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -77,6 +94,8 @@ export default function App() {
   const [showAntiCheat, setShowAntiCheat] = useState(false);
   const [showAdminLogs, setShowAdminLogs] = useState(false);
   const [showStudentGrades, setShowStudentGrades] = useState(false);
+  const [showSubManage, setShowSubManage] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   useEffect(() => {
     const handleOpenAntiCheat = () => setShowAntiCheat(true);
@@ -478,7 +497,12 @@ export default function App() {
       return;
     }
 
-    const q = query(collection(db, 'lectures'), orderBy('createdAt', 'desc'));
+    const effectiveStageId = user.isMasterAdmin ? currentAppStage : (user.role === 'admin' ? user.managedStageId : user.stageId);
+
+    let q = query(collection(db, 'lectures'), orderBy('createdAt', 'desc'));
+    if (effectiveStageId) {
+      q = query(collection(db, 'lectures'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
+    }
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Lecture));
       setLectures(docs);
@@ -490,7 +514,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [user?.group, user?.role]);
+  }, [user?.group, user?.role, user?.isMasterAdmin, user?.managedStageId, user?.stageId, currentAppStage]);
 
   const filteredLectures = React.useMemo(() => {
     let base = lectures.filter(lecture => {
@@ -527,8 +551,28 @@ export default function App() {
 
   const handleNavigateToChat = useCallback(() => setCurrentTab('chat'), []);
   const handleEditLecture = useCallback((l: Lecture) => { setLectureToEdit(l); setShowUpload(true); }, []);
-  const handleOpenMCQ = useCallback((l: Lecture) => setMcqLecture(l), []);
   const handleCloseUpload = useCallback(() => { setShowUpload(false); setLectureToEdit(null); }, []);
+
+  const hasMCQAccess = (u: UserProfile | null) => {
+    if (!u) return false;
+    if (u.role === 'admin' || u.isMasterAdmin) return true;
+    if (u.isSubscribed) {
+      if (u.subscriptionEnd) {
+        const end = u.subscriptionEnd.toDate ? u.subscriptionEnd.toDate() : new Date(u.subscriptionEnd);
+        return end > new Date();
+      }
+      return true; // Active but no end date
+    }
+    return false;
+  };
+
+  const handleOpenMCQ = useCallback((l: Lecture) => {
+    if (hasMCQAccess(user)) {
+      setMcqLecture(l);
+    } else {
+      setShowPaywall(true);
+    }
+  }, [user]);
 
   if (!isAuthReady) {
     return (
@@ -566,7 +610,7 @@ export default function App() {
 
 
 
-  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || (mcqLecture !== null);
+  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || showSubManage || showPaywall || (mcqLecture !== null);
 
   return (
     <div className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-20'} font-sans transition-colors duration-300`} dir={isRtl ? 'rtl' : 'ltr'}>
@@ -638,8 +682,23 @@ export default function App() {
       {currentTab === 'chat' && (
         <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} onMobileChatOpenChange={setIsMobileChatOpenApp} />
       )}
+      {currentTab === 'subscription' && (
+        <SubscriptionScreen user={user} lang={lang} />
+      )}
       {currentTab === 'profile' && (
-        <ProfileScreen user={user} lang={lang} setLang={setLang} setShowAdminManage={setShowAdminManage} setShowStudentManage={setShowStudentManage} setShowStreakManage={setShowStreakManage} setShowAdminGrades={setShowAdminGrades} setShowStudentGrades={setShowStudentGrades} setShowAdminLogs={setShowAdminLogs} />
+        <ProfileScreen 
+          user={user} 
+          lang={lang} 
+          setLang={setLang} 
+          setShowAdminManage={setShowAdminManage} 
+          setShowStudentManage={setShowStudentManage} 
+          setShowStreakManage={setShowStreakManage} 
+          setShowAdminGrades={setShowAdminGrades} 
+          setShowStudentGrades={setShowStudentGrades} 
+          setShowAdminLogs={setShowAdminLogs}
+          setShowSubManage={setShowSubManage}
+          onNavigateToSubscription={() => setCurrentTab('subscription')}
+        />
       )}
 
       <AdminUpload 
@@ -657,6 +716,18 @@ export default function App() {
       <AntiCheatDashboard isOpen={showAntiCheat} onClose={() => setShowAntiCheat(false)} lang={lang} />
       <AdminLogsScreen isOpen={showAdminLogs} onClose={() => setShowAdminLogs(false)} lang={lang} />
       <StudentGradesScreen isOpen={showStudentGrades} onClose={() => setShowStudentGrades(false)} />
+      {showSubManage && <SubscriptionManagement user={user!} lang={lang} onClose={() => setShowSubManage(false)} />}
+      
+      {showPaywall && (
+        <SubscriptionPaywall 
+          lang={lang} 
+          onClose={() => setShowPaywall(false)} 
+          onSubscribe={() => {
+            setShowPaywall(false);
+            setCurrentTab('subscription');
+          }} 
+        />
+      )}
       
       {showNotificationsModal && user && (
         <NotificationsModal
@@ -673,6 +744,10 @@ export default function App() {
           lang={lang} 
           onClose={() => setMcqLecture(null)} 
         />
+      )}
+
+      {user && user.role === 'student' && isProgressionSeasonActive && !user.hasCompletedProgression && (
+        <ProgressionModal user={user} lang={lang} />
       )}
 
       <GlobalAudioPlayer isRtl={isRtl} />

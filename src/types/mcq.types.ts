@@ -68,6 +68,7 @@ export interface UserSubjectStats {
 
 export interface UserMCQStats {
   userId: string;
+  stageId?: string;
   totalFirstAttemptCorrect: number;
   totalFirstAttemptAnswered: number;
   lecturesAttempted: number;

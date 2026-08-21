@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Language, TRANSLATIONS, UserProfile, Lecture } from '../types';
 import { Loader2, Megaphone, RefreshCw, Plus, X, Image as ImageIcon, Video, Link, Trash2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { useStageContext } from '../contexts/StageContext';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { forceDownload } from '../lib/utils';
@@ -52,6 +53,15 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
   const [newPostText, setNewPostText] = useState('');
   const [newPostFile, setNewPostFile] = useState<File | null>(null);
   const [newPostFileType, setNewPostFileType] = useState<'image' | 'video' | 'file' | null>(null);
+  
+  const { currentAppStage } = useStageContext();
+  const effectiveStageId = React.useMemo(() => {
+    if (!user) return null;
+    if (user.isMasterAdmin) return currentAppStage;
+    if (user.role === 'admin' && user.managedStageId) return user.managedStageId;
+    return user.stageId || null;
+  }, [user, currentAppStage]);
+
   const [linkUrl, setLinkUrl] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
   const [selectedLectures, setSelectedLectures] = useState<string[]>([]);
@@ -129,7 +139,10 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       handleFirestoreError(error, OperationType.GET, 'settings/announcements');
     });
 
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));
+    let q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));
+    if (effectiveStageId) {
+      q = query(collection(db, 'announcements'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'asc'));
+    }
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const newPosts: TelegramPost[] = [];
@@ -168,7 +181,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       unsubscribe();
       unsubscribeReactions();
     };
-  }, []);
+  }, [effectiveStageId]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -264,6 +277,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
         embeddedLectures: selectedLectures,
         linkUrl: linkUrl.trim() || null,
         linkTitle: linkTitle.trim() || null,
+        stageId: effectiveStageId
       };
 
       if (newPostFile) {
@@ -452,7 +466,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                       animate={{ opacity: 1, y: 0 }}
                       key={post.id}
                       className={`relative group w-full mb-4 flex gap-4 ${isRtl ? 'pr-12' : 'pl-12'}`}
-                      id={index === 0 ? "announcement-timeline-0" : undefined}
+                      id={post.id === posts[posts.length - 1]?.id ? "announcement-timeline-0" : undefined}
                     >
                       <div className={`absolute top-4 w-3 h-3 bg-[#2196F3] rounded-full border-4 border-[#F5F7FA] dark:border-zinc-950 ${isRtl ? 'right-[11px]' : 'left-[11px]'}`} />
                       

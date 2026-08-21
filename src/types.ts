@@ -1,6 +1,53 @@
 export type Category = 'pharmacology' | 'pharmacognosy' | 'organic_chemistry' | 'biochemistry' | 'cosmetics';
 export type LectureType = 'theoretical' | 'practical';
 
+// New Multi-Stage Types
+export interface Stage {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  order: number;
+  representativeId?: string;
+}
+
+export interface Subject {
+  id: string;
+  stageId: string;
+  nameEn: string;
+  nameAr: string;
+  types: LectureType[];
+  isActive: boolean;
+}
+
+// Subscription types
+export type SubscriptionPlan = 'monthly' | 'seasonal' | 'semi_annual';
+export type SubscriptionStatus = 'active' | 'inactive' | 'pending' | 'cancelled';
+export type PaymentMethod = 'zaincash' | 'superkey' | 'admin_grant';
+
+export interface Subscription {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName?: string;
+  plan: SubscriptionPlan;
+  status: SubscriptionStatus;
+  startDate: any; // Firestore Timestamp
+  endDate: any;   // Firestore Timestamp
+  paymentMethod: PaymentMethod;
+  transactionId?: string;
+  amount: number; // in IQD
+  createdAt: any;
+  updatedAt?: any;
+  approvedBy?: string;
+  notes?: string;
+}
+
+export const PLAN_CONFIG: Record<SubscriptionPlan, { days: number; price: number; labelAr: string; labelEn: string }> = {
+  monthly: { days: 30, price: 1000, labelAr: 'شهري', labelEn: 'Monthly' },
+  seasonal: { days: 90, price: 3000, labelAr: 'فصلي', labelEn: 'Seasonal' },
+  semi_annual: { days: 180, price: 5000, labelAr: 'نصف سنوي', labelEn: 'Semi-Annual' },
+};
+
 export interface LectureTab {
   id: string;
   name: string;
@@ -10,7 +57,7 @@ export interface LectureTab {
 export interface Lecture {
   id: string;
   title: string;
-  category: Category;
+  category: Category; // Legacy, migrating to subjectId
   type: LectureType;
   description?: string;
   pdfUrl: string;
@@ -21,6 +68,8 @@ export interface Lecture {
   number?: number;
   isWeekly?: boolean;
   version?: 'original' | 'translated';
+  stageId?: string;
+  subjectId?: string;
 }
 
 export interface Post {
@@ -44,7 +93,7 @@ export interface Post {
 export interface RecordItem {
   id: string;
   title: string;
-  category: Category;
+  category: Category; // Legacy, migrating to subjectId
   type: LectureType;
   description?: string;
   audioUrl: string;
@@ -54,6 +103,8 @@ export interface RecordItem {
   uploadedBy: string;
   uploaderName?: string;
   number?: number;
+  stageId?: string;
+  subjectId?: string;
 }
 
 export interface UserProfile {
@@ -96,6 +147,17 @@ export interface UserProfile {
   hideNameOnLeaderboard?: boolean;
   hidePhotoOnLeaderboard?: boolean;
   subgroup?: string;
+  // Cached subscription fields
+  isSubscribed?: boolean;
+  subscriptionEnd?: any; // Firestore Timestamp
+  subscriptionPlan?: SubscriptionPlan;
+  
+  // Multi-Stage & Progression fields
+  stageId?: string;
+  tahmeelSubjects?: string[];
+  managedStageId?: string;
+  hasCompletedProgression?: boolean;
+  lastProgressionYear?: string;
 }
 
 export interface Student {
@@ -238,6 +300,55 @@ export const TRANSLATIONS = {
     addToFavorites: 'إضافة للمفضلة',
     removeFromFavorites: 'إزالة من المفضلة',
     youtubeTag: 'شرح يوتيوب',
+    // Subscription
+    subscription: 'اشتراك',
+    subscribNow: 'اشترك الآن',
+    subscriptionPlans: 'خطط الاشتراك',
+    monthly: 'شهري',
+    seasonal: 'فصلي',
+    semiAnnual: 'نصف سنوي',
+    pricePerMonth: 'دينار/شهر',
+    days: 'يوم',
+    bestValue: 'الأفضل قيمة',
+    popular: 'الأكثر شيوعاً',
+    choosePayment: 'اختر طريقة الدفع',
+    zaincash: 'زين كاش',
+    superkey: 'سوبر كي',
+    payWithZaincash: 'ادفع عبر زين كاش',
+    payWithSuperkey: 'ادفع عبر سوبر كي',
+    superkeyInstructions: 'أرسل المبلغ إلى رقم سوبر كي التالي:',
+    enterTransactionId: 'أدخل رقم العملية',
+    submitPayment: 'تأكيد الدفع',
+    pendingApproval: 'بانتظار الموافقة',
+    subscriptionActive: 'الاشتراك فعال',
+    subscriptionExpired: 'الاشتراك منتهي',
+    subscriptionPending: 'بانتظار التأكيد',
+    daysRemaining: 'يوم متبقي',
+    expiresOn: 'ينتهي في',
+    renewSubscription: 'تجديد الاشتراك',
+    transactionHistory: 'سجل المعاملات',
+    noTransactions: 'لا توجد معاملات سابقة',
+    subscriptionRequired: 'يتطلب اشتراك',
+    mcqRequiresSubscription: 'ميزة الأسئلة تتطلب اشتراكاً فعالاً',
+    askRepresentative: 'اطلب من الممثل تفعيل الميزة',
+    manageSubscriptions: 'إدارة الاشتراكات',
+    totalSubscribers: 'إجمالي المشتركين',
+    activeSubscribers: 'المشتركون الفعالون',
+    pendingPayments: 'مدفوعات معلقة',
+    totalRevenue: 'إجمالي الإيرادات',
+    subscriberBreakdown: 'توزيع المشتركين',
+    paymentMethodStats: 'إحصائيات طرق الدفع',
+    approve: 'موافقة',
+    reject: 'رفض',
+    extend: 'تمديد',
+    cancel: 'إلغاء',
+    grantSubscription: 'منح اشتراك',
+    extendDays: 'عدد أيام التمديد',
+    adminGrant: 'منحة إدارية',
+    iqd: 'د.ع',
+    paymentSuccessful: 'تم الدفع بنجاح!',
+    paymentFailed: 'فشل الدفع',
+    subscriptionActivated: 'تم تفعيل الاشتراك!',
   },
   en: {
     appName: 'محاضراتي',
@@ -348,6 +459,55 @@ export const TRANSLATIONS = {
     addToFavorites: 'Add to Favorites',
     removeFromFavorites: 'Remove from Favorites',
     youtubeTag: 'YouTube Video',
+    // Subscription
+    subscription: 'Subscription',
+    subscribNow: 'Subscribe Now',
+    subscriptionPlans: 'Subscription Plans',
+    monthly: 'Monthly',
+    seasonal: 'Seasonal',
+    semiAnnual: 'Semi-Annual',
+    pricePerMonth: 'IQD/mo',
+    days: 'days',
+    bestValue: 'Best Value',
+    popular: 'Popular',
+    choosePayment: 'Choose Payment Method',
+    zaincash: 'ZainCash',
+    superkey: 'SuperKey',
+    payWithZaincash: 'Pay with ZainCash',
+    payWithSuperkey: 'Pay with SuperKey',
+    superkeyInstructions: 'Send the amount to the following SuperKey number:',
+    enterTransactionId: 'Enter Transaction ID',
+    submitPayment: 'Confirm Payment',
+    pendingApproval: 'Pending Approval',
+    subscriptionActive: 'Subscription Active',
+    subscriptionExpired: 'Subscription Expired',
+    subscriptionPending: 'Pending Confirmation',
+    daysRemaining: 'days remaining',
+    expiresOn: 'Expires on',
+    renewSubscription: 'Renew Subscription',
+    transactionHistory: 'Transaction History',
+    noTransactions: 'No previous transactions',
+    subscriptionRequired: 'Subscription Required',
+    mcqRequiresSubscription: 'MCQ feature requires an active subscription',
+    askRepresentative: 'Ask your representative to activate this feature',
+    manageSubscriptions: 'Manage Subscriptions',
+    totalSubscribers: 'Total Subscribers',
+    activeSubscribers: 'Active Subscribers',
+    pendingPayments: 'Pending Payments',
+    totalRevenue: 'Total Revenue',
+    subscriberBreakdown: 'Subscriber Breakdown',
+    paymentMethodStats: 'Payment Method Stats',
+    approve: 'Approve',
+    reject: 'Reject',
+    extend: 'Extend',
+    cancel: 'Cancel',
+    grantSubscription: 'Grant Subscription',
+    extendDays: 'Extension Days',
+    adminGrant: 'Admin Grant',
+    iqd: 'IQD',
+    paymentSuccessful: 'Payment Successful!',
+    paymentFailed: 'Payment Failed',
+    subscriptionActivated: 'Subscription Activated!',
   }
 };
 

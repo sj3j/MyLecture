@@ -1,9 +1,10 @@
 import React from 'react';
-import { Search, LogOut, BookOpen, Upload, Languages, Moon, Sun, Inbox } from 'lucide-react';
+import { Search, LogOut, BookOpen, Upload, Languages, Moon, Sun, Inbox, Layers } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { UserProfile, Language, TRANSLATIONS } from '../types';
 import { Tab } from './BottomNav';
+import { useStageContext } from '../contexts/StageContext';
 
 interface NavbarProps {
   user: UserProfile | null;
@@ -22,6 +23,8 @@ interface NavbarProps {
 export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload, lang, setLang, currentTab, theme, toggleTheme, onShowNotifications, hasUnreadNotifications }: NavbarProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+  const { stages, currentAppStage, setCurrentAppStage, isLoadingStages } = useStageContext();
+  const isMasterAdmin = user?.isMasterAdmin || false;
 
   return (
     <nav className="sticky top-0 z-50 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-slate-200 dark:border-zinc-800 transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -56,6 +59,24 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
           )}
 
           <div className="flex items-center gap-2 sm:gap-4">
+            {isMasterAdmin && (
+              <div className={`flex items-center bg-slate-100 dark:bg-zinc-800 rounded-full px-3 py-1.5 border border-slate-200 dark:border-zinc-700 ${isRtl ? 'ml-2' : 'mr-2'}`}>
+                <Layers className={`w-4 h-4 text-sky-600 dark:text-sky-400 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <select
+                  value={currentAppStage || (stages[0]?.id || '')}
+                  onChange={(e) => setCurrentAppStage(e.target.value || null)}
+                  className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+                  disabled={isLoadingStages}
+                >
+                  {stages.map(stage => (
+                    <option key={stage.id} value={stage.id}>
+                      {isRtl ? stage.nameAr : stage.nameEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
             {user && onShowNotifications && (
               <button
                 onClick={onShowNotifications}

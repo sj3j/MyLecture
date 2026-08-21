@@ -51,6 +51,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { motion, AnimatePresence } from "motion/react";
 import { forceDownload } from "../lib/utils";
+import { useStageContext } from "../contexts/StageContext";
 
 interface ChatMessage {
   id: string;
@@ -651,6 +652,7 @@ export default function ChatScreen({
     user?.permissions?.manageChat !== false;
   const isMasterAdmin = user?.isMasterAdmin;
   const CHAT_DOC_ID = "config";
+  const { currentAppStage } = useStageContext();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [settings, setSettings] = useState<ChatSettings>({
@@ -904,8 +906,11 @@ export default function ChatScreen({
   useEffect(() => {
     setIsLoading(true);
     setMessages([]);
+    const constraints = activeChat.type === 'group' ? [where("stageId", "==", currentAppStage)] : [];
+
     const q = query(
       collection(db, currentChatCollectionPath),
+      ...constraints,
       orderBy("createdAt", "desc"),
       limit(50),
     );
@@ -1147,6 +1152,7 @@ export default function ChatScreen({
         isAnonymous: isAnon,
         originalSenderName: user.name,
         originalSenderExamCode: user.examCode || "",
+        ...(activeChat.type === 'group' ? { stageId: currentAppStage } : {}),
       };
 
       if (finalFileUrl) {
@@ -1286,8 +1292,11 @@ export default function ChatScreen({
       if (messages.length === 0) return;
       const oldestMessage = messages[0];
 
+      const constraints = activeChat.type === 'group' ? [where("stageId", "==", currentAppStage)] : [];
+
       const q = query(
         collection(db, currentChatCollectionPath),
+        ...constraints,
         orderBy("createdAt", "desc"),
         where("createdAt", "<", oldestMessage.createdAt),
         limit(50),
@@ -1399,8 +1408,11 @@ export default function ChatScreen({
 
       const oldestLoaded = messages[0];
       if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp) {
+        const constraints = activeChat.type === 'group' ? [where("stageId", "==", currentAppStage)] : [];
+
         const q = query(
           collection(db, currentChatCollectionPath),
+          ...constraints,
           orderBy("createdAt", "desc"),
           where("createdAt", "<", oldestLoaded.createdAt),
           where("createdAt", ">=", targetTimestamp),

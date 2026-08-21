@@ -5,6 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 import { AudioProvider } from './contexts/AudioContext';
+import { StageProvider } from './contexts/StageContext';
 
 const originalConsoleError = console.error;
 console.error = (...args) => {
@@ -26,9 +27,11 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <AudioProvider>
-        <App />
-      </AudioProvider>
+      <StageProvider>
+        <AudioProvider>
+          <App />
+        </AudioProvider>
+      </StageProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

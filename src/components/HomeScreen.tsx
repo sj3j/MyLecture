@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Language, TRANSLATIONS, Lecture } from '../types';
-import { Flame, GraduationCap, Users } from 'lucide-react';
+import { Flame, GraduationCap, Users, BookOpen } from 'lucide-react';
 import SubjectBrowser from './SubjectBrowser';
 import WeeklyListScreen from './WeeklyListScreen';
 import RecordsScreen from './RecordsScreen';
@@ -192,18 +192,48 @@ export default function HomeScreen({
 
       {/* Content Area */}
       <div className="relative">
-        {activeTab === 'lectures' && (
-          <SubjectBrowser
-            lectures={lectures}
-            lang={lang}
-            user={user}
-            searchQuery={searchQuery}
-            isLoading={isLoading}
-            onNavigateToChat={onNavigateToChat}
-            onEdit={onEdit}
-            onOpenMCQ={onOpenMCQ}
-          />
-        )}
+        {activeTab === 'lectures' && (() => {
+          const currentLectures = lectures.filter(l => !user?.tahmeelSubjects?.includes(l.subjectId || ''));
+          const tahmeelLectures = lectures.filter(l => user?.tahmeelSubjects?.includes(l.subjectId || ''));
+          
+          return (
+            <div className="space-y-12">
+              <SubjectBrowser
+                lectures={currentLectures}
+                lang={lang}
+                user={user}
+                searchQuery={searchQuery}
+                isLoading={isLoading}
+                onNavigateToChat={onNavigateToChat}
+                onEdit={onEdit}
+                onOpenMCQ={onOpenMCQ}
+              />
+              
+              {tahmeelLectures.length > 0 && (
+                <div className="border-t border-slate-200 dark:border-zinc-800 pt-8">
+                  <div className="flex items-center gap-3 mb-6 px-2 sm:px-0">
+                    <div className="w-10 h-10 rounded-xl bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
+                      <BookOpen className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-900 dark:text-stone-100">
+                      {isRtl ? 'مواد التحميل' : 'Carry-over Subjects'}
+                    </h2>
+                  </div>
+                  <SubjectBrowser
+                    lectures={tahmeelLectures}
+                    lang={lang}
+                    user={user}
+                    searchQuery={searchQuery}
+                    isLoading={isLoading}
+                    onNavigateToChat={onNavigateToChat}
+                    onEdit={onEdit}
+                    onOpenMCQ={onOpenMCQ}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {activeTab === 'downloads' && (
           <DownloadsTab
              lectures={lectures}

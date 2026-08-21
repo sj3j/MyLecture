@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES, Homework } from '../types';
 import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Camera, Image as ImageIcon, Trash2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import SpotlightTooltip from './SpotlightTooltip';
+import { useStageContext } from '../contexts/StageContext';
 
 interface WeeklyListScreenProps {
   lang: Language;
@@ -44,9 +45,20 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
 
+  const { currentAppStage } = useStageContext();
+  const effectiveStageId = React.useMemo(() => {
+    if (!user) return null;
+    if (user.isMasterAdmin) return currentAppStage;
+    if (user.role === 'admin' && user.managedStageId) return user.managedStageId;
+    return user.stageId || null;
+  }, [user, currentAppStage]);
+
   useEffect(() => {
     // Load homeworks
-    const q = query(collection(db, 'homeworks'), orderBy('dueDate', 'asc'));
+    let q = query(collection(db, 'homeworks'), orderBy('dueDate', 'asc'));
+    if (effectiveStageId) {
+      q = query(collection(db, 'homeworks'), where('stageId', '==', effectiveStageId), orderBy('dueDate', 'asc'));
+    }
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Homework));
       setHomeworks(docs);
@@ -80,7 +92,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
       unsubscribe();
       unsubscribeSettings();
     };
-  }, [user?.uid, user?.role, user?.group]);
+  }, [user?.uid, user?.role, user?.group, effectiveStageId]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -171,6 +183,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
         type,
         note,
         lectures: selectedLectures,
+        stageId: effectiveStageId || 'stage_3'
       };
 
       if (finalDueDate) {

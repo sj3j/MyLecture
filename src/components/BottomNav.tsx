@@ -3,7 +3,7 @@ import { Bell, BookOpen, User, Trophy, MessageSquare } from 'lucide-react';
 import { Language, TRANSLATIONS } from '../types';
 import { motion } from 'motion/react';
 
-export type Tab = 'home' | 'announcements' | 'leaderboard' | 'chat' | 'profile';
+export type Tab = 'home' | 'announcements' | 'leaderboard' | 'chat' | 'profile' | 'subscription';
 
 interface BottomNavProps {
   currentTab: Tab | 'weekly' | 'lectures'; // keep old tabs for backwards compat if needed temporarily
