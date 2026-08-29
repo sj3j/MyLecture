@@ -16,7 +16,7 @@ import {
   ZainCashStatus,
   inquireTransaction,
   parseOrderId,
-} from './zaincash';
+} from './zaincash.js';
 
 /**
  * Server-side plan table. Mirrors PLAN_CONFIG in src/types.ts, which is the

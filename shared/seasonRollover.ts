@@ -24,8 +24,8 @@ import {
   closableTerm,
   resolvePhase,
   seasonNameFor,
-} from './academicCalendar';
-import { startNewSeason } from './seasonReset';
+} from './academicCalendar.js';
+import { startNewSeason } from './seasonReset.js';
 
 export interface RolloverResult {
   today: string;

@@ -18,7 +18,7 @@
  *    lowercased email but Google-login uids are not, and an email can have more
  *    than one user doc (hence the merge-duplicates tool in StudentManagement).
  */
-import { GroupConfigLike, FALLBACK_GROUP_CONFIG, isValidSubgroup, normalizeSubgroup } from './groups';
+import { GroupConfigLike, FALLBACK_GROUP_CONFIG, isValidSubgroup, normalizeSubgroup } from './groups.js';
 
 /** One row of the roster spreadsheet, already normalised. */
 export interface PromotionRow {

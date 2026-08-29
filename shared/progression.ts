@@ -17,7 +17,7 @@
  * Everything is keyed on the calendar's `yearLabel`, so next year's calendar
  * reopens the cycle for everyone without any migration.
  */
-import { ProgressionGate } from './academicCalendar';
+import { ProgressionGate } from './academicCalendar.js';
 
 export type ProgressionRound = 'first' | 'resit';
 export type ProgressionStep = 'none' | ProgressionRound;

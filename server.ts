@@ -8,13 +8,13 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { startNewSeason } from "./shared/seasonReset";
-import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar } from "./shared/seasonRollover";
-import { submitProgression, ProgressionError } from "./shared/progressionSubmit";
-import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "./shared/googleLogin";
-import { createSignupRequest, reviewSignupRequest, SignupError } from "./shared/signupRequest";
+import { startNewSeason } from "./shared/seasonReset.js";
+import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar } from "./shared/seasonRollover.js";
+import { submitProgression, ProgressionError } from "./shared/progressionSubmit.js";
+import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "./shared/googleLogin.js";
+import { createSignupRequest, reviewSignupRequest, SignupError } from "./shared/signupRequest.js";
 import { OAuth2Client } from "google-auth-library";
-import { activeDaysBetween, addDays, isLiveDay } from "./shared/academicCalendar";
+import { activeDaysBetween, addDays, isLiveDay } from "./shared/academicCalendar.js";
 import {
   loadZainCashConfig,
   initTransaction,
@@ -23,14 +23,14 @@ import {
   successUrlFor,
   failureUrlFor,
   tagOrderId,
-} from "./shared/zaincash";
+} from "./shared/zaincash.js";
 import {
   PLAN_CONFIG,
   activateSubscription,
   settleZainCashPayment,
   NotifyFn,
   SubscriptionCtx,
-} from "./shared/subscriptions";
+} from "./shared/subscriptions.js";
 
 dotenv.config();
 

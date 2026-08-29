@@ -13,11 +13,11 @@
  * The round is recomputed here rather than trusted from the request, so a
  * student cannot skip to the three-way question and promote themselves early.
  */
-import { AcademicCalendar, baghdadToday, progressionGate } from './academicCalendar';
+import { AcademicCalendar, baghdadToday, progressionGate } from './academicCalendar.js';
 import {
   ProgressionRound, ProgressionAnswer, StageLike,
   nextProgressionStep, progressionOutcome, isAnswerValid,
-} from './progression';
+} from './progression.js';
 
 export interface SubmitResult {
   promoted: boolean;

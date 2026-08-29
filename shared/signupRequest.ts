@@ -6,7 +6,7 @@
  * no student record and cannot get in. That gate is the security boundary; this
  * collection is only a queue.
  */
-import { GroupConfigLike, FALLBACK_GROUP_CONFIG, isValidSubgroup, normalizeSubgroup } from './groups';
+import { GroupConfigLike, FALLBACK_GROUP_CONFIG, isValidSubgroup, normalizeSubgroup } from './groups.js';
 
 export type SignupStatus = 'pending' | 'approved' | 'rejected';
 
