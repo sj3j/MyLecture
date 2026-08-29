@@ -28,3 +28,6 @@ android/app/build/
 android/build/
 android/.gradle/
 build-output/
+
+.vercel
+.env*
