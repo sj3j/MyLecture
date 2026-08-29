@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle, Youtube, ClipboardList } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
+import { canManage } from '../lib/permissions';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, deleteDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
@@ -62,7 +63,11 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
   };
 
   const categoryData = CATEGORIES.find(c => c.value === lecture.category);
-  const categoryLabel = categoryData ? t[categoryData.labelKey] : lecture.category;
+  // subjectName is denormalised at upload time so the badge reads correctly for
+  // curriculum subjects, which have no legacy CATEGORIES entry to look up.
+  const categoryLabel = lecture.subjectName
+    || (categoryData ? t[categoryData.labelKey] : lecture.category)
+    || '';
   const date = lecture.createdAt?.toDate ? lecture.createdAt.toDate().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US') : t.recently;
 
   const { isDownloaded, isDownloading, downloadProgress, offlineUrl, downloadPDF, removePDF } = useOfflinePDF(lecture.pdfUrl, lecture.id);
@@ -85,7 +90,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
   };
 
   const handleDelete = async () => {
-    if (!user || (!['admin'].includes(user.role) || user?.permissions?.manageLectures === false)) return;
+    if (!canManage(user, 'manageLectures')) return;
     
     setIsDeleting(true);
     try {
@@ -283,7 +288,7 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
             </button>
           )}
 
-          {user && ['admin'].includes(user.role) && user?.permissions?.manageLectures !== false && (
+          {canManage(user, 'manageLectures') && (
             <>
               <button
                 onClick={() => onEdit?.(lecture)}

@@ -2,11 +2,63 @@ import express from "express";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { startNewSeason } from "../shared/seasonReset";
+import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar } from "../shared/seasonRollover";
+import { submitProgression, ProgressionError } from "../shared/progressionSubmit";
+import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "../shared/googleLogin";
+import { createSignupRequest, reviewSignupRequest, SignupError } from "../shared/signupRequest";
+import { OAuth2Client } from "google-auth-library";
+import { activeDaysBetween, addDays, isLiveDay } from "../shared/academicCalendar";
+import {
+  loadZainCashConfig,
+  initTransaction,
+  verifyGatewayToken,
+  resolveAppOrigin,
+  successUrlFor,
+  failureUrlFor,
+  tagOrderId,
+} from "../shared/zaincash";
+import {
+  PLAN_CONFIG,
+  activateSubscription,
+  settleZainCashPayment,
+  NotifyFn,
+  SubscriptionCtx,
+} from "../shared/subscriptions";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const app = express();
 app.use(express.json());
+// Capacitor serves the bundled app from https://localhost (Android) and
+// capacitor://localhost (iOS), so every /api call from the native build is a
+// cross-origin request. Without these headers the WebView blocks them all and
+// the app looks broken with no HTTP status to debug from.
+//
+// Bearer-token auth survives this; cookie auth would not, which is why the API
+// stays token-based. No credentials are allowed, so the allowlist is safe.
+const NATIVE_ORIGINS = new Set([
+  "https://localhost",
+  "capacitor://localhost",
+  "http://localhost",
+]);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && NATIVE_ORIGINS.has(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-cron-secret");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    res.header("Access-Control-Max-Age", "86400");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+  }
+  next();
+});
+// ZainCash posts the webhook as JSON, but their own sample registers both
+// parsers. Without this a form-encoded delivery reads as an empty body and
+// we would answer 400 to every retry forever.
+app.use(express.urlencoded({ extended: true }));
 
 // Initialize Firebase Admin for FCM
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
@@ -56,6 +108,14 @@ const verifyAuth = async (req: express.Request, res: express.Response, next: exp
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };
+
+// Google sign-in accepts a Firebase token (web popup) or a raw Google OAuth
+// token (native plugin). The two need different verifiers, so the OAuth client
+// is built once here. google-auth-library was already a dependency.
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.GOOGLE_WEB_CLIENT_ID ||
+  "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com";
+const googleOAuthClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
 
 const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const user = (req as any).user;
@@ -225,6 +285,44 @@ app.post("/api/notify", verifyAuth, verifyAdmin, async (req, res) => {
 });
 
 // Student Login
+// Copies stage assignment from the whitelist collections (`students` /
+// `allowed_admins`) onto the `users` document. Mirrors syncUserStage in
+// server.ts — vercel.json routes all /api/* here, so the fix has to exist in
+// both surfaces or it silently never runs in production.
+//
+// Must be server-side: firestore.rules only lets a student write their own
+// `stageId` during progression season.
+const syncUserStage = async (
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  source: { stageId?: string | null; managedStageId?: string | null } | undefined,
+) => {
+  if (!uid || !source) return;
+  try {
+    const userRef = db.collection('users').doc(uid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return;
+
+    const current = userSnap.data() || {};
+    const patch: Record<string, unknown> = {};
+
+    if (source.stageId && current.stageId !== source.stageId) {
+      patch.stageId = source.stageId;
+    }
+    if (source.managedStageId && current.managedStageId !== source.managedStageId) {
+      patch.managedStageId = source.managedStageId;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await userRef.update(patch);
+      console.log(`Synced stage fields for ${uid}:`, patch);
+    }
+  } catch (err) {
+    // Never block a login on this.
+    console.error("Failed to sync user stage:", err);
+  }
+};
+
 app.post("/api/login", async (req, res) => {
   if (!admin.apps.length) {
     return res.status(500).json({ error: "Firebase Admin is not configured." });
@@ -272,6 +370,11 @@ app.post("/api/login", async (req, res) => {
       return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
     }
 
+    const usersQuery = await db.collection('users').where('email', '==', email.toLowerCase()).limit(1).get();
+    if (!usersQuery.empty) {
+      await syncUserStage(db, usersQuery.docs[0].id, { stageId: studentData?.stageId });
+    }
+
     const customToken = await admin.auth().createCustomToken(email.toLowerCase(), {
       email: email.toLowerCase()
     });
@@ -283,67 +386,124 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+// --- Self-service signup, approved by the stage representative -------------
+// Public, but creates NO usable account: login is gated on students/{email},
+// so a pending request cannot get in. Never log req.body here - it carries the
+// plaintext password until createSignupRequest hashes it.
+app.post("/api/signup/request", async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const prepared = await createSignupRequest(
+      db,
+      admin.firestore.FieldValue as any,
+      (plain: string) => bcrypt.hash(plain, 10),
+      req.body || {},
+    );
+    return res.json({ success: true, email: prepared.email, status: "pending" });
+  } catch (error: any) {
+    if (error instanceof SignupError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error("Signup request failed:", error?.message || error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// The stages a signup form can choose from. Public so the form works before
+// the applicant has any credentials, and deliberately minimal - ids and names
+// only, plus the group structure needed to validate their choice.
+app.get("/api/signup/stages", async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const snap = await db.collection("stages").orderBy("order", "asc").get();
+    return res.json({
+      stages: snap.docs.map(d => {
+        const s = d.data() as any;
+        return {
+          id: s.id || d.id,
+          nameAr: s.nameAr || null,
+          nameEn: s.nameEn || null,
+          order: s.order ?? 0,
+          groupConfig: s.groupConfig || null,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Signup stages failed:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/admin/signup/:email/:action", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const user = (req as any).user;
+    const action = req.params.action;
+    if (action !== "approve" && action !== "reject") {
+      return res.status(400).json({ error: "Unknown action" });
+    }
+
+    const reviewerDoc = await db.collection("users").doc(user.uid).get();
+    const reviewer = reviewerDoc.data() || {};
+    const masters = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+    const isMaster = !!user.email && masters.includes(String(user.email).toLowerCase());
+
+    const result = await reviewSignupRequest(db, admin.firestore.FieldValue as any, {
+      email: req.params.email,
+      approve: action === "approve",
+      reviewerUid: user.uid,
+      reviewerStageId: reviewer.managedStageId || null,
+      isMasterAdmin: isMaster,
+      reason: req.body?.reason,
+    });
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    if (error instanceof SignupError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error("Signup review failed:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.post("/api/google-login", async (req, res) => {
   try {
-    const { idToken } = req.body;
-    if (!idToken) {
-      return res.status(400).json({ error: "Missing idToken" });
-    }
-
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const email = decodedToken.email;
-
-    if (!email) {
-       return res.status(400).json({ error: "No email associated." });
-    }
-
-    const emailLower = email.toLowerCase();
+    const { idToken, googleIdToken } = req.body || {};
     const db = admin.firestore();
-    
-    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
-    const isMasterAdmin = adminEmails.includes(emailLower);
-    
-    let isAllowed = false;
 
-    if (isMasterAdmin) {
-      isAllowed = true;
-    } else {
-      const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
-      if (adminDoc.exists) {
-         isAllowed = true;
-      } else {
-         const studentDoc = await db.collection('students').doc(emailLower).get();
-         if (!studentDoc.exists) {
-            return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
-         }
-         if (studentDoc.data()?.isActive === false) {
-            return res.status(401).json({ error: "الحساب معطل" });
-         }
-         isAllowed = true;
-      }
+    const identity = await verifyGoogleIdentity({
+      adminAuth: admin.auth(),
+      oauthClient: googleOAuthClient,
+      audience: GOOGLE_WEB_CLIENT_ID,
+      idToken,
+      googleIdToken,
+    });
+
+    const result = await resolveGoogleLogin(db, admin.auth(), identity, {
+      masterAdminEmails: ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"],
+      // Only used when no users doc carries this email yet.
+      fallbackUid: identity.email,
+      syncUserStage: (uid, source) => syncUserStage(db, uid, source),
+    });
+
+    res.json({ token: result.customToken });
+  } catch (error: any) {
+    if (error instanceof GoogleLoginError) {
+      // NO_ACCOUNT is not a failure - the client routes them to signup with the
+      // verified name and email pre-filled.
+      return res.status(error.status).json({ error: error.message, code: error.code });
     }
-
-    let targetUid = decodedToken.uid;
-    const usersQuery = await db.collection('users').where('email', '==', emailLower).limit(1).get();
-    if (!usersQuery.empty) {
-      targetUid = usersQuery.docs[0].id;
-    }
-
-    const customToken = await admin.auth().createCustomToken(targetUid, { email: emailLower });
-    res.json({ token: customToken });
-
-  } catch (error) {
     console.error("Google login error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Admin Create Student
-app.post("/api/admin/students", async (req, res) => {
+app.post("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
-    const { name, email, password, examCode } = req.body;
+    const { name, email, password, examCode, stageId, subgroup } = req.body;
     if (!name || !email || !password || !examCode) return res.status(400).json({ error: "All fields are required." });
 
     const db = admin.firestore();
@@ -361,6 +521,9 @@ app.post("/api/admin/students", async (req, res) => {
       password: hashedPassword,
       examCode,
       isActive: true,
+      // Carried onto the users doc at login by syncUserStage.
+      ...(stageId ? { stageId } : {}),
+      ...(subgroup ? { subgroup } : {}),
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -371,7 +534,7 @@ app.post("/api/admin/students", async (req, res) => {
 });
 
 // Admin Get Students
-app.get("/api/admin/students", async (req, res) => {
+app.get("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
@@ -397,7 +560,7 @@ app.get("/api/admin/students", async (req, res) => {
 });
 
 // Admin Toggle Student Status
-app.patch("/api/admin/students/:email/toggle", async (req, res) => {
+app.patch("/api/admin/students/:email/toggle", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
@@ -412,7 +575,7 @@ app.patch("/api/admin/students/:email/toggle", async (req, res) => {
 });
 
 // Admin Delete Student
-app.delete("/api/admin/students/:email", async (req, res) => {
+app.delete("/api/admin/students/:email", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
@@ -426,7 +589,7 @@ app.delete("/api/admin/students/:email", async (req, res) => {
 });
 
 // Admin Delete All Students
-app.delete("/api/admin/students", async (req, res) => {
+app.delete("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
@@ -442,7 +605,7 @@ app.delete("/api/admin/students", async (req, res) => {
 });
 
 // Admin Edit Student
-app.put("/api/admin/students/:email", async (req, res) => {
+app.put("/api/admin/students/:email", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
@@ -607,22 +770,26 @@ const getEffectiveDateString = (gracePeriodHours: number = 2) => {
   return getBaghdadDate(now);
 };
 
-const calcDaysDifference = (parsedDate1Str: string, parsedDate2Str: string) => {
-  const d1 = new Date(`${parsedDate1Str}T12:00:00Z`);
-  const d2 = new Date(`${parsedDate2Str}T12:00:00Z`);
-  const diff = Math.abs(d1.getTime() - d2.getTime());
-  return Math.round(diff / (1000 * 60 * 60 * 24));
-};
-
 app.post("/api/record-activity", verifyAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const db = admin.firestore();
     
-    const appSettingsDocCheck = await db.collection('app_settings').doc('streak').get();
-    const isVacationMode = appSettingsDocCheck.exists && appSettingsDocCheck.data()?.vacationMode === true;
-    if (isVacationMode) {
-      return res.json({ success: true, vacationMode: true, message: "Vacation mode is active. Streaks are paused." });
+    // Whether streaks count today is derived from the academic calendar, not
+    // from a stored flag, so a break pauses the app whether or not the nightly
+    // rollover ever ran. Resolved against the day being CREDITED (grace period
+    // applied), so the gate and the streak arithmetic always agree on the date.
+    const settingsSnap = await db.collection('app_settings').doc('streak').get();
+    const graceHours = settingsSnap.exists ? (settingsSnap.data()?.gracePeriodHours ?? 2) : 2;
+    const { calendar, phase } = await resolveCurrentPhase(db, getEffectiveDateString(graceHours));
+    if (phase.isPaused) {
+      return res.json({
+        success: true,
+        vacationMode: true,
+        phase: phase.phase,
+        resumesOn: phase.nextStart,
+        message: "The competition is paused for the break. Streaks are frozen.",
+      });
     }
 
     const userRef = db.collection('users').doc(user.uid);
@@ -684,8 +851,12 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
       if (!processedLastDate) {
         streakCount = 1;
       } else {
-        const daysDiff = calcDaysDifference(effectiveDate, processedLastDate);
-        
+        // Paused days are not misses: a student active on the last live day
+        // before a break and again on the first day of the new term is one day
+        // apart. Without this every student loses their streak across a break
+        // the rollover failed to archive.
+        const daysDiff = activeDaysBetween(calendar, processedLastDate, effectiveDate);
+
         if (daysDiff === 1) {
           streakCount += 1;
         } else if (daysDiff > 1) {
@@ -698,15 +869,21 @@ app.post("/api/record-activity", verifyAuth, async (req, res) => {
             hasUsedFreeze = true;
             if (method !== 'global_freeze') method = 'freeze_token';
             
-            let d = new Date(`${processedLastDate}T12:00:00Z`);
-            for (let i = 0; i < missedDays; i++) {
-              d.setDate(d.getDate() + 1);
-              const gapDateStr = getBaghdadDate(d);
-              
-              const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDateStr}`);
+            // Stamp only the LIVE days that were missed. Walking raw calendar
+            // days here would mark break days as covered by a freeze token,
+            // which is both wrong on the streak calendar and off by however
+            // long the break was.
+            let gapDate = processedLastDate;
+            for (let stamped = 0; stamped < missedDays; ) {
+              gapDate = addDays(gapDate, 1);
+              if (gapDate >= effectiveDate) break;
+              if (!isLiveDay(calendar, gapDate)) continue;
+              stamped++;
+
+              const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDate}`);
               t.set(gapHistoryRef, {
                 userId: user.uid,
-                date: gapDateStr,
+                date: gapDate,
                 wasActive: true,
                 freezeUsed: true,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
@@ -830,6 +1007,129 @@ app.get("/api/streak-history/:uid", verifyAuth, async (req, res) => {
   } catch (error) {
     console.error("Error fetching streak history:", error);
     res.status(500).json({ error: "Failed to fetch streak history" });
+  }
+});
+
+
+// Ends the current season: archives BOTH boards into each student's profile
+// with their final rank, zeroes the live boards, and starts the new season.
+
+// Records a student's end-of-year result and moves them if they passed.
+//
+// Server-side because syncUserStage copies students/{email}.stageId onto the
+// user doc at every login - a client-only write is reverted at next sign-in -
+// and because students/ is admin-write-only. The round is recomputed from the
+// calendar rather than trusted, so nobody can skip ahead and promote early.
+app.post("/api/progression/submit", verifyAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { round, answer, tahmeelSubjects } = req.body || {};
+    const db = admin.firestore();
+    const calendar = await loadCalendar(db);
+
+    const result = await submitProgression(db, admin.firestore.FieldValue as any, calendar, {
+      uid: user.uid,
+      round,
+      answer,
+      tahmeelSubjects: Array.isArray(tahmeelSubjects) ? tahmeelSubjects : [],
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    if (error instanceof ProgressionError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error("Progression submit error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/admin/start-new-season", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { seasonName } = req.body;
+    const adminUser = (req as any).user;
+
+    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+    if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
+      return res.status(403).json({ error: "Master Admin only" });
+    }
+    if (!seasonName || !String(seasonName).trim()) {
+      return res.status(400).json({ error: "Season name required" });
+    }
+
+    const result = await startNewSeason(
+      admin.firestore(),
+      admin.firestore.FieldValue as any,
+      { seasonName: String(seasonName).trim(), performedBy: adminUser.uid },
+    );
+
+    // Whether the app is live afterwards is the calendar's call, not this
+    // button's - ending a season during a break must leave the break in place.
+    const phase = await syncPhaseMirror(admin.firestore(), admin.firestore.FieldValue as any);
+
+    return res.json({ success: true, ...result, phase: phase.phase, isPaused: phase.isPaused });
+  } catch (error: any) {
+    console.error("Start new season error:", error);
+    return res.status(500).json({ error: error?.message || "Internal server error" });
+  }
+});
+
+// Closes any season whose term has ended and syncs the phase mirror. Safe to
+// call repeatedly - archiving is guarded per term by seasonClosedFor.
+const seasonRolloverHandler = async (req: any, res: any) => {
+  // Fails closed, unlike the notification cron: this endpoint archives and
+  // zeroes both leaderboards. With no secret configured it stays shut, and the
+  // overdue-season warning in the calendar modal makes that visible.
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.error("Season rollover blocked: CRON_SECRET is not configured.");
+    return res.status(401).send("Cron secret not configured");
+  }
+  const header = req.headers['x-cron-secret'];
+  const bearer = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  if (header !== secret && bearer !== secret) {
+    return res.status(403).send("Forbidden");
+  }
+
+  try {
+    const result = await runSeasonRollover(
+      admin.firestore(),
+      admin.firestore.FieldValue as any,
+      { performedBy: 'cron' },
+    );
+    if (result.archived) {
+      console.log(`Season rollover archived ${result.archived} as ${result.seasonId}`);
+    }
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error("Season rollover error:", error);
+    return res.status(500).json({ error: error?.message || "Internal server error" });
+  }
+};
+
+// Vercel Cron issues a GET; POST is kept for manual curl and for parity with
+// the other cron endpoint.
+app.get("/api/cron/season-rollover", seasonRolloverHandler);
+app.post("/api/cron/season-rollover", seasonRolloverHandler);
+
+// Manual fallback for the settings modal, so a missed cron is one click to fix.
+app.post("/api/admin/run-season-rollover", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const adminUser = (req as any).user;
+    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+    if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
+      return res.status(403).json({ error: "Master Admin only" });
+    }
+
+    const result = await runSeasonRollover(
+      admin.firestore(),
+      admin.firestore.FieldValue as any,
+      { performedBy: adminUser.uid },
+    );
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error("Manual season rollover error:", error);
+    return res.status(500).json({ error: error?.message || "Internal server error" });
   }
 });
 
@@ -1127,6 +1427,370 @@ app.post("/api/cron/streak-warnings", async (req, res) => {
   } catch (e) {
     console.error("Cron streak warnings error", e);
     res.status(500).json({ error: "Error sending warnings" });
+  }
+});
+
+// ===================================================================
+// SUBSCRIPTION ENDPOINTS
+// ===================================================================
+
+/** Send a subscription FCM notification. Injected into the shared helpers. */
+const notifySubscription: NotifyFn = async (userId, event, plan) => {
+  try {
+    const db = admin.firestore();
+    const tokenDoc = await db.collection('fcm_tokens').doc(userId).get();
+    if (!tokenDoc.exists || !tokenDoc.data()?.token) return;
+    const token = tokenDoc.data()!.token;
+
+    const titles: Record<string, string> = {
+      activated: 'تم تفعيل الاشتراك! ✅',
+      expired: 'انتهى اشتراكك ⏰',
+      approved: 'تمت الموافقة على الدفع ✅',
+      rejected: 'تم رفض طلب الدفع ❌',
+    };
+
+    const bodies: Record<string, string> = {
+      activated: 'تم تفعيل اشتراكك بنجاح. يمكنك الآن الوصول إلى جميع ميزات الأسئلة.',
+      expired: 'انتهت صلاحية اشتراكك. جدّد الآن للاستمرار في استخدام ميزات الأسئلة.',
+      approved: 'تمت الموافقة على دفعتك عبر سوبر كي. تم تفعيل اشتراكك.',
+      rejected: 'تم رفض طلب الدفع الخاص بك. تواصل مع الدعم لمزيد من المعلومات.',
+    };
+
+    await admin.messaging().send({
+      token,
+      notification: {
+        title: titles[event] || 'محاضراتي',
+        body: bodies[event] || '',
+      },
+      data: { type: 'subscription', event, ...(plan ? { plan } : {}) },
+    });
+  } catch (err) {
+    console.error('FCM notification error:', err);
+  }
+};
+
+/** Context handed to the shared subscription helpers. */
+const subCtx = (): SubscriptionCtx => ({
+  db: admin.firestore(),
+  FieldValue: admin.firestore.FieldValue,
+  Timestamp: admin.firestore.Timestamp,
+  notify: notifySubscription,
+});
+
+// --- ZainCash v2: Initiate Payment ---
+app.post('/api/zaincash/init', verifyAuth, async (req, res) => {
+  try {
+    const { plan, lang } = req.body;
+    const user = (req as any).user;
+    const config = PLAN_CONFIG[plan];
+
+    if (!config) {
+      return res.status(400).json({ error: 'Invalid plan' });
+    }
+
+    let cfg;
+    let origin;
+    try {
+      cfg = loadZainCashConfig();
+      origin = resolveAppOrigin();
+    } catch (e: any) {
+      console.error('ZainCash config error:', e.message);
+      return res.status(500).json({ error: 'ZainCash not configured' });
+    }
+
+    const db = admin.firestore();
+
+    // Reuse the wallet number from this customer's last successful payment.
+    // Absent on a first payment, in which case the gateway prompts for it.
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const customerPhone = userDoc.data()?.zaincashMsisdn as string | undefined;
+
+    // Unique per attempt: the gateway's idempotency and reconciliation key.
+    const externalReferenceId = crypto.randomUUID();
+
+    const subRef = await db.collection('subscriptions').add({
+      userId: user.uid,
+      userEmail: user.email || '',
+      userName: userDoc.data()?.name || '',
+      plan,
+      status: 'pending',
+      paymentMethod: 'zaincash',
+      amount: config.price,
+      externalReferenceId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    try {
+      const result = await initTransaction(cfg, {
+        externalReferenceId,
+        orderId: tagOrderId(subRef.id),
+        amount: config.price,
+        language: lang === 'en' ? 'en' : 'ar',
+        successUrl: successUrlFor(origin),
+        failureUrl: failureUrlFor(origin),
+        customerPhone,
+      });
+
+      await subRef.update({
+        transactionId: result.transactionId,
+        expiryTime: result.expiryTime || null,
+      });
+
+      // Always the gateway's own URL — the spec forbids constructing it.
+      return res.json({ redirectUrl: result.redirectUrl, subscriptionId: subRef.id });
+    } catch (err: any) {
+      await subRef.delete().catch(() => undefined);
+      console.error('ZainCash init error:', err?.httpStatus, err?.body || err?.message);
+      return res.status(400).json({ error: 'ZainCash initiation failed' });
+    }
+  } catch (error) {
+    console.error('ZainCash init error:', error);
+    res.status(500).json({ error: 'Payment initiation failed' });
+  }
+});
+
+/**
+ * Shared handler for both redirect targets.
+ *
+ * The gateway returns the customer by browser GET with ?token=<JWT>. The JWT
+ * is verified, but access is granted only on what the Inquiry API reports —
+ * this request reaches us through the customer's browser.
+ */
+const handleZainCashRedirect = async (req: express.Request, res: express.Response) => {
+  const back = (status: string, extra = '') =>
+    res.redirect(`/?payment=${status}${extra}`);
+
+  const token = req.query?.token as string | undefined;
+  if (!token) return back('error', '&reason=missing_token');
+
+  let cfg;
+  try {
+    cfg = loadZainCashConfig();
+  } catch (e: any) {
+    console.error('ZainCash config error:', e.message);
+    return back('error', '&reason=not_configured');
+  }
+
+  try {
+    const event = verifyGatewayToken(cfg, token);
+    const result = await settleZainCashPayment(subCtx(), cfg, event, 'redirect');
+
+    switch (result.outcome) {
+      case 'activated':
+      case 'already_settled':
+      case 'duplicate_event':
+        return back('success');
+      case 'still_pending':
+        return back('pending');
+      case 'amount_mismatch':
+        return back('error', '&reason=amount_mismatch');
+      case 'reference_mismatch':
+        return back('error', '&reason=reference_mismatch');
+      default:
+        return back('failed', `&reason=${result.status || result.outcome}`);
+    }
+  } catch (err) {
+    console.error('ZainCash redirect error:', err);
+    return back('error', '&reason=invalid_token');
+  }
+};
+
+app.get('/api/zaincash/success', handleZainCashRedirect);
+app.get('/api/zaincash/failure', handleZainCashRedirect);
+
+/**
+ * ZainCash webhook — the spec's preferred source of truth.
+ *
+ * Registered by ZainCash's business team, must be a different URL from the
+ * redirect targets, and does not fire in the test environment. Always answers
+ * 200 on a token we accepted, so the gateway does not retry a settled payment.
+ */
+app.post('/api/zaincash/webhook', async (req, res) => {
+  const token = req.body?.webhook_token;
+  if (!token) {
+    return res.status(400).json({ success: false, message: 'Missing webhook_token' });
+  }
+
+  let cfg;
+  try {
+    cfg = loadZainCashConfig();
+  } catch (e: any) {
+    console.error('ZainCash config error:', e.message);
+    return res.status(500).json({ success: false, message: 'Not configured' });
+  }
+
+  try {
+    const event = verifyGatewayToken(cfg, token);
+    const result = await settleZainCashPayment(subCtx(), cfg, event, 'webhook');
+    console.log(`[ZainCash] webhook ${event.eventId} -> ${result.outcome}`);
+    return res.status(200).json({ success: true });
+  } catch (err: any) {
+    if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+    console.error('ZainCash webhook error:', err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+// --- Admin: Grant free subscription ---
+app.post('/api/subscriptions/grant', verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { userId, plan, notes } = req.body;
+    const adminUser = (req as any).user;
+    const config = PLAN_CONFIG[plan];
+
+    if (!userId || !config) {
+      return res.status(400).json({ error: 'Invalid userId or plan' });
+    }
+
+    const db = admin.firestore();
+
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userData = userDoc.data()!;
+    const subRef = await db.collection('subscriptions').add({
+      userId,
+      userEmail: userData.email || '',
+      userName: userData.name || '',
+      plan,
+      status: 'pending', // activated immediately below
+      paymentMethod: 'admin_grant',
+      amount: 0,
+      notes: notes || 'Admin grant',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await activateSubscription(subCtx(), subRef.id, userId, plan, adminUser.uid);
+
+    res.json({ success: true, subscriptionId: subRef.id });
+  } catch (error) {
+    console.error('Grant subscription error:', error);
+    res.status(500).json({ error: 'Failed to grant subscription' });
+  }
+});
+
+// --- Admin: Approve pending SuperKey subscription ---
+app.post('/api/subscriptions/:id/approve', verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminUser = (req as any).user;
+    const db = admin.firestore();
+
+    const subDoc = await db.collection('subscriptions').doc(id).get();
+    if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+    const subData = subDoc.data()!;
+    if (subData.status !== 'pending') {
+      return res.status(400).json({ error: 'Subscription is not pending' });
+    }
+
+    await activateSubscription(subCtx(), id, subData.userId, subData.plan, adminUser.uid);
+    await notifySubscription(subData.userId, 'approved', subData.plan);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Approve subscription error:', error);
+    res.status(500).json({ error: 'Failed to approve subscription' });
+  }
+});
+
+// --- Admin: Reject pending subscription ---
+app.post('/api/subscriptions/:id/reject', verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = admin.firestore();
+
+    const subDoc = await db.collection('subscriptions').doc(id).get();
+    if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+    const subData = subDoc.data()!;
+    if (subData.status !== 'pending') {
+      return res.status(400).json({ error: 'Subscription is not pending' });
+    }
+
+    await db.collection('subscriptions').doc(id).update({
+      status: 'cancelled',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      notes: 'Rejected by admin',
+    });
+
+    await notifySubscription(subData.userId, 'rejected');
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Reject subscription error:', error);
+    res.status(500).json({ error: 'Failed to reject subscription' });
+  }
+});
+
+// --- Admin: Extend subscription ---
+app.post('/api/subscriptions/:id/extend', verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { days } = req.body;
+    const db = admin.firestore();
+
+    if (!days || days <= 0 || days > 365) {
+      return res.status(400).json({ error: 'Invalid days (1-365)' });
+    }
+
+    const subDoc = await db.collection('subscriptions').doc(id).get();
+    if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+    const subData = subDoc.data()!;
+    if (subData.status !== 'active') {
+      return res.status(400).json({ error: 'Can only extend active subscriptions' });
+    }
+
+    const currentEnd = subData.endDate?.toDate() || new Date();
+    const newEnd = new Date(currentEnd.getTime() + days * 24 * 60 * 60 * 1000);
+
+    await db.collection('subscriptions').doc(id).update({
+      endDate: admin.firestore.Timestamp.fromDate(newEnd),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await db.collection('users').doc(subData.userId).update({
+      subscriptionEnd: admin.firestore.Timestamp.fromDate(newEnd),
+    });
+
+    res.json({ success: true, newEndDate: newEnd.toISOString() });
+  } catch (error) {
+    console.error('Extend subscription error:', error);
+    res.status(500).json({ error: 'Failed to extend subscription' });
+  }
+});
+
+// --- Admin: Cancel subscription ---
+app.post('/api/subscriptions/:id/cancel', verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = admin.firestore();
+
+    const subDoc = await db.collection('subscriptions').doc(id).get();
+    if (!subDoc.exists) return res.status(404).json({ error: 'Subscription not found' });
+
+    const subData = subDoc.data()!;
+
+    await db.collection('subscriptions').doc(id).update({
+      status: 'cancelled',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await db.collection('users').doc(subData.userId).update({
+      isSubscribed: false,
+      subscriptionEnd: null,
+      subscriptionPlan: null,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Cancel subscription error:', error);
+    res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 

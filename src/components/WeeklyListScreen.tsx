@@ -7,6 +7,7 @@ import { Loader2, ClipboardCheck, Plus, X, BookOpen, AlertCircle, Calendar, Came
 import { motion, AnimatePresence } from 'motion/react';
 import SpotlightTooltip from './SpotlightTooltip';
 import { useStageContext } from '../contexts/StageContext';
+import { canManage } from '../lib/permissions';
 
 interface WeeklyListScreenProps {
   lang: Language;
@@ -45,13 +46,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
 
-  const { currentAppStage } = useStageContext();
-  const effectiveStageId = React.useMemo(() => {
-    if (!user) return null;
-    if (user.isMasterAdmin) return currentAppStage;
-    if (user.role === 'admin' && user.managedStageId) return user.managedStageId;
-    return user.stageId || null;
-  }, [user, currentAppStage]);
+  const { effectiveStageId } = useStageContext();
 
   useEffect(() => {
     // Load homeworks
@@ -279,7 +274,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
           <h1 className="text-2xl font-bold text-slate-900 dark:text-stone-100">{t.weeklyTasks}</h1>
         </div>
         
-        {user && ['admin'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
+        {canManage(user, 'manageHomeworks') && (
           <button
             onClick={() => setShowAdminForm(!showAdminForm)}
             className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition-colors"
@@ -297,7 +292,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
             <ImageIcon className="w-5 h-5 text-sky-600 dark:text-sky-400" />
             {isRtl ? 'جدول المحاضرات' : 'Lectures Schedule'}
           </h2>
-          {user && ['admin'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
+          {canManage(user, 'manageHomeworks') && (
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingPhoto}
@@ -636,7 +631,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {user && ['admin'].includes(user.role) && user?.permissions?.manageHomeworks !== false && (
+                    {canManage(user, 'manageHomeworks') && (
                       <>
                         <button
                           onClick={() => handleEditClick(hw)}

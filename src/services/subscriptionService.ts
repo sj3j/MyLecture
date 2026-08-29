@@ -4,6 +4,7 @@ import {
   doc, addDoc, updateDoc, serverTimestamp, Timestamp, getDoc
 } from 'firebase/firestore';
 import { Subscription, SubscriptionPlan, PaymentMethod, PLAN_CONFIG } from '../types';
+import { apiUrl } from '../lib/apiBase';
 
 const SUBSCRIPTIONS_COL = 'subscriptions';
 
@@ -64,17 +65,20 @@ export async function createPendingSubscription(
 }
 
 /** Initiate a ZainCash payment via the server */
-export async function initiateZainCashPayment(plan: SubscriptionPlan): Promise<string> {
+export async function initiateZainCashPayment(
+  plan: SubscriptionPlan,
+  lang: 'ar' | 'en' = 'ar',
+): Promise<string> {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Not authenticated');
   
-  const res = await fetch('/api/zaincash/init', {
+  const res = await fetch(apiUrl('/api/zaincash/init'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify({ plan, lang }),
   });
   
   if (!res.ok) {
@@ -83,7 +87,7 @@ export async function initiateZainCashPayment(plan: SubscriptionPlan): Promise<s
   }
   
   const data = await res.json();
-  return data.redirectUrl; // ZainCash payment URL
+  return data.redirectUrl; // gateway-supplied; never construct this URL
 }
 
 // ─── Admin-facing ───────────────────────────────────────────────
@@ -107,7 +111,7 @@ export async function approveSubscription(subId: string): Promise<void> {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Not authenticated');
   
-  const res = await fetch(`/api/subscriptions/${subId}/approve`, {
+  const res = await fetch(apiUrl(`/api/subscriptions/${subId}/approve`), {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` },
   });
@@ -122,7 +126,7 @@ export async function rejectSubscription(subId: string): Promise<void> {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Not authenticated');
   
-  const res = await fetch(`/api/subscriptions/${subId}/reject`, {
+  const res = await fetch(apiUrl(`/api/subscriptions/${subId}/reject`), {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` },
   });
@@ -137,7 +141,7 @@ export async function extendSubscription(subId: string, days: number): Promise<v
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Not authenticated');
   
-  const res = await fetch(`/api/subscriptions/${subId}/extend`, {
+  const res = await fetch(apiUrl(`/api/subscriptions/${subId}/extend`), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -156,7 +160,7 @@ export async function cancelSubscription(subId: string): Promise<void> {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Not authenticated');
   
-  const res = await fetch(`/api/subscriptions/${subId}/cancel`, {
+  const res = await fetch(apiUrl(`/api/subscriptions/${subId}/cancel`), {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` },
   });
@@ -175,7 +179,7 @@ export async function grantSubscription(
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Not authenticated');
   
-  const res = await fetch('/api/subscriptions/grant', {
+  const res = await fetch(apiUrl('/api/subscriptions/grant'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

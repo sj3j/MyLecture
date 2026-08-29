@@ -3,6 +3,7 @@ import { Language, TRANSLATIONS, UserProfile, Lecture } from '../types';
 import { Loader2, Megaphone, RefreshCw, Plus, X, Image as ImageIcon, Video, Link, Trash2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageContext } from '../contexts/StageContext';
+import { canManage } from '../lib/permissions';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -54,13 +55,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
   const [newPostFile, setNewPostFile] = useState<File | null>(null);
   const [newPostFileType, setNewPostFileType] = useState<'image' | 'video' | 'file' | null>(null);
   
-  const { currentAppStage } = useStageContext();
-  const effectiveStageId = React.useMemo(() => {
-    if (!user) return null;
-    if (user.isMasterAdmin) return currentAppStage;
-    if (user.role === 'admin' && user.managedStageId) return user.managedStageId;
-    return user.stageId || null;
-  }, [user, currentAppStage]);
+  const { effectiveStageId } = useStageContext();
 
   const [linkUrl, setLinkUrl] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
@@ -121,7 +116,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
     }
   }, [posts.length, isLoading]);
 
-  const isAdminOrModerator = (user?.role === 'admin') && user?.permissions?.manageAnnouncements !== false;
+  const isAdminOrModerator = canManage(user, 'manageAnnouncements');
 
   const [allowedReactions, setAllowedReactions] = useState<string[]>(['👍', '❤️', '🙏', '🔥']);
   const [showReactionsConfig, setShowReactionsConfig] = useState(false);

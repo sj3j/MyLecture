@@ -37,6 +37,27 @@ export default function SubscriptionScreen({ user, lang }: SubscriptionScreenPro
     return unsub;
   }, [user.uid]);
 
+  // Return leg of a ZainCash payment. The server has already verified the
+  // gateway JWT and confirmed the transaction via the Inquiry API before
+  // granting anything, so this only reflects the outcome.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    if (!payment) return;
+
+    if (payment === 'success') {
+      setViewState('success');
+    } else if (payment === 'pending') {
+      setViewState('pending');
+    } else {
+      const reason = params.get('reason');
+      setError(reason ? `${t.paymentFailed} (${reason})` : t.paymentFailed);
+    }
+
+    // Drop the query so a refresh does not replay the result.
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
+
   const activeSubscription = subscriptions.find(s => s.status === 'active');
   const pendingSubscription = subscriptions.find(s => s.status === 'pending');
   const remainingDays = activeSubscription ? getRemainingDays(activeSubscription.endDate) : 0;
@@ -45,7 +66,7 @@ export default function SubscriptionScreen({ user, lang }: SubscriptionScreenPro
     setIsProcessing(true);
     setError(null);
     try {
-      const redirectUrl = await initiateZainCashPayment(selectedPlan);
+      const redirectUrl = await initiateZainCashPayment(selectedPlan, lang);
       window.location.href = redirectUrl;
     } catch (err: any) {
       setError(err.message || t.paymentFailed);

@@ -5,9 +5,11 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { IS_STORE_BUILD } from '../lib/platform';
-import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info, Flame, Calendar as CalendarIcon, Crown, CreditCard } from 'lucide-react';
+import { User, LogOut, LogIn, Shield, Loader2, AlertCircle, Edit2, Camera, Check, X, HardDrive, FileText, Bell, ChevronRight, Info, Flame, Calendar as CalendarIcon, Crown, CreditCard, CalendarDays, Palmtree, Settings as SettingsIcon } from 'lucide-react';
 import ProfileStreakCalendar from './ProfileStreakCalendar';
 import SemesterHistoryList from './SemesterHistoryList';
+import { canManageAssistants, canManageStudents, canManageGrades, canManageStreakSystem, canViewAdminLogs } from '../lib/permissions';
+import { useAcademicPhase } from '../hooks/useAcademicPhase';
 
 interface ProfileScreenProps {
   user: UserProfile | null;
@@ -20,13 +22,23 @@ interface ProfileScreenProps {
   setShowStudentGrades?: (val: boolean) => void;
   setShowAdminLogs?: (val: boolean) => void;
   setShowSubManage?: (val: boolean) => void;
+  setShowCalendarSettings?: (val: boolean) => void;
+  setShowSettings?: (val: boolean) => void;
   onNavigateToSubscription?: () => void;
 }
 
 export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage,
-  setShowStreakManage, setShowAdminGrades, setShowStudentGrades, setShowAdminLogs, setShowSubManage, onNavigateToSubscription }: ProfileScreenProps) {
+  setShowStreakManage, setShowAdminGrades, setShowStudentGrades, setShowAdminLogs, setShowSubManage,
+  setShowCalendarSettings, setShowSettings, onNavigateToSubscription }: ProfileScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+  const { phase } = useAcademicPhase();
+
+  /** '2027-01-31' -> '2027/1/31'. */
+  const formatCalendarDate = (iso: string) => {
+    const [y, m, d] = iso.split('-');
+    return `${y}/${parseInt(m, 10)}/${parseInt(d, 10)}`;
+  };
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState('');
   const [showManageDownloads, setShowManageDownloads] = useState(false);
@@ -335,6 +347,22 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
               {isRtl ? 'كيف يعمل؟' : 'How it works'}
             </button>
           </div>
+          {/* A frozen streak looks like a bug unless the app says why. */}
+          {phase.isPaused && (
+            <div className="relative z-10 mb-5 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 px-4 py-3 rounded-2xl flex items-center gap-3 text-sm font-bold border border-sky-100 dark:border-sky-800">
+              <Palmtree className="w-5 h-5 text-sky-500 shrink-0" />
+              <span>
+                {phase.nextStart
+                  ? (isRtl
+                      ? `الستريك متوقف خلال العطلة، ويستأنف في ${formatCalendarDate(phase.nextStart)}.`
+                      : `Streaks are paused for the break and resume on ${formatCalendarDate(phase.nextStart)}.`)
+                  : (isRtl
+                      ? 'الستريك متوقف خلال العطلة.'
+                      : 'Streaks are paused for the break.')}
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-2 sm:gap-3 relative z-10 mb-6">
             <div className="bg-white/80 dark:bg-zinc-800/80 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-orange-200/50 dark:border-orange-700/30 text-center backdrop-blur-md shadow-sm">
               <p className="text-[10px] sm:text-xs text-orange-600 dark:text-orange-400 font-bold mb-1 uppercase tracking-wider">{isRtl ? 'الحالي' : 'Current'}</p>
@@ -529,6 +557,21 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
         </div>
 
         <div className="space-y-4 pt-6 mt-6 border-t border-slate-100 dark:border-zinc-700">
+          {setShowSettings && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 bg-white dark:bg-zinc-900 border-2 border-slate-100 dark:border-zinc-800 rounded-2xl hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors shadow-sm"
+            >
+              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                <SettingsIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" strokeWidth={2.5} />
+              </div>
+              <span className="flex-1 text-start font-bold text-slate-800 dark:text-slate-100">
+                {isRtl ? 'الإعدادات' : 'Settings'}
+              </span>
+              <ChevronRight className={`w-5 h-5 text-slate-300 dark:text-zinc-600 ${isRtl ? 'rotate-180' : ''}`} strokeWidth={2.5} />
+            </button>
+          )}
+
           <div className="flex items-center justify-between">
             <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'اللغة' : 'Language'}</span>
             <div className="flex bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl">
@@ -547,7 +590,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </div>
           </div>
 
-          {(user?.role === 'admin' && isMasterAdminUser) && setShowAdminManage && (
+          {canManageAssistants(user) && setShowAdminManage && (
             <>
               <button
                 onClick={() => setShowAdminManage(true)}
@@ -556,7 +599,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
                 <Shield className="w-5 h-5" />
                 {t.manageAdmins}
               </button>
-              {setShowAdminLogs && (
+              {canViewAdminLogs(user) && setShowAdminLogs && (
                 <button
                   onClick={() => setShowAdminLogs(true)}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors mt-4 border border-slate-200 dark:border-zinc-700"
@@ -565,7 +608,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
                   {isRtl ? 'سجل الإدارة (Master Admin)' : 'Admin Logs (Master Admin)'}
                 </button>
               )}
-              {setShowSubManage && (
+              {isMasterAdminUser && setShowSubManage && (
                 <button
                   onClick={() => setShowSubManage(true)}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors mt-4"
@@ -577,7 +620,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </>
           )}
 
-          {((user?.role === 'admin') && user?.permissions?.manageStudents !== false) && setShowStudentManage && (
+          {canManageStudents(user) && setShowStudentManage && (
             <button
               onClick={() => setShowStudentManage(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors mt-4"
@@ -587,7 +630,17 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {isMasterAdminUser && setShowStreakManage && (
+          {canManageStreakSystem(user) && setShowCalendarSettings && (
+            <button
+              onClick={() => setShowCalendarSettings(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-xl font-bold hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors mt-4"
+            >
+              <CalendarDays className="w-5 h-5" />
+              {isRtl ? 'التقويم الدراسي' : 'Academic Calendar'}
+            </button>
+          )}
+
+          {canManageStreakSystem(user) && setShowStreakManage && (
             <button
               onClick={() => setShowStreakManage(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-xl font-bold hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-colors mt-4"
@@ -597,7 +650,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             </button>
           )}
 
-          {((user?.role === 'admin' ) && user?.permissions?.manageGrades !== false) && setShowAdminGrades && (
+          {canManageGrades(user) && setShowAdminGrades && (
             <button
               onClick={() => setShowAdminGrades(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-fuchsia-50 dark:bg-fuchsia-900/30 text-fuchsia-600 dark:text-fuchsia-400 rounded-xl font-bold hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/50 transition-colors mt-4"

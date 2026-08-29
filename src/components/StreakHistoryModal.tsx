@@ -3,6 +3,7 @@ import { auth } from '../lib/firebase';
 import { X, Calendar as CalendarIcon, Download, Loader2 } from 'lucide-react';
 import { Language, TRANSLATIONS, Student } from '../types';
 import TrueCalendarGrid from './TrueCalendarGrid';
+import { apiUrl } from '../lib/apiBase';
 
 interface StreakHistoryModalProps {
   student: Student;
@@ -35,7 +36,7 @@ export default function StreakHistoryModal({ student, isOpen, onClose, lang }: S
     setIsLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
-      const res = await fetch(`/api/streak-history/${student.userUid}`, {
+      const res = await fetch(apiUrl(`/api/streak-history/${student.userUid}`), {
           headers: {
               'Authorization': `Bearer ${token}`
           }

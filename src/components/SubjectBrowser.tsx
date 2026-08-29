@@ -7,6 +7,8 @@ import { db } from '../lib/firebase';
 import { collection, query, getDocs, where } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageContext } from '../contexts/StageContext';
+import CourseTabs from './CourseTabs';
+import { COURSE_IDS, DEFAULT_COURSE_ID } from '../types';
 import { BookOpen, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, Loader2, SearchX, List, LayoutGrid, Grid, Settings } from 'lucide-react';
 
 interface SubjectBrowserProps {
@@ -40,7 +42,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
     return 1;
   });
 
-  const { currentAppStage } = useStageContext();
+  const { effectiveStageId, activeCourseId } = useStageContext();
   const [subjects, setSubjects] = useState<any[]>([]);
   const [isSubjectsLoading, setIsSubjectsLoading] = useState(true);
 
@@ -52,9 +54,12 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
     const fetchSubjects = async () => {
       setIsSubjectsLoading(true);
       try {
-        const q = query(collection(db, 'subjects'), where('stageId', '==', currentAppStage));
+        const q = query(collection(db, 'subjects'), where('stageId', '==', effectiveStageId));
         const snap = await getDocs(q);
-        const fetchedSubjects = snap.docs.map(d => d.data());
+        const fetchedSubjects = snap.docs
+          .map(d => d.data() as any)
+          .filter(sub => sub.isActive !== false)
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         setSubjects(fetchedSubjects);
       } catch (err) {
         console.error('Error fetching subjects:', err);
@@ -63,7 +68,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
       }
     };
     fetchSubjects();
-  }, [currentAppStage]);
+  }, [effectiveStageId]);
 
   const fetchCustomTabs = async () => {
     try {
@@ -151,6 +156,21 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
     );
   }
 
+  // One matcher for both call sites. subjectId is authoritative; the category
+  // clauses are the legacy fallback for content that predates the migration.
+  const lecturesForSubject = (subj: any) => lectures.filter(l =>
+    l.subjectId === subj?.id ||
+    l.category === subj?.id ||
+    l.category === subj?.nameEn?.toLowerCase() ||
+    l.category === subj?.nameEn?.toLowerCase().replace(' ', '_')
+  );
+
+  const courseSubjects = subjects.filter(sub => (sub.courseId || DEFAULT_COURSE_ID) === activeCourseId);
+  const courseCounts = COURSE_IDS.reduce((acc, id) => {
+    acc[id] = subjects.filter(sub => (sub.courseId || DEFAULT_COURSE_ID) === id).length;
+    return acc;
+  }, {} as Record<string, number>);
+
   if (selectedCategory === 'all') {
     const categoryColors: Record<string, { bg: string, text: string, progress: string }> = {
       'pharmacology': { bg: 'bg-indigo-50 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400', progress: 'bg-indigo-500' },
@@ -162,14 +182,25 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
     
     return (
       <div className="flex flex-col gap-4 pb-24">
+        {!isSubjectsLoading && subjects.length > 0 && (
+          <CourseTabs lang={lang} counts={courseCounts} />
+        )}
         {isSubjectsLoading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
           </div>
         ) : subjects.length > 0 ? (
-          subjects.map((subj, index) => {
+          courseSubjects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+              <SearchX className="w-10 h-10 text-slate-300 dark:text-zinc-600" />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {isRtl ? 'لا توجد مواد في هذا الكورس بعد' : 'No subjects in this course yet'}
+              </p>
+            </div>
+          ) :
+          courseSubjects.map((subj, index) => {
             const catId = subj.id;
-            const categoryLectures = lectures.filter(l => l.subjectId === catId || l.category === catId || l.category === subj.nameEn?.toLowerCase() || l.category === subj.nameEn?.toLowerCase().replace(' ', '_'));
+            const categoryLectures = lecturesForSubject(subj);
             const count = categoryLectures.length;
           const studiedCount = categoryLectures.filter(l => user?.studied?.includes(l.id)).length;
           const progress = count > 0 ? Math.round((studiedCount / count) * 100) : 0;
@@ -278,7 +309,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
   const currentCategoryData = CATEGORIES.find(c => c.value === selectedCategory);
   const currentSubjectData = subjects.find(s => s.id === selectedCategory);
   
-  const categoryLectures = lectures.filter(l => l.subjectId === selectedCategory || l.category === selectedCategory || l.category === currentSubjectData?.nameEn?.toLowerCase() || l.category === currentSubjectData?.nameEn?.toLowerCase().replace(' ', '_'));
+  const categoryLectures = lecturesForSubject(currentSubjectData || { id: selectedCategory });
   let filteredLectures = categoryLectures.filter(l => l.type === selectedType);
 
   if (selectedTabId !== 'all') {

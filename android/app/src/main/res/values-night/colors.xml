@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Pinned to the same white as values/colors.xml. Theme.SplashScreen descends
+      from Theme.DeviceDefault.DayNight, so a phone in dark mode resolves the
+      -night qualifier; leaving it undefined would hand the launch screen's
+      colour to the device theme and flash dark before the app paints.
+    -->
+    <color name="splashBackground">#FFFFFF</color>
+</resources>

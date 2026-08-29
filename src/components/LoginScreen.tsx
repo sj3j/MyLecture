@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, signInWithCustomToken, UserCredential, deleteUser } from 'firebase/auth';
+import { signInWithCustomToken, UserCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { Language, TRANSLATIONS } from '../types';
 import { Loader2, GraduationCap, Mail, Lock, LogIn } from 'lucide-react';
+import { apiUrl } from '../lib/apiBase';
+import { getGoogleCustomToken, NoAccountError } from '../lib/googleSignIn';
+import SignupScreen from './SignupScreen';
 
 interface LoginScreenProps {
   lang: Language;
@@ -45,7 +48,7 @@ const signInWithRetry = async (
     const emailLower = email.trim().toLowerCase();
     
     // Check our custom backend first to get a custom token securely
-    const response = await fetch('/api/login', {
+    const response = await fetch(apiUrl('/api/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: emailLower, password: password.trim() })
@@ -99,6 +102,8 @@ const isIOS = (): boolean =>
    navigator.maxTouchPoints > 1);
 
 export default function LoginScreen({ lang, externalError, onClearError }: LoginScreenProps) {
+  const [showSignup, setShowSignup] = useState(false);
+  const [signupPrefill, setSignupPrefill] = useState<{ email?: string; name?: string | null } | null>(null);
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoading, setIsLoading] = useState(false);
@@ -129,32 +134,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     if (onClearError) onClearError();
     try {
       sessionStorage.setItem('googleLoginInProgress', 'true');
-      const provider = new GoogleAuthProvider();
-      const popupResult = await signInWithPopup(auth, provider);
-      
-      const idToken = await popupResult.user.getIdToken();
-      
-      // Immediately sign out from the Google Auth provider instance
-      await auth.signOut();
 
-      // Exchange Google token for custom token where UID = email
-      const res = await fetch("/api/google-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken })
-      });
-
-      if (!res.ok) {
-        sessionStorage.removeItem('googleLoginInProgress');
-        let errStr = "Authentication failed on backend";
-        try {
-          const errObj = await res.json();
-          if (errObj.error) errStr = errObj.error;
-        } catch (e) {}
-        throw new Error(errStr);
-      }
-
-      const { token } = await res.json();
+      // Native uses the OS account picker and sends a raw Google token; web
+      // keeps the popup and sends a Firebase token. Both come back as our own
+      // custom token, so everything below is unchanged.
+      const { token, profile } = await getGoogleCustomToken();
       
       // We must remove the flag before signing in with custom token 
       // so that App's onAuthStateChanged listener picks it up.
@@ -163,9 +147,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       const result = await signInWithCustomToken(auth, token);
       
       let userRole = 'student';
+      let whitelistStageId: string | null = null;
+      let whitelistManagedStageId: string | null = null;
 
-      if (result.user.email || popupResult.user.email) {
-        const emailLower = (result.user.email || popupResult.user.email || '').toLowerCase();
+      if (result.user.email || profile.email) {
+        const emailLower = (result.user.email || profile.email || '').toLowerCase();
         
         const adminEmails = ["almdrydyl335@gmail.com"];
         const isMasterAdmin = adminEmails.includes(emailLower);
@@ -178,6 +164,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           if (adminDoc.exists()) {
             const data = adminDoc.data();
             userRole = data.role || 'admin';
+            whitelistManagedStageId = data.managedStageId || null;
           } else {
             // Check students collection
             const studentDoc = await getDoc(doc(db, 'students', emailLower));
@@ -185,6 +172,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
               const data = studentDoc.data();
               if (data.isActive === false) return; // shouldn't reach here since API checks it
               userRole = data.role || 'student';
+              whitelistStageId = data.stageId || null;
             }
           }
         }
@@ -196,13 +184,17 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       if (!userSnap.exists()) {
         // Create new user document
-        const initialName = popupResult.user.displayName || (userRole === 'admin' ? 'Admin' : 'Student');
+        const initialName = profile.name || (userRole === 'admin' ? 'Admin' : 'Student');
         await setDoc(userRef, {
           name: initialName,
           originalName: initialName,
-          email: result.user.email || popupResult.user.email,
+          email: result.user.email || profile.email,
           role: userRole,
-          photoUrl: popupResult.user.photoURL,
+          photoUrl: profile.photoUrl,
+          // Seed the stage at creation time; rules only allow a student to
+          // write stageId on create or during progression season.
+          ...(whitelistStageId ? { stageId: whitelistStageId } : {}),
+          ...(whitelistManagedStageId ? { managedStageId: whitelistManagedStageId } : {}),
           createdAt: serverTimestamp(),
           favorites: [],
           studied: [],
@@ -219,6 +211,14 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     } catch (error: any) {
       if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
         console.error('Error signing in:', error);
+        // The Google identity is valid, there is just no student record yet.
+        // Route to signup with what Google told us, rather than showing a
+        // credential error for a password they never set.
+        if (error instanceof NoAccountError) {
+          setSignupPrefill({ email: error.email, name: error.name });
+          setShowSignup(true);
+          return;
+        }
         if (!externalError) {
           let errorMsg = error.message || '';
           if (error.code === 'auth/network-request-failed' || errorMsg.includes('network-request-failed') || errorMsg.includes('Failed to fetch')) {
@@ -296,6 +296,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           email: emailLower,
           role: userRole,
           examCode: studentData.examCode || '',
+          ...(studentData.stageId ? { stageId: studentData.stageId } : {}),
           createdAt: serverTimestamp(),
           favorites: [],
           studied: [],
@@ -320,6 +321,17 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       setIsLoading(false);
     }
   };
+
+
+  if (showSignup) {
+    return (
+      <SignupScreen
+        lang={lang}
+        prefill={signupPrefill}
+        onBackToLogin={() => { setShowSignup(false); setSignupPrefill(null); }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-zinc-950 p-4" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -452,6 +464,16 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
             </>
           )}
         </button>
+
+        <p className="mt-6 text-center text-sm font-bold text-slate-500 dark:text-slate-400">
+          {isRtl ? 'ليس لديك حساب؟' : "Don't have an account?"}{' '}
+          <button
+            onClick={() => setShowSignup(true)}
+            className="text-sky-600 dark:text-sky-400 hover:underline font-black"
+          >
+            {isRtl ? 'أنشئ حساباً' : 'Sign up'}
+          </button>
+        </p>
       </div>
     </div>
   );

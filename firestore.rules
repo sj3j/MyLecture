@@ -47,12 +47,58 @@ service cloud.firestore {
       );
     }
 
+    // Role recorded on the caller's allowed_admins entry, or '' when absent.
+    // Docs created before assistants existed have no role field and default to 'admin'.
+    function assistantRole() {
+      return (request.auth.token.email != null &&
+              exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
+        ? get(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())).data.get('role', 'admin')
+        : '';
+    }
+
+    function userRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+
+    // The stage this caller represents, or '' if unassigned.
+    function myManagedStage() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('managedStageId', '')
+        : '';
+    }
+
+    // A stage representative or the master admin. Deliberately EXCLUDES moderators:
+    // merely appearing in allowed_admins is no longer sufficient.
     function isAdmin() {
       return isAuthenticated() && (
         isMasterAdmin() ||
         ('role' in request.auth.token && request.auth.token.role == 'admin') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
+        userRole() == 'admin' ||
+        assistantRole() == 'admin'
+      );
+    }
+
+    // An assistant appointed by a representative. Content permissions only -
+    // never the students collection or anything derived from it.
+    function isModerator() {
+      return isAuthenticated() && !isMasterAdmin() && (
+        userRole() == 'moderator' || assistantRole() == 'moderator'
+      );
+    }
+
+    function isStaff() {
+      return isAdmin() || isModerator();
+    }
+
+    // Content-write scope for a stage. Master admin writes anywhere. Assigned
+    // staff write only their own stage. Staff with no assignment keep the
+    // pre-multi-stage behaviour of writing anywhere, so existing admins are not
+    // locked out the moment uploads start stamping stageId.
+    function canWriteStage(stageId) {
+      return isMasterAdmin() || (
+        isStaff() && (myManagedStage() == '' || myManagedStage() == stageId)
       );
     }
 
@@ -72,7 +118,7 @@ service cloud.firestore {
     function isValidUser(data) {
       return (!('name' in data) || data.name is string) &&
              (!('email' in data) || data.email is string) &&
-             (!('role' in data) || data.role in ['admin', 'student', 'master_admin']) &&
+             (!('role' in data) || data.role in ['admin', 'moderator', 'student', 'master_admin']) &&
              (!('originalName' in data) || data.originalName is string) &&
              (!('photoUrl' in data) || data.photoUrl == null || data.photoUrl is string) &&
              (!('completedWeeklyTasks' in data) || data.completedWeeklyTasks is list) &&
@@ -86,6 +132,7 @@ service cloud.firestore {
              (!('hasPendingStreakReset' in data) || data.hasPendingStreakReset is bool) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
+             (!('blockedUsers' in data) || data.blockedUsers is list) &&
              (!('permissions' in data) || data.permissions is map) &&
              (!('isSubscribed' in data) || data.isSubscribed is bool) &&
              (!('subscriptionEnd' in data) || data.subscriptionEnd == null || data.subscriptionEnd is timestamp) &&
@@ -104,17 +151,14 @@ service cloud.firestore {
     }
     
     function isRepresentativeFor(stageId) {
-      return isAdmin() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStageId == stageId;
+      return isAdmin() && myManagedStage() == stageId;
     }
 
     function hasStageAccess(stageId, subjectId) {
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      let user = userDoc != null ? userDoc.data : null;
-      return user != null && (
-        user.stageId == stageId || 
-        (user.tahmeelSubjects != null && subjectId in user.tahmeelSubjects)
-      );
+      let user = userDoc != null ? userDoc.data : {};
+      return user.get('stageId', '') == stageId ||
+             (subjectId != '' && subjectId in user.get('tahmeelSubjects', []));
     }
 
     // ===============================================================
@@ -126,9 +170,42 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    match /app_settings/{document=**} {
+    // The academic calendar decides whether the competition is running for the
+    // whole university, so it is master-admin only. Firestore grants access if
+    // ANY matching rule allows it, so this cannot be a narrower rule added
+    // alongside a permissive wildcard - the condition has to live here.
+    match /app_settings/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if docId == 'academicCalendar' ? isMasterAdmin() : isAdmin();
+    }
+
+    // User-generated content reporting (Apple 1.2 / Play UGC policy).
+    //
+    // Anyone signed in may file a report, and only about themselves as
+    // reporter, so a report cannot be forged in someone else's name. Nobody but
+    // a moderator can read them - a report names the reporter, and letting the
+    // reported party read it would make reporting unsafe. Immutable once filed;
+    // moderators triage via the Admin SDK.
+    // Self-service signup queue.
+    //
+    // NO client write at all - /api/signup/request owns it, because the row
+    // holds a password hash and the request must be validated (real stage, valid
+    // subgroup, not already a student) before it exists. Readable only by staff:
+    // a request carries an applicant's email and hash.
+    match /signup_requests/{email} {
+      allow read: if isAdmin() || isModerator();
+      allow write: if false;
+    }
+
+    match /content_reports/{reportId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.reporterId == request.auth.uid
+                    && request.resource.data.messageId is string
+                    && request.resource.data.reason is string;
+      // Moderators are the ones who actually watch the chat, so they must be
+      // able to triage - isAdmin() alone deliberately excludes them.
+      allow read: if isAdmin() || isModerator();
+      allow update, delete: if isMasterAdmin();
     }
 
     match /semesterArchives/{document=**} {
@@ -141,9 +218,29 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Archived MCQ season results shown on the student's own profile.
+    // Written only by the Admin SDK during a season reset.
+    match /users/{userId}/mcqHistory/{document=**} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if false;
+    }
+
     match /allowed_admins/{email} {
       allow read: if isAuthenticated();
-      allow write: if isMasterAdmin();
+      // A representative may only create/edit MODERATORS, and only on the stage
+      // they themselves manage. Everything else is master-admin territory.
+      allow create, update: if isMasterAdmin() || (
+        isAdmin() &&
+        request.resource.data.get('role', '') == 'moderator' &&
+        request.resource.data.get('managedStageId', '') == myManagedStage() &&
+        myManagedStage() != ''
+      );
+      allow delete: if isMasterAdmin() || (
+        isAdmin() &&
+        resource.data.get('role', '') == 'moderator' &&
+        resource.data.get('managedStageId', '') == myManagedStage() &&
+        myManagedStage() != ''
+      );
     }
     
     match /students/{email} {
@@ -155,21 +252,47 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
                     (request.resource.data.role == 'student' || 
-                     (request.resource.data.role in ['admin'] && (isMasterAdmin() || (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower()))))));
+                     (request.resource.data.role == assistantRole() && assistantRole() != '') ||
+                     (request.resource.data.role in ['admin'] && isMasterAdmin()));
       allow update: if isMasterAdmin() || 
                       (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['examCode', 'name', 'originalName'])) || 
+                      // Appointing a moderator writes these three fields onto their
+                      // user doc. Restricted to role == 'moderator' so a representative
+                      // cannot mint another admin.
+                      (isAdmin() &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'managedStageId', 'permissions']) &&
+                       request.resource.data.get('role', '') == 'moderator' &&
+                       request.resource.data.get('managedStageId', '') == myManagedStage()) || 
                       (isOwner(userId) && isValidUser(request.resource.data) && (
                         (!('role' in request.resource.data) || request.resource.data.role == resource.data.get('role', 'student')) ||
-                        (request.resource.data.role in ['admin', 'master_admin'] && request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_admins/$(request.auth.token.email.lower())))
+                        (request.resource.data.role == assistantRole() && assistantRole() != '')
                       ) && (!('originalName' in request.resource.data) || request.resource.data.originalName == resource.data.get('originalName', ''))
                         && (!('examCode' in request.resource.data) || request.resource.data.examCode == resource.data.get('examCode', ''))
                         && request.resource.data.get('streakCount', 0) == resource.data.get('streakCount', 0)
                         && request.resource.data.get('freezeTokens', 1) == resource.data.get('freezeTokens', 1)
                         && request.resource.data.get('longestStreak', 0) == resource.data.get('longestStreak', 0)
-                        && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', '')) ||
-                      // Allow updating progression fields if season is active
-                      (isOwner(userId) && get(/databases/$(database)/documents/settings/app_settings).data.isProgressionSeasonActive == true &&
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stageId', 'tahmeelSubjects', 'hasCompletedProgression', 'lastProgressionYear']));
+                        && request.resource.data.get('lastActiveDate', '') == resource.data.get('lastActiveDate', '')
+                        // Stage and progression are server-owned. The generic
+                        // self-edit branch never froze these, so a student could
+                        // simply set their own stageId through it.
+                        && request.resource.data.get('stageId', '') == resource.data.get('stageId', '')
+                        && request.resource.data.get('graduated', false) == resource.data.get('graduated', false)
+                        && request.resource.data.get('progressionState', '') == resource.data.get('progressionState', '')
+                        && request.resource.data.get('progressionYear', '') == resource.data.get('progressionYear', '')
+                        && request.resource.data.get('tahmeelSubjects', []) == resource.data.get('tahmeelSubjects', [])
+                        // Subscription state is bought, not self-declared. Only the Admin
+                        // SDK writes these - ZainCash settlement and the admin grant route -
+                        // and it bypasses rules. Without this freeze the generic self-edit
+                        // branch let any student set isSubscribed from the browser console
+                        // and unlock every paid course, since App.tsx gates access on it.
+                        && request.resource.data.get('isSubscribed', false) == resource.data.get('isSubscribed', false)
+                        && request.resource.data.get('subscriptionEnd', null) == resource.data.get('subscriptionEnd', null)
+                        && request.resource.data.get('subscriptionPlan', null) == resource.data.get('subscriptionPlan', null));
+                      // Progression is recorded by /api/progression/submit with the
+                      // Admin SDK, which also has to write students/{email}.stageId -
+                      // a student cannot, and syncUserStage would otherwise revert the
+                      // promotion at their next login. So there is deliberately NO
+                      // self-write path for stageId here.
     }
 
     match /streak_history/{docId} {
@@ -198,30 +321,33 @@ service cloud.firestore {
 
     match /stages/{stageId} {
       allow read: if isAuthenticated();
-      allow write: if isMasterAdmin();
+      allow create, delete: if isMasterAdmin();
+      // A representative configures groups/subgroups for their own stage only,
+      // and may not touch any other field on the stage document.
+      allow update: if isMasterAdmin() || (
+        isRepresentativeFor(stageId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['groupConfig'])
+      );
     }
 
     match /subjects/{subjectId} {
       allow read: if isAuthenticated();
-      allow write: if isMasterAdmin() || (isAdmin() && isRepresentativeFor(resource.data.stageId));
+      allow create: if isMasterAdmin() || (isAdmin() && isRepresentativeFor(request.resource.data.stageId));
+      allow update, delete: if isMasterAdmin() || (isAdmin() && isRepresentativeFor(resource.data.stageId));
     }
 
     match /lectures/{lectureId} {
       // For backwards compatibility and migration, we allow access if stageId is missing.
       allow read: if hasAccess() && (
         !('stageId' in resource.data) || resource.data.stageId == null ||
-        isMasterAdmin() || isRepresentativeFor(resource.data.stageId) || hasStageAccess(resource.data.stageId, resource.data.subjectId)
+        isMasterAdmin() || isRepresentativeFor(resource.data.stageId) ||
+        hasStageAccess(resource.data.stageId, resource.data.get('subjectId', ''))
       );
       
-      allow create: if isMasterAdmin() || (
-        isAdmin() && (!('stageId' in request.resource.data) || request.resource.data.stageId == null || isRepresentativeFor(request.resource.data.stageId))
-      );
-      
-      allow update, delete: if isMasterAdmin() || (
-        isAdmin() && 
-        (!('stageId' in resource.data) || resource.data.stageId == null || isRepresentativeFor(resource.data.stageId)) &&
-        (!('stageId' in request.resource.data) || request.resource.data == null || request.resource.data.stageId == null || isRepresentativeFor(request.resource.data.stageId))
-      );
+      allow create: if canWriteStage(request.resource.data.get('stageId', ''));
+
+      allow update, delete: if canWriteStage(resource.data.get('stageId', '')) &&
+        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')));
     }
     
     match /chat_presence/{userId} {
@@ -272,13 +398,13 @@ service cloud.firestore {
 
     match /records/{recordId} {
       allow read: if hasAccess();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isStaff();
     }
 
     match /announcements/{postId} {
       allow read: if hasAccess();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (
         hasAccess() && 
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
       );
@@ -286,7 +412,7 @@ service cloud.firestore {
     
     match /homeworks/{homeworkId} {
       allow read: if hasAccess();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isStaff();
     }
     
     match /mcqs/{lectureId} {

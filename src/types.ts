@@ -2,20 +2,55 @@ export type Category = 'pharmacology' | 'pharmacognosy' | 'organic_chemistry' | 
 export type LectureType = 'theoretical' | 'practical';
 
 // New Multi-Stage Types
+
+/** Hard bounds on class structure. Groups run A..D, each with 1..4 subgroups (A1..D4). */
+export const MAX_GROUPS = 4;
+export const MAX_SUBGROUPS_PER_GROUP = 4;
+export const GROUP_IDS = ['A', 'B', 'C', 'D'] as const;
+export type GroupId = typeof GROUP_IDS[number];
+
+export interface StageGroupConfig {
+  groups: { id: GroupId; subgroupCount: number }[];
+}
+
+/** Used when a stage has no groupConfig yet, so behaviour matches the old hardcoded lists. */
+export const DEFAULT_GROUP_CONFIG: StageGroupConfig = {
+  groups: GROUP_IDS.map(id => ({ id, subgroupCount: MAX_SUBGROUPS_PER_GROUP })),
+};
+
 export interface Stage {
   id: string;
   nameEn: string;
   nameAr: string;
   order: number;
   representativeId?: string;
+  groupConfig?: StageGroupConfig;
 }
 
+/**
+ * Every stage runs two courses (كورس ١ / كورس ٢), each with its own subjects.
+ * Deliberately NOT called "semester" - that word already means streak season in
+ * this codebase (semesterArchives, StreakManagement.semesterName).
+ */
+export const COURSE_IDS = ['course_1', 'course_2'] as const;
+export type CourseId = typeof COURSE_IDS[number];
+
+export const COURSE_LABELS: Record<CourseId, { en: string; ar: string }> = {
+  course_1: { en: 'Course I', ar: 'كورس ١' },
+  course_2: { en: 'Course II', ar: 'كورس ٢' },
+};
+
+/** All existing content predates courses and belongs to Course II. */
+export const DEFAULT_COURSE_ID: CourseId = 'course_2';
+
 export interface Subject {
-  id: string;
+  id: string;          // slug, e.g. 'biochemistry_ii'
   stageId: string;
+  courseId: CourseId;
   nameEn: string;
   nameAr: string;
   types: LectureType[];
+  order: number;       // display order within the course
   isActive: boolean;
 }
 
@@ -57,7 +92,9 @@ export interface LectureTab {
 export interface Lecture {
   id: string;
   title: string;
-  category: Category; // Legacy, migrating to subjectId
+  /** Legacy taxonomy. Superseded by subjectId + courseId; absent on content
+   *  uploaded against the real curriculum. */
+  category?: Category;
   type: LectureType;
   description?: string;
   pdfUrl: string;
@@ -70,6 +107,8 @@ export interface Lecture {
   version?: 'original' | 'translated';
   stageId?: string;
   subjectId?: string;
+  subjectName?: string;
+  courseId?: CourseId;
 }
 
 export interface Post {
@@ -93,7 +132,8 @@ export interface Post {
 export interface RecordItem {
   id: string;
   title: string;
-  category: Category; // Legacy, migrating to subjectId
+  /** Legacy taxonomy. See Lecture.category. */
+  category?: Category;
   type: LectureType;
   description?: string;
   audioUrl: string;
@@ -105,6 +145,8 @@ export interface RecordItem {
   number?: number;
   stageId?: string;
   subjectId?: string;
+  subjectName?: string;
+  courseId?: CourseId;
 }
 
 export interface UserProfile {
@@ -112,7 +154,7 @@ export interface UserProfile {
   name: string;
   originalName?: string;
   email: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'moderator' | 'student';
   isMasterAdmin?: boolean;
   photoUrl?: string;
   completedWeeklyTasks?: string[];
@@ -141,6 +183,7 @@ export interface UserProfile {
     manageStudents: boolean;
     manageGrades?: boolean;
     manageAdmins?: boolean;
+    manageGroups?: boolean;
   };
   hasPendingStreakReset?: boolean;
   memberSince?: any;
@@ -158,6 +201,14 @@ export interface UserProfile {
   managedStageId?: string;
   hasCompletedProgression?: boolean;
   lastProgressionYear?: string;
+  /** Calendar yearLabel of the last recorded progression answer. */
+  progressionYear?: string;
+  /** 'awaiting_resit' parks the student until the دور ثاني results are published. */
+  progressionState?: 'awaiting_resit' | 'completed';
+  /** Passed out of the final stage: read-only access, never asked again. */
+  graduated?: boolean;
+  /** Users this person has blocked. Applied on read; never hides their writes. */
+  blockedUsers?: string[];
 }
 
 export interface Student {
@@ -176,6 +227,8 @@ export interface Student {
   hasMultiple?: boolean;
   group?: string;
   subgroup?: string;
+  /** Set by every write path; the whitelist copy that syncUserStage reads on login. */
+  stageId?: string;
 }
 
 export interface Homework {
@@ -233,10 +286,10 @@ export const TRANSLATIONS = {
     errorQuota: 'تم تجاوز حصة التخزين. يرجى التواصل مع الدعم.',
     errorUnknown: 'حدث خطأ غير معروف أثناء الرفع.',
     allRights: 'جميع الحقوق محفوظة.',
-    manageAdmins: 'إدارة المسؤولين',
+    manageAdmins: 'إدارة المساعدين',
     username: 'اسم المستخدم',
     password: 'كلمة المرور',
-    addAdmin: 'إضافة مسؤول',
+    addAdmin: 'إضافة مساعد',
     adminList: 'قائمة المسؤولين',
     delete: 'حذف',
     subAdminLogin: 'دخول المسؤولين (اسم مستخدم)',
@@ -392,10 +445,10 @@ export const TRANSLATIONS = {
     errorQuota: 'Storage quota exceeded. Please contact support.',
     errorUnknown: 'An unknown error occurred during upload.',
     allRights: 'All rights reserved.',
-    manageAdmins: 'Manage Admins',
+    manageAdmins: 'Manage Assistants',
     username: 'Username',
     password: 'Password',
-    addAdmin: 'Add Admin',
+    addAdmin: 'Add Assistant',
     adminList: 'Admin List',
     delete: 'Delete',
     subAdminLogin: 'Admin Login (Username)',

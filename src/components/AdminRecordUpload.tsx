@@ -5,6 +5,10 @@ import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/fi
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, RecordItem, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { useStageContext } from '../contexts/StageContext';
+import { useStageSubjects } from '../hooks/useStageSubjects';
+import { COURSE_IDS, COURSE_LABELS, CourseId } from '../types';
+import { apiUrl } from '../lib/apiBase';
 
 interface AdminRecordUploadProps {
   isOpen: boolean;
@@ -17,6 +21,19 @@ interface AdminRecordUploadProps {
 export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit, user }: AdminRecordUploadProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+  const { effectiveStageId, activeCourseId } = useStageContext();
+  const { subjects } = useStageSubjects();
+
+  const hasCurriculum = subjects.length > 0;
+  const [courseFilter, setCourseFilter] = useState<CourseId>(activeCourseId);
+  const [subjectId, setSubjectId] = useState<string>('');
+  const courseSubjects = subjects.filter(sub => sub.courseId === courseFilter);
+
+  const subjectMeta = (id?: string) => {
+    const sub = subjects.find(x => x.id === id);
+    if (!sub) return {};
+    return { subjectId: sub.id, courseId: sub.courseId, subjectName: sub.nameEn };
+  };
   
   const [title, setTitle] = useState('');
   const [recordNumber, setRecordNumber] = useState('');
@@ -54,6 +71,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
     setTitle(c.title);
     setRecordNumber(c.recordNumber);
     setCategory(c.category);
+    setSubjectId(c.subjectId || '');
     setType(c.type);
     setDescription(c.description);
   };
@@ -65,6 +83,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
       title,
       recordNumber,
       category,
+      subjectId,
       type,
       description
     };
@@ -185,7 +204,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
           size = parseFloat((currentFile.size / (1024 * 1024)).toFixed(2));
 
           const token = await auth.currentUser.getIdToken();
-          const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(currentFile.name)}&contentType=${encodeURIComponent(currentFile.type)}`, {
+          const response = await fetch(apiUrl(`/api/get-upload-url?filename=${encodeURIComponent(currentFile.name)}&contentType=${encodeURIComponent(currentFile.type)}`), {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           
@@ -220,7 +239,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
 
         const recordData: any = {
           title,
-          category,
+          ...(hasCurriculum ? subjectMeta(subjectId) : { category }),
           type,
           description,
           audioUrl: downloadUrl,
@@ -228,6 +247,9 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
           size,
           uploadedBy: recordToEdit?.uploadedBy || auth.currentUser?.uid,
           uploaderName: recordToEdit?.uploaderName || user?.name || auth.currentUser?.displayName || 'Admin',
+          // Records are stage-filtered in RecordsScreen; without this the new
+          // record never shows up in the list.
+          stageId: recordToEdit?.stageId || effectiveStageId,
         };
         
         if (recordNumber) recordData.number = parseInt(recordNumber, 10);
@@ -251,7 +273,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
           const size = parseFloat((currentFile.size / (1024 * 1024)).toFixed(2));
 
           const token = await auth.currentUser.getIdToken();
-          const response = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(currentFile.name)}&contentType=${encodeURIComponent(currentFile.type)}`, {
+          const response = await fetch(apiUrl(`/api/get-upload-url?filename=${encodeURIComponent(currentFile.name)}&contentType=${encodeURIComponent(currentFile.type)}`), {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           
@@ -289,7 +311,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
 
           const recordData: any = {
             title: config.title,
-            category: config.category,
+            ...(hasCurriculum ? subjectMeta(config.subjectId) : { category: config.category }),
             type: config.type,
             description: config.description,
             audioUrl: downloadUrl,
@@ -298,6 +320,7 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
             uploadedBy: auth.currentUser?.uid,
             uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
             createdAt: serverTimestamp(),
+            stageId: effectiveStageId,
           };
           
           if (config.recordNumber) {
@@ -450,21 +473,51 @@ export default function AdminRecordUpload({ isOpen, onClose, lang, recordToEdit,
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">{t.category}</label>
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
+                        {hasCurriculum ? (isRtl ? 'الكورس' : 'Course') : t.category}
+                      </label>
+                      {hasCurriculum ? (
+                        <select
+                          value={courseFilter}
+                          onChange={(e) => { setCourseFilter(e.target.value as CourseId); setSubjectId(''); }}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                        >
+                          {COURSE_IDS.map(id => (
+                            <option key={id} value={id}>{isRtl ? COURSE_LABELS[id].ar : COURSE_LABELS[id].en}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value as Category)}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                        >
+                          {CATEGORIES.filter(c => c.types.includes(type)).map((c) => (
+                            <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  {hasCurriculum && (
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
+                        {isRtl ? 'المادة' : 'Subject'}
+                      </label>
                       <select
-                        value={category}
-                        onChange={(e) => {
-                          const newCat = e.target.value as Category;
-                          setCategory(newCat);
-                        }}
+                        required
+                        value={subjectId}
+                        onChange={(e) => setSubjectId(e.target.value)}
                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                       >
-                        {CATEGORIES.filter(c => c.types.includes(type)).map((c) => (
-                          <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
+                        <option value="">{isRtl ? 'اختر المادة' : 'Select subject'}</option>
+                        {courseSubjects.map(sub => (
+                          <option key={sub.id} value={sub.id}>{isRtl ? sub.nameAr : sub.nameEn}</option>
                         ))}
                       </select>
                     </div>
-                  </div>
+                  )}
 
                   <div className="space-y-1.5">
                     <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">{isRtl ? 'الملف الصوتي' : 'Audio File'}</label>

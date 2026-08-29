@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, GitMerge, User, Mail, Calendar, Flame, BookOpen } from 'lucide-react';
+import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, GitMerge, User, Mail, Calendar, Flame, BookOpen, Settings } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
-import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { hashPassword } from '../lib/hash';
 import { logAdminAction } from '../services/adminLogService';
 import { useStageContext } from '../contexts/StageContext';
+import StageSettingsModal from './StageSettingsModal';
+import SignupRequestsQueue from './SignupRequestsQueue';
+import { canManageGroups } from '../lib/permissions';
+import { apiUrl } from '../lib/apiBase';
 
 interface StudentManagementProps {
   isOpen: boolean;
@@ -28,7 +32,19 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const isMasterAdmin = ['almdrydyl335@gmail.com', 'jempe.kn@gmail.com'].includes(user?.email?.toLowerCase() || '') || user?.isMasterAdmin;
-  const { currentAppStage } = useStageContext();
+  const { effectiveStageId, groupConfig } = useStageContext();
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
+
+  // Group/subgroup options come from the stage config, not a hardcoded A-D list.
+  const groupIds = groupConfig.groups.map(g => g.id);
+  const subgroupOptions = groupConfig.groups.flatMap(g =>
+    Array.from({ length: g.subgroupCount }, (_, i) => `${g.id}${i + 1}`)
+  );
+  const subgroupsForGroup = (groupId: string) => {
+    const group = groupConfig.groups.find(g => g.id === groupId);
+    if (!group) return [];
+    return Array.from({ length: group.subgroupCount }, (_, i) => `${groupId}${i + 1}`);
+  };
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -234,8 +250,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       // But if we just filter users, students who haven't logged in won't be filtered by stage. 
       // Let's assume students collection has stageId or we only filter users for now.
       // Wait, let's filter both.
-      const snapshot = await getDocs(query(collection(db, 'students'), where('stageId', '==', currentAppStage)));
-      const usersSnapshot = await getDocs(query(collection(db, 'users'), where('stageId', '==', currentAppStage)));
+      const snapshot = await getDocs(query(collection(db, 'students'), where('stageId', '==', effectiveStageId)));
+      const usersSnapshot = await getDocs(query(collection(db, 'users'), where('stageId', '==', effectiveStageId)));
       
       const userMap = new Map<string, any[]>();
       usersSnapshot.docs.forEach((doc: any) => {
@@ -354,7 +370,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     if (isOpen) {
       fetchStudents();
     }
-  }, [isOpen]);
+  }, [isOpen, effectiveStageId]);
 
   useEffect(() => {
     if (selectedGroupFilter !== 'All') {
@@ -389,7 +405,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         examCode,
         subgroup,
         isActive: true,
-        stageId: currentAppStage,
+        stageId: effectiveStageId,
         createdAt: serverTimestamp()
       });
 
@@ -430,7 +446,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       if (student.isAuthAccountOnly && student.userUid) {
         // Delete only the duplicated Auth account via backend
         const token = await auth.currentUser?.getIdToken();
-        const res = await fetch(`/api/admin/users/${student.userUid}`, {
+        const res = await fetch(apiUrl(`/api/admin/users/${student.userUid}`), {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -459,7 +475,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         if (student.userUid) {
           // Also try to delete auth account if exists, but we can't reliably do it from client
           const token = await auth.currentUser?.getIdToken();
-          await fetch(`/api/admin/users/${student.userUid}`, {
+          await fetch(apiUrl(`/api/admin/users/${student.userUid}`), {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
           }).catch(console.error); // Ignore error if it fails
@@ -507,7 +523,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
   const handleDeleteAllStudents = async () => {
     try {
-      const snapshot = await getDocs(query(collection(db, 'students'), where('stageId', '==', currentAppStage)));
+      const snapshot = await getDocs(query(collection(db, 'students'), where('stageId', '==', effectiveStageId)));
       const batch = writeBatch(db);
       snapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);
@@ -616,7 +632,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
             password: hashedPassword,
             examCode: csvExamCode,
             isActive: true,
-            stageId: currentAppStage,
+            stageId: effectiveStageId,
             createdAt: serverTimestamp()
           });
           count++;
@@ -1060,13 +1076,11 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                         className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                       >
                         <option value="">{isRtl ? 'بدون مجموعة (اختياري)' : 'No Group (Optional)'}</option>
-                        {['A', 'B', 'C', 'D'].map(group => 
-                          [1, 2, 3, 4, 5, 6, 7, 8].map(num => (
-                            <option key={`${group}${num}`} value={`${group}${num}`}>
-                              {isRtl ? `المجموعة ${group}${num}` : `Group ${group}${num}`}
-                            </option>
-                          ))
-                        )}
+                        {subgroupOptions.map(sub => (
+                          <option key={sub} value={sub}>
+                            {isRtl ? `المجموعة ${sub}` : `Group ${sub}`}
+                          </option>
+                        ))}
                       </select>
                       
                       <button
@@ -1136,13 +1150,11 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
                     >
                       <option value="">{isRtl ? 'بدون مجموعة (اختياري)' : 'No Group (Optional)'}</option>
-                      {['A', 'B', 'C', 'D'].map(group => 
-                        [1, 2, 3, 4, 5, 6, 7, 8].map(num => (
-                          <option key={`${group}${num}`} value={`${group}${num}`}>
-                            {isRtl ? `المجموعة ${group}${num}` : `Group ${group}${num}`}
-                          </option>
-                        ))
-                      )}
+                      {subgroupOptions.map(sub => (
+                        <option key={sub} value={sub}>
+                          {isRtl ? `المجموعة ${sub}` : `Group ${sub}`}
+                        </option>
+                      ))}
                     </select>
                     <button
                       disabled={isSubmitting}
@@ -1155,6 +1167,13 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                   </div>
                 </form>
                 )}
+
+                <div className="pt-6 border-t border-slate-200 dark:border-zinc-800">
+                  <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                    {isRtl ? 'طلبات إنشاء الحسابات' : 'Signup requests'}
+                  </h3>
+                  <SignupRequestsQueue user={user} lang={lang} />
+                </div>
 
                 <div className="pt-6 border-t border-slate-200 dark:border-zinc-800 space-y-4">
                   <div>
@@ -1258,8 +1277,17 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                 </div>
                   
                 <div className="flex flex-col gap-2 mb-4 mt-4">
-                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin px-1">
-                    {['All', 'A', 'B', 'C', 'D'].map(group => (
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin px-1 items-center">
+                    {canManageGroups(user) && (
+                      <button
+                        onClick={() => setShowGroupSettings(true)}
+                        title={isRtl ? 'إعدادات المجموعات' : 'Group settings'}
+                        className="shrink-0 w-9 h-9 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-slate-400 flex items-center justify-center hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-900/20 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                    )}
+                    {['All', ...groupIds].map(group => (
                       <button
                         key={group}
                         onClick={() => {
@@ -1289,8 +1317,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       >
                         {isRtl ? 'الكل' : 'All'}
                       </button>
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
-                        const sub = `${selectedGroupFilter}${num}`;
+                      {subgroupsForGroup(selectedGroupFilter).map(sub => {
                         return (
                           <button
                             key={sub}
@@ -1565,7 +1592,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                           setError(null);
                           try {
                             const token = await auth.currentUser?.getIdToken();
-                            const res = await fetch(`/api/admin/users/merge`, {
+                            const res = await fetch(apiUrl(`/api/admin/users/merge`), {
                               method: 'POST',
                               headers: {
                                 'Authorization': `Bearer ${token}`,
@@ -1706,6 +1733,13 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
           </motion.div>
         </div>
       )}
+
+      <StageSettingsModal
+        isOpen={showGroupSettings}
+        onClose={() => setShowGroupSettings(false)}
+        lang={lang}
+        students={students}
+      />
     </AnimatePresence>
   );
 }

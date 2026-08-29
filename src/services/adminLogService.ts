@@ -1,4 +1,5 @@
 import { auth } from '../lib/firebase';
+import { apiUrl } from '../lib/apiBase';
 
 export interface AdminLogEntry {
   id?: string;
@@ -17,7 +18,7 @@ export async function logAdminAction(action: string, details: string, targetId?:
 
   try {
     const token = await user.getIdToken();
-    const response = await fetch('/api/admin-logs', {
+    const response = await fetch(apiUrl('/api/admin-logs'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -40,7 +41,7 @@ export async function getAdminLogs(limitCount: number = 100): Promise<AdminLogEn
   if (!user) throw new Error("Unauthorized");
 
   const token = await user.getIdToken();
-  const response = await fetch(`/api/admin-logs?limit=${limitCount}`, {
+  const response = await fetch(apiUrl(`/api/admin-logs?limit=${limitCount}`), {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`

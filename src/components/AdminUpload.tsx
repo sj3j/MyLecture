@@ -6,6 +6,9 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, Lecture, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { logAdminAction } from '../services/adminLogService';
+import { useStageContext } from '../contexts/StageContext';
+import { useStageSubjects } from '../hooks/useStageSubjects';
+import { COURSE_IDS, COURSE_LABELS, CourseId } from '../types';
 
 interface AdminUploadProps {
   isOpen: boolean;
@@ -18,6 +21,23 @@ interface AdminUploadProps {
 export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user }: AdminUploadProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+  const { effectiveStageId, activeCourseId } = useStageContext();
+  const { subjects } = useStageSubjects();
+
+  // Curriculum picker replaces the legacy CATEGORIES dropdown wherever a stage
+  // actually has subjects; stages not yet set up keep the old behaviour.
+  const hasCurriculum = subjects.length > 0;
+  const [courseFilter, setCourseFilter] = useState<CourseId>(activeCourseId);
+  const [subjectId, setSubjectId] = useState<string>('');
+  const courseSubjects = subjects.filter(sub => sub.courseId === courseFilter);
+
+  // subjectName is denormalised so LectureCard can label the badge without
+  // loading the subjects collection.
+  const subjectMeta = (id?: string) => {
+    const sub = subjects.find(x => x.id === id);
+    if (!sub) return {};
+    return { subjectId: sub.id, courseId: sub.courseId, subjectName: sub.nameEn };
+  };
   
   const [title, setTitle] = useState('');
   const [lectureNumber, setLectureNumber] = useState('');
@@ -61,6 +81,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     setTitle(c.title);
     setLectureNumber(c.lectureNumber);
     setCategory(c.category);
+    setSubjectId(c.subjectId || '');
     setType(c.type);
     setDescription(c.description);
     setYoutubeUrl(c.youtubeUrl);
@@ -75,6 +96,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
       title,
       lectureNumber,
       category,
+      subjectId,
       type,
       description,
       youtubeUrl,
@@ -208,9 +230,10 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
           });
         }
 
+        const subjectFields = subjectMeta(subjectId);
         const lectureData: any = {
           title,
-          category,
+          ...(hasCurriculum ? subjectFields : { category }),
           type,
           description,
           youtubeUrl: youtubeUrl || null,
@@ -219,6 +242,9 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
           uploaderName: lectureToEdit?.uploaderName || user?.name || auth.currentUser?.displayName || 'Admin',
           version,
           isWeekly,
+          // Without this the lecture fails every stage-filtered query and is
+          // invisible to everyone, including the admin who uploaded it.
+          stageId: lectureToEdit?.stageId || effectiveStageId,
         };
         
         if (lectureNumber) lectureData.number = parseInt(lectureNumber, 10);
@@ -259,7 +285,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
 
           const lectureData: any = {
             title: config.title,
-            category: config.category,
+            ...(hasCurriculum ? subjectMeta(config.subjectId) : { category: config.category }),
             type: config.type,
             description: config.description,
             youtubeUrl: config.youtubeUrl || null,
@@ -269,6 +295,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
             version: config.version,
             isWeekly: config.isWeekly,
             createdAt: serverTimestamp(),
+            stageId: effectiveStageId,
           };
           
           if (config.lectureNumber) {
@@ -450,21 +477,63 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">{t.category}</label>
-                      <select
-                        value={category}
-                        onChange={(e) => {
-                          const newCat = e.target.value as Category;
-                          setCategory(newCat);
-                        }}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
-                      >
-                        {CATEGORIES.filter(c => c.types.includes(type)).map((c) => (
-                          <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
-                        ))}
-                      </select>
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
+                        {hasCurriculum ? (isRtl ? 'الكورس' : 'Course') : t.category}
+                      </label>
+                      {hasCurriculum ? (
+                        <select
+                          value={courseFilter}
+                          onChange={(e) => {
+                            setCourseFilter(e.target.value as CourseId);
+                            setSubjectId(''); // subject list changes with the course
+                          }}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                        >
+                          {COURSE_IDS.map(id => (
+                            <option key={id} value={id}>
+                              {isRtl ? COURSE_LABELS[id].ar : COURSE_LABELS[id].en}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value as Category)}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                        >
+                          {CATEGORIES.filter(c => c.types.includes(type)).map((c) => (
+                            <option key={c.value} value={c.value}>{t[c.labelKey]}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
+
+                  {hasCurriculum && (
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
+                        {isRtl ? 'المادة' : 'Subject'}
+                      </label>
+                      <select
+                        required
+                        value={subjectId}
+                        onChange={(e) => setSubjectId(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                      >
+                        <option value="">{isRtl ? 'اختر المادة' : 'Select subject'}</option>
+                        {courseSubjects.map(sub => (
+                          <option key={sub.id} value={sub.id}>
+                            {isRtl ? sub.nameAr : sub.nameEn}
+                          </option>
+                        ))}
+                      </select>
+                      {courseSubjects.length === 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 ml-1">
+                          {isRtl ? 'لا توجد مواد في هذا الكورس' : 'No subjects in this course'}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">

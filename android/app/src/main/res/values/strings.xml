@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">محاضراتي</string>
+    <string name="title_activity_main">محاضراتي</string>
+    <string name="package_name">com.mylecture.app</string>
+    <string name="custom_url_scheme">com.mylecture.app</string>
+</resources>

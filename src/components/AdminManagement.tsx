@@ -2,20 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Shield, Loader2, AlertCircle } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, setDoc } from 'firebase/firestore';
-import { Language, TRANSLATIONS } from '../types';
+import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { logAdminAction } from '../services/adminLogService';
+import { useStageContext } from '../contexts/StageContext';
+import { MODERATOR_CAPABILITIES, isMasterAdmin as isMaster } from '../lib/permissions';
 
 interface AdminManagementProps {
   isOpen: boolean;
   onClose: () => void;
   lang: Language;
+  user: UserProfile | null;
 }
+
+type AssistantRole = 'admin' | 'moderator';
 
 interface AdminRole {
   id: string;
   email: string;
-  role?: 'admin';
+  role?: AssistantRole;
+  managedStageId?: string;
   permissions?: {
     manageLectures?: boolean;
     manageAnnouncements?: boolean;
@@ -27,10 +33,40 @@ interface AdminRole {
   };
 }
 
-export default function AdminManagement({ isOpen, onClose, lang }: AdminManagementProps) {
+const PERMISSION_LABELS = [
+  { id: 'manageLectures', labelEn: 'Manage Lectures', labelAr: 'إدارة المحاضرات' },
+  { id: 'manageAnnouncements', labelEn: 'Manage Announcements', labelAr: 'إدارة التبليغات' },
+  { id: 'manageRecords', labelEn: 'Manage Records', labelAr: 'إدارة التسجيلات' },
+  { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
+  { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
+  { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
+  { id: 'manageGrades', labelEn: 'Manage Grades', labelAr: 'إدارة السعي والدرجات' },
+];
+
+/** Moderators are never offered manageStudents or manageGrades - both read the
+ *  `students` collection, which they have no access to. */
+const permissionsForRole = (role: AssistantRole) =>
+  role === 'moderator'
+    ? PERMISSION_LABELS.filter(p => (MODERATOR_CAPABILITIES as readonly string[]).includes(p.id))
+    : PERMISSION_LABELS;
+
+/** Strips admin-only grants so a moderator can never be persisted holding them. */
+const sanitizePermissions = (role: AssistantRole, perms: Record<string, boolean>) =>
+  role === 'moderator'
+    ? { ...perms, manageStudents: false, manageGrades: false }
+    : perms;
+
+export default function AdminManagement({ isOpen, onClose, lang, user }: AdminManagementProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
-  
+  const { stages, effectiveStageId } = useStageContext();
+
+  // A master admin manages every assistant on every stage. A representative may
+  // only appoint moderators, and only inside the stage they manage.
+  const viewerIsMaster = isMaster(user);
+  const [newRole, setNewRole] = useState<AssistantRole>(viewerIsMaster ? 'admin' : 'moderator');
+  const [newStageId, setNewStageId] = useState<string>('');
+
   const [email, setEmail] = useState('');
   const [permissions, setPermissions] = useState({
     manageLectures: true,
@@ -47,6 +83,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editStageId, setEditStageId] = useState<string>('');
   const [editPermissions, setEditPermissions] = useState({
     manageLectures: true,
     manageAnnouncements: true,
@@ -62,10 +99,12 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
     try {
       const q = query(collection(db, 'allowed_admins'));
       const snapshot = await getDocs(q);
-      const adminList = snapshot.docs.map(doc => ({
+      let adminList: AdminRole[] = snapshot.docs.map(doc => ({
         id: doc.id,
         email: doc.id,
-        role: 'admin' as const,
+        // Docs created before assistants existed have no role field; they are admins.
+        role: (doc.data().role as AssistantRole) || 'admin',
+        managedStageId: doc.data().managedStageId,
         permissions: doc.data().permissions || {
           manageLectures: true,
           manageAnnouncements: true,
@@ -76,6 +115,14 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
           manageGrades: true,
         }
       }));
+
+      if (!viewerIsMaster) {
+        // A representative only ever sees the moderators they are responsible for.
+        adminList = adminList.filter(
+          a => a.role === 'moderator' && a.managedStageId === effectiveStageId
+        );
+      }
+
       setAdmins(adminList);
     } catch (err) {
       console.error('Error fetching admins:', err);
@@ -86,9 +133,11 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
 
   useEffect(() => {
     if (isOpen) {
+      setNewRole(viewerIsMaster ? 'admin' : 'moderator');
+      setNewStageId(viewerIsMaster ? (effectiveStageId || '') : (effectiveStageId || ''));
       fetchAdmins();
     }
-  }, [isOpen]);
+  }, [isOpen, viewerIsMaster, effectiveStageId]);
 
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,15 +151,27 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
         return;
       }
 
+      // A representative can only ever create a moderator on their own stage.
+      const roleToSave: AssistantRole = viewerIsMaster ? newRole : 'moderator';
+      const stageToSave = viewerIsMaster ? newStageId : (effectiveStageId || '');
+      const permsToSave = sanitizePermissions(roleToSave, permissions);
+
+      if (!stageToSave) {
+        setError(isRtl ? 'يرجى اختيار المرحلة' : 'Please select a stage');
+        setIsSubmitting(false);
+        return;
+      }
+
       await setDoc(doc(db, 'allowed_admins', email.toLowerCase()), {
         email: email.toLowerCase(),
-        role: 'admin',
-        permissions: permissions,
+        role: roleToSave,
+        managedStageId: stageToSave,
+        permissions: permsToSave,
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.uid
       });
 
-      await logAdminAction('CREATE_ADMIN', `Added new admin: ${email.toLowerCase()}`, email.toLowerCase());
+      await logAdminAction('CREATE_ADMIN', `Added ${roleToSave} for ${stageToSave}: ${email.toLowerCase()}`, email.toLowerCase());
 
       // Update users collection if doc exists
       const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase()));
@@ -118,8 +179,9 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       if (!userSnap.empty) {
          try {
             await setDoc(doc(db, 'users', userSnap.docs[0].id), {
-               role: 'admin',
-               permissions: permissions
+               role: roleToSave,
+               managedStageId: stageToSave,
+               permissions: permsToSave
             }, { merge: true });
          } catch (e) {
             console.error(e);
@@ -138,13 +200,19 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
 
   const handleSaveEdit = async (id: string, email: string) => {
     try {
+      const existing = admins.find(a => a.id === id);
+      const roleToSave: AssistantRole = existing?.role || 'admin';
+      const stageToSave = editStageId || existing?.managedStageId || '';
+      const permsToSave = sanitizePermissions(roleToSave, editPermissions);
+
       await setDoc(doc(db, 'allowed_admins', id), {
         email: email,
-        role: 'admin',
-        permissions: editPermissions,
+        role: roleToSave,
+        ...(stageToSave ? { managedStageId: stageToSave } : {}),
+        permissions: permsToSave,
       }, { merge: true });
       
-      await logAdminAction('UPDATE_ADMIN_PERMISSIONS', `Updated permissions for admin: ${email}`, id);
+      await logAdminAction('UPDATE_ADMIN_PERMISSIONS', `Updated permissions for ${roleToSave}: ${email}`, id);
       
       // Update users collection if doc exists
       const q = query(collection(db, 'users'), where('email', '==', email));
@@ -152,8 +220,9 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
       if (!userSnap.empty) {
          try {
             await setDoc(doc(db, 'users', userSnap.docs[0].id), {
-               role: 'admin',
-               permissions: editPermissions
+               role: roleToSave,
+               ...(stageToSave ? { managedStageId: stageToSave } : {}),
+               permissions: permsToSave
             }, { merge: true });
          } catch (e) {
             console.error(e);
@@ -242,17 +311,62 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
                   />
 
+                  {viewerIsMaster && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewRole('admin')}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                          newRole === 'admin'
+                            ? 'bg-sky-600 text-white shadow-lg shadow-sky-100 dark:shadow-none'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {isRtl ? 'ممثل مرحلة' : 'Representative'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewRole('moderator')}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                          newRole === 'moderator'
+                            ? 'bg-sky-600 text-white shadow-lg shadow-sky-100 dark:shadow-none'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {isRtl ? 'مساعد' : 'Moderator'}
+                      </button>
+                    </div>
+                  )}
+
+                  {viewerIsMaster ? (
+                    <select
+                      value={newStageId}
+                      onChange={(e) => setNewStageId(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all"
+                    >
+                      <option value="">{isRtl ? 'اختر المرحلة' : 'Select stage'}</option>
+                      {stages.map(stage => (
+                        <option key={stage.id} value={stage.id}>
+                          {isRtl ? stage.nameAr : stage.nameEn}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="px-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-500 dark:text-slate-400">
+                      {isRtl ? 'المرحلة: ' : 'Stage: '}
+                      <span className="font-bold text-slate-700 dark:text-slate-300">
+                        {stages.find(st => st.id === effectiveStageId)
+                          ? (isRtl
+                              ? stages.find(st => st.id === effectiveStageId)!.nameAr
+                              : stages.find(st => st.id === effectiveStageId)!.nameEn)
+                          : effectiveStageId}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="bg-slate-50 dark:bg-zinc-800 p-4 rounded-xl border border-slate-200 dark:border-zinc-700 flex flex-col gap-2">
                     <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{isRtl ? 'الصلاحيات' : 'Permissions'}</h4>
-                    {[
-                      { id: 'manageLectures', labelEn: 'Manage Lectures', labelAr: 'إدارة المحاضرات' },
-                      { id: 'manageAnnouncements', labelEn: 'Manage Announcements', labelAr: 'إدارة التبليغات' },
-                      { id: 'manageRecords', labelEn: 'Manage Records', labelAr: 'إدارة التسجيلات' },
-                      { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
-                      { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
-                      { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
-                      { id: 'manageGrades', labelEn: 'Manage Grades', labelAr: 'إدارة السعي والدرجات' },
-                    ].map(perm => (
+                    {permissionsForRole(viewerIsMaster ? newRole : 'moderator').map(perm => (
                       <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -295,17 +409,24 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                               <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
                             </div>
 
+                            {viewerIsMaster && (
+                              <select
+                                value={editStageId}
+                                onChange={(e) => setEditStageId(e.target.value)}
+                                className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500"
+                              >
+                                <option value="">{isRtl ? 'بدون مرحلة' : 'No stage'}</option>
+                                {stages.map(stage => (
+                                  <option key={stage.id} value={stage.id}>
+                                    {isRtl ? stage.nameAr : stage.nameEn}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
                             <div className="bg-white dark:bg-zinc-900 p-3 rounded-lg border border-slate-200 dark:border-zinc-700 flex flex-col gap-2">
                               <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{isRtl ? 'الصلاحيات' : 'Permissions'}</h4>
-                              {[
-                                { id: 'manageLectures', labelEn: 'Manage Lectures', labelAr: 'إدارة المحاضرات' },
-                                { id: 'manageAnnouncements', labelEn: 'Manage Announcements', labelAr: 'إدارة التبليغات' },
-                                { id: 'manageRecords', labelEn: 'Manage Records', labelAr: 'إدارة التسجيلات' },
-                                { id: 'manageChat', labelEn: 'Manage Chat', labelAr: 'إدارة الشات' },
-                                { id: 'manageHomeworks', labelEn: 'Manage Homeworks', labelAr: 'إدارة الواجبات' },
-                                { id: 'manageStudents', labelEn: 'Manage Students', labelAr: 'إدارة الطلاب' },
-                                { id: 'manageGrades', labelEn: 'Manage Grades', labelAr: 'إدارة السعي والدرجات' },
-                              ].map(perm => (
+                              {permissionsForRole(admin.role || 'admin').map(perm => (
                                 <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
                                   <input
                                     type="checkbox"
@@ -342,7 +463,19 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                               <div className="flex flex-col">
                                 <span className="font-semibold text-slate-700 dark:text-slate-300 leading-tight">{admin.email}</span>
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
-                                  {admin.role || 'admin'}
+                                  {admin.role === 'moderator'
+                                    ? (isRtl ? 'مساعد' : 'Moderator')
+                                    : (isRtl ? 'ممثل مرحلة' : 'Representative')}
+                                  {admin.managedStageId && (
+                                    <span className="text-slate-400 dark:text-slate-500 normal-case">
+                                      {' · '}
+                                      {stages.find(st => st.id === admin.managedStageId)
+                                        ? (isRtl
+                                            ? stages.find(st => st.id === admin.managedStageId)!.nameAr
+                                            : stages.find(st => st.id === admin.managedStageId)!.nameEn)
+                                        : admin.managedStageId}
+                                    </span>
+                                  )}
                                 </span>
                               </div>
                             </div>
@@ -366,6 +499,7 @@ export default function AdminManagement({ isOpen, onClose, lang }: AdminManageme
                                 <button
                                   onClick={() => {
                                     setEditingId(admin.id);
+                                    setEditStageId(admin.managedStageId || '');
                                     setEditPermissions(admin.permissions || {
                                       manageLectures: true,
                                       manageAnnouncements: true,

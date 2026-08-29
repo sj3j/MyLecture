@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy, addDoc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, deleteDoc, orderBy, addDoc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { X, ShieldAlert, Trash2, Ban, UserX, AlertTriangle, Eye, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS, Language } from '../types';
@@ -18,7 +18,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
   const [errorMsg, setErrorMsg] = useState('');
   const [lecturesMap, setLecturesMap] = useState<Record<string, string>>({});
   const [usersMap, setUsersMap] = useState<Record<string, string>>({});
-  const { currentAppStage } = useStageContext();
+  const { effectiveStageId } = useStageContext();
 
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -60,7 +60,7 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
       setLecturesMap(lMap);
 
       // Fetch users for mapping (filtered by current stage)
-      const usersQuery = query(collection(db, 'users'), where('stageId', '==', currentAppStage));
+      const usersQuery = query(collection(db, 'users'), where('stageId', '==', effectiveStageId));
       const usersSnap = await getDocs(usersQuery);
       const uMap: Record<string, string> = {};
       usersSnap.forEach(d => {
@@ -100,9 +100,11 @@ export default function AntiCheatDashboard({ isOpen, onClose, lang }: AntiCheatD
 
   useEffect(() => {
     if (isOpen) {
+      setLogs([]);
+      setUsersMap({});
       fetchLogs();
     }
-  }, [isOpen]);
+  }, [isOpen, effectiveStageId]);
 
   const handleCancelResult = async (group: any) => {
     confirmAction('تأكيد الإلغاء', 'هل أنت متأكد من إلغاء نتيجة هذا الطالب لهذه المحاضرة؟ ومعاقبته بدرجة الصفر؟', async () => {

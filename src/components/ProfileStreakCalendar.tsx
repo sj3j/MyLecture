@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth } from '../lib/firebase';
 import { Loader2 } from 'lucide-react';
 import TrueCalendarGrid from './TrueCalendarGrid';
+import { apiUrl } from '../lib/apiBase';
 
 interface ProfileStreakCalendarProps {
   userUid: string;
@@ -18,7 +19,7 @@ export default function ProfileStreakCalendar({ userUid, isRtl }: ProfileStreakC
       setIsLoading(true);
       try {
         const token = await auth.currentUser?.getIdToken();
-        const res = await fetch(`/api/streak-history/${userUid}`, {
+        const res = await fetch(apiUrl(`/api/streak-history/${userUid}`), {
             headers: {
                 'Authorization': `Bearer ${token}`
             }

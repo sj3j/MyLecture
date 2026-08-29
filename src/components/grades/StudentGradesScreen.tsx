@@ -17,7 +17,7 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'current' | 'archive'>('current');
-  const { currentAppStage } = useStageContext();
+  const { effectiveStageId } = useStageContext();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -45,8 +45,8 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     const dStage = d.stageId;
     // If degree has no stageId, it's legacy (assume it belongs to current/default stage for now, so it shows up)
     const matchesStage = viewMode === 'current' 
-      ? (!dStage || dStage === currentAppStage) 
-      : (dStage && dStage !== currentAppStage);
+      ? (!dStage || dStage === effectiveStageId) 
+      : (dStage && dStage !== effectiveStageId);
       
     return matchesSearch && matchesStage;
   });

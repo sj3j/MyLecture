@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, AlertCircle, History, Clock, Shield as ShieldIcon } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import StreakHistoryModal from './StreakHistoryModal';
 import { logAdminAction } from '../services/adminLogService';
+import { isMasterAdmin as isMasterAdminUser } from '../lib/permissions';
+import { apiUrl } from '../lib/apiBase';
 
 interface StreakManagementProps {
   isOpen: boolean;
@@ -30,7 +32,6 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
   const [activeTab, setActiveTab] = useState<'students' | 'pending'>('students');
   
   // Vacation Mode
-  const [vacationMode, setVacationMode] = useState(false);
   const [showVacationModal, setShowVacationModal] = useState(false);
   const [vacationConfirmText, setVacationConfirmText] = useState('');
   const [semesterName, setSemesterName] = useState('');
@@ -45,13 +46,6 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const snapSettings = await getDoc(doc(db, 'app_settings', 'streak'));
-      if (snapSettings.exists() && snapSettings.data().vacationMode) {
-        setVacationMode(true);
-      } else {
-        setVacationMode(false);
-      }
-
       const snapshot = await getDocs(collection(db, 'students'));
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const pendingSnapshot = await getDocs(collection(db, 'pending_streak_resets'));
@@ -140,7 +134,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/grant-freeze", {
+      const res = await fetch(apiUrl("/api/admin/grant-freeze"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ userUid, amount: freezeAmount })
@@ -174,7 +168,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/streak-recovery", {
+      const res = await fetch(apiUrl("/api/admin/streak-recovery"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ userUid, studentEmail, newStreak: editStreakCount, reason: recoveryReason })
@@ -202,7 +196,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/fix-calendar", {
+      const res = await fetch(apiUrl("/api/admin/fix-calendar"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ userUid })
@@ -226,7 +220,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/resolve-pending-streak", {
+      const res = await fetch(apiUrl("/api/admin/resolve-pending-streak"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ userUid, action })
@@ -251,7 +245,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/grant-freeze-global", {
+      const res = await fetch(apiUrl("/api/admin/grant-freeze-global"), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -274,7 +268,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/time-freeze", {
+      const res = await fetch(apiUrl("/api/admin/time-freeze"), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -291,35 +285,38 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
     }
   };
 
-  const isMasterAdmin = user?.email === 'almdrydyl335@gmail.com';
+  const isMasterAdmin = isMasterAdminUser(user);
 
-  const handleToggleVacation = async (enable: boolean) => {
-    if (!enable) {
-      if (!window.confirm(isRtl ? 'هل تريد إنهاء العطلة وبدء فصل دراسي جديد؟' : 'End vacation mode and start new term?')) return;
-    } else {
-      if (vacationConfirmText !== 'تأكيد الإعادة') return;
-      if (!semesterName.trim()) {
-        const msg = isRtl ? 'الرجاء إدخال اسم الفصل' : 'Please enter semester name';
-        setError(msg); window.alert(msg); return;
-      }
+  /**
+   * Ends the season and starts a fresh one: archives BOTH leaderboards into each
+   * student's profile (with their final rank), zeroes them, and takes the app out
+   * of vacation mode so the new competition is immediately live.
+   */
+  const handleStartNewSeason = async () => {
+    if (vacationConfirmText !== 'تأكيد الإعادة') return;
+    if (!semesterName.trim()) {
+      const msg = isRtl ? 'الرجاء إدخال اسم الموسم' : 'Please enter a season name';
+      setError(msg); window.alert(msg); return;
     }
 
     setIsSubmitting(true);
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth token");
-      const res = await fetch("/api/admin/toggle-vacation-mode", {
+      const res = await fetch(apiUrl("/api/admin/start-new-season"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ enable, semesterName })
+        body: JSON.stringify({ seasonName: semesterName })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setSuccess(isRtl ? 'تم تغيير حالة مود العطلة بنجاح' : 'Vacation mode updated');
+        setSuccess(isRtl
+          ? `بدأ الموسم الجديد. تمت أرشفة ${data.streakArchived} ستريك و ${data.mcqArchived} نتيجة MCQ.`
+          : `New season started. Archived ${data.streakArchived} streaks and ${data.mcqArchived} MCQ results.`);
         setShowVacationModal(false);
         setVacationConfirmText('');
         setSemesterName('');
-        await logAdminAction('TOGGLE_VACATION_MODE', `${enable ? `Enabled vacation mode for semester: ${semesterName}` : 'Disabled vacation mode'}`);
+        await logAdminAction('START_NEW_SEASON', `Started season: ${semesterName}`);
       } else throw new Error(data.error || "API error");
     } catch (err: any) {
       setError(err.message || 'Failed');
@@ -450,15 +447,14 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                     </button>
                     {isMasterAdmin && (
                       <button
-                        onClick={() => vacationMode ? handleToggleVacation(false) : setShowVacationModal(true)}
-                        className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors flex items-center gap-2 ${
-                          vacationMode 
-                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400' 
-                            : 'bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-400'
-                        }`}
+                        onClick={() => setShowVacationModal(true)}
+                        title={isRtl
+                          ? 'المواسم تُدار تلقائياً من التقويم الدراسي. استخدم هذا الزر للإنهاء اليدوي فقط.'
+                          : 'Seasons roll over automatically from the academic calendar. Use this only to end one by hand.'}
+                        className="px-4 py-2 text-sm font-bold rounded-xl transition-colors flex items-center gap-2 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-400"
                       >
                         <AlertCircle className="w-4 h-4" />
-                        {vacationMode ? (isRtl ? 'إنهاء مود العطلة' : 'Disable Vacation Mode') : (isRtl ? '🔄 إعادة تعيين ستريك الفصل الدراسي' : 'Enable Vacation Mode')}
+                        {isRtl ? '🔄 بدء موسم جديد يدوياً' : 'Start New Season Manually'}
                       </button>
                     )}
                   </div>
@@ -466,10 +462,12 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                   {showVacationModal && (
                     <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded-2xl p-6 mb-4">
                       <h3 className="font-bold text-rose-700 dark:text-rose-400 mb-2">
-                        {isRtl ? 'هل أنت متأكد من إعادة تعيين ستريك جميع الطلاب؟' : 'Are you sure you want to reset all streaks?'}
+                        {isRtl ? 'بدء موسم جديد وإعادة تعيين لوحتي الصدارة؟' : 'Start a new season and reset both leaderboards?'}
                       </h3>
                       <p className="text-rose-600 dark:text-rose-300 text-sm mb-4">
-                        {isRtl ? 'سيتم الاحتفاظ بسجل الفصل الحالي.' : 'Current semester history will be archived.'}
+                        {isRtl
+                          ? 'سيتم حفظ نتائج الموسم الحالي (الترتيب، النقاط، عدد الأسئلة، الدقة) في ملف كل طالب، ثم تصفير الستريك و MCQ للجميع وبدء المنافسة الجديدة مباشرة.'
+                          : 'Current results (rank, score, questions, accuracy) are saved to each student profile, then streaks and MCQ are zeroed and the new competition goes live.'}
                       </p>
                       
                       <div className="space-y-4">
@@ -504,7 +502,7 @@ export default function StreakManagement({ isOpen, onClose, lang, user }: Streak
                             {isRtl ? 'إلغاء' : 'Cancel'}
                           </button>
                           <button 
-                            onClick={() => handleToggleVacation(true)}
+                            onClick={handleStartNewSeason}
                             disabled={isSubmitting || vacationConfirmText !== 'تأكيد الإعادة'}
                             className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold transition-colors flex justify-center items-center"
                           >

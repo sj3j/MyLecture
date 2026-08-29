@@ -72,8 +72,36 @@ export interface UserMCQStats {
   totalFirstAttemptCorrect: number;
   totalFirstAttemptAnswered: number;
   lecturesAttempted: number;
+  /** Volume points (correct x 10). Displayed, but no longer what the board sorts on. */
   mcqLeaderboardScore: number;
   accuracy: number;
+  /**
+   * What the leaderboard actually orders by. Absent when the user has not
+   * answered enough questions to qualify - Firestore's orderBy skips documents
+   * missing the field, which is exactly the exclusion we want.
+   */
+  mcqRankScore?: number;
   lastUpdated: any; // Firestore Timestamp
   subjectStats: Record<string, UserSubjectStats>;
+}
+
+/**
+ * Leaderboard ordering key: effort scaled by precision.
+ *
+ *   score = correct x accuracy   ==   correct^2 / answered
+ *
+ * Hard work sets the scale (a student who answers more correct questions ranks
+ * higher) while accuracy scales it down, so grinding through questions with
+ * poor precision no longer beats a careful student. Stored x100 to keep two
+ * decimal places as an integer.
+ *
+ * No qualifying threshold is needed: a perfect 20/20 scores only 20, so a short
+ * flawless quiz cannot outrank sustained work. The field is simply absent for
+ * anyone who has not answered a question yet, which orderBy excludes.
+ *
+ * @returns null when the user has no answers at all.
+ */
+export function computeMcqRankScore(correct: number, answered: number): number | null {
+  if (!answered || answered <= 0) return null;
+  return Math.round((correct * correct * 100) / answered);
 }

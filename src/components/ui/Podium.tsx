@@ -39,7 +39,13 @@ export default function Podium({ topStudents, isRtl, type }: PodiumProps) {
     if (type === 'streak') {
       return `🔥 ${student.streakCount || 0} ${isRtl ? 'يوم' : 'days'}`;
     }
-    return `🎯 ${Math.round(student.mcqLeaderboardScore || 0)} ${isRtl ? 'نقطة' : 'pts'}`;
+    // The ranking score (correct x accuracy), matching the headline number on
+    // the board itself. mcqLeaderboardScore is the legacy volume metric and is
+    // absent from season archives, so it is only a fallback.
+    const score = student.mcqRankScore != null
+      ? student.mcqRankScore / 100
+      : (student.score ?? student.mcqLeaderboardScore ?? 0);
+    return `🎯 ${Math.round(score)} ${isRtl ? 'نقطة' : 'pts'}`;
   };
 
   const getAvatarFallback = (name: string) => name ? name.charAt(0).toUpperCase() : '?';

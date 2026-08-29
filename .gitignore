@@ -6,3 +6,25 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# graphify knowledge graph (regenerable; GRAPH_REPORT.md copied to docs/ instead)
+graphify-out/
+
+# Source dumps / grep snapshots pasted into AI tools. These go stale immediately
+# and pollute grep with duplicate hits of the real source.
+map*.txt
+*keys*.txt
+
+# Agent skills installed via `npx skills add` (re-installable; the install
+# commands are recorded in .claude/skills/ATTRIBUTION.md)
+.agents/
+
+# Capacitor / Android build
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+android/app/build/
+android/build/
+android/.gradle/
+build-output/

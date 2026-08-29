@@ -3,6 +3,7 @@ import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { Loader2, UserCheck } from 'lucide-react';
+import { useStageContext } from '../contexts/StageContext';
 
 interface OnboardingScreenProps {
   user: UserProfile;
@@ -15,6 +16,13 @@ export default function OnboardingScreen({ user, lang }: OnboardingScreenProps) 
   
   const [group, setGroup] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Offer only the subgroups the representative configured for this student's
+  // stage, instead of letting them type anything into the field.
+  const { groupConfig } = useStageContext();
+  const subgroupOptions = groupConfig.groups.flatMap(g =>
+    Array.from({ length: g.subgroupCount }, (_, i) => `${g.id}${i + 1}`)
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,14 +60,19 @@ export default function OnboardingScreen({ user, lang }: OnboardingScreenProps) 
             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
               {isRtl ? 'الجروب (Group)' : 'Group'}
             </label>
-            <input
-              type="text"
+            <select
               value={group}
               onChange={(e) => setGroup(e.target.value)}
-              placeholder={isRtl ? 'مثال: A1' : 'e.g., A1'}
               required
               className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-sky-500 dark:text-stone-100 transition-colors"
-            />
+            >
+              <option value="">{isRtl ? 'اختر الجروب' : 'Select your group'}</option>
+              {subgroupOptions.map(sub => (
+                <option key={sub} value={sub}>
+                  {isRtl ? `المجموعة ${sub}` : `Group ${sub}`}
+                </option>
+              ))}
+            </select>
           </div>
 
           <button

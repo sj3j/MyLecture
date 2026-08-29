@@ -8,6 +8,10 @@ import Fuse from 'fuse.js';
 import AdminRecordUpload from './AdminRecordUpload';
 import AudioPlayer from './AudioPlayer';
 import { ConfirmShareDialog } from './ui/ConfirmShareDialog';
+import { useStageContext } from '../contexts/StageContext';
+import CourseTabs from './CourseTabs';
+import { DEFAULT_COURSE_ID } from '../types';
+import { canManage } from '../lib/permissions';
 
 const CATEGORY_UI: Record<string, { emoji: string; color: string; border: string; bg: string; badge: string }> = {
   all: { emoji: '📚', color: 'text-indigo-500', border: 'border-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/20', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
@@ -71,13 +75,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     }
   };
 
-  const { currentAppStage } = useStageContext();
-  const effectiveStageId = React.useMemo(() => {
-    if (!user) return null;
-    if (user.isMasterAdmin) return currentAppStage;
-    if (user.role === 'admin' && user.managedStageId) return user.managedStageId;
-    return user.stageId || null;
-  }, [user, currentAppStage]);
+  const { effectiveStageId, activeCourseId } = useStageContext();
 
   useEffect(() => {
     let q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
@@ -96,10 +94,15 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     return () => unsubscribe();
   }, [effectiveStageId]);
 
+  // Only split by course once this stage actually has course-tagged records;
+  // otherwise every record would hide behind a tab the user never set.
+  const stageHasCourses = records.some(r => !!r.courseId);
+
   let baseRecords = records.filter(record => {
     const matchesCategory = selectedCategory === 'all' || record.category === selectedCategory;
     const matchesType = selectedType === 'all' || record.type === selectedType;
-    return matchesCategory && matchesType;
+    const matchesCourse = !stageHasCourses || (record.courseId || DEFAULT_COURSE_ID) === activeCourseId;
+    return matchesCategory && matchesType && matchesCourse;
   });
 
   const activeSearch = localSearch.trim() || searchQuery.trim();
@@ -127,7 +130,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
     );
   }
 
-  const isAdmin = (user?.role === 'admin') && user?.permissions?.manageRecords !== false;
+  const isAdmin = canManage(user, 'manageRecords');
 
   const handleDeleteRecord = async (id: string) => {
     try {
@@ -164,6 +167,8 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
           </button>
         )}
       </div>
+
+      {stageHasCourses && <CourseTabs lang={lang} className="mb-6" />}
 
       {/* Local Search Bar */}
       {!searchQuery.trim() && (

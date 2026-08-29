@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "449403914422",
+    "project_id": "mylectures-app",
+    "storage_bucket": "mylectures-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:449403914422:android:f1d07c462e945b75dd7e17",
+        "android_client_info": {
+          "package_name": "com.mylecture.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "449403914422-cmqn9l6nf045ov2ikb0u6rl4msube01g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mylecture.app",
+            "certificate_hash": "69752853c73668e46ee313489c1a2d776ad46710"
+          }
+        },
+        {
+          "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgwJ7zAG1a4ibbty_8NsvEHez_iJg3FpU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

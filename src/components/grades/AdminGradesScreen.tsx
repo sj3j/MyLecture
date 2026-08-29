@@ -9,6 +9,7 @@ import { MatchedResult, GradeBatch } from '../../types/grades.types';
 import { confirmDegreeBatchClient, undoDegreeBatch, patchDegreeBatchClient } from '../../services/adminGradeService';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageContext } from '../../contexts/StageContext';
+import { canManage } from '../../lib/permissions';
 
 export interface AdminGradesScreenProps {
   isOpen: boolean;
@@ -114,8 +115,8 @@ const SearchableStudentSelect = ({
 
 export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGradesScreenProps) {
   const isMasterAdmin = auth.currentUser?.email === 'almdrydyl335@gmail.com';
-  const canManageGrades = user && (user.role === 'admin') && user.permissions?.manageGrades !== false;
-  const { currentAppStage } = useStageContext();
+  const canManageGrades = canManage(user, 'manageGrades');
+  const { effectiveStageId } = useStageContext();
   
   if (isOpen && !canManageGrades && !isMasterAdmin) {
     onClose();
@@ -153,7 +154,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
     const fetchStudents = async () => {
       try {
         // Fetch registration names from students collection
-        const studentsSnap = await getDocs(query(collection(db, 'students'), where('stageId', '==', currentAppStage)));
+        const studentsSnap = await getDocs(query(collection(db, 'students'), where('stageId', '==', effectiveStageId)));
         const registeredStudentsMap = new Map<string, any>();
         studentsSnap.docs.forEach(d => {
           const data = d.data();
@@ -161,7 +162,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
           registeredStudentsMap.set(emailKey, { id: d.id, ...data });
         });
 
-        const q = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage));
+        const q = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', effectiveStageId));
         const usersSnap = await getDocs(q);
         
         const addedEmails = new Set<string>();
@@ -206,13 +207,13 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
       }
     };
     fetchStudents();
-  }, [isOpen]);
+  }, [isOpen, effectiveStageId]);
 
   // Fetch batches history
   useEffect(() => {
     if (!isOpen) return;
     if (tab === 'history') {
-      const q = query(collection(db, 'degreeBatches'), where('stageId', '==', currentAppStage), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'degreeBatches'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
       const unsub = onSnapshot(q, (snap) => {
         setBatches(snap.docs.map(d => ({ ...d.data(), id: d.id })));
       }, (error) => {
@@ -220,7 +221,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
       });
       return () => unsub();
     }
-  }, [tab, isOpen]);
+  }, [tab, isOpen, effectiveStageId]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -324,7 +325,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
          setPatchAppealsBatchId(null);
        } else {
          const allStudentIds = students.map(s => s.uid);
-         await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined, allStudentIds, currentAppStage);
+         await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined, allStudentIds, effectiveStageId);
        }
        setMatchedResults([]);
        setExamName('');

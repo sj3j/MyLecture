@@ -5,10 +5,11 @@ import {
   collection,
   getDocs,
   serverTimestamp,
-  runTransaction
+  runTransaction,
+  deleteField
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { MCQAttempt, UserMCQStats } from '../types/mcq.types';
+import { MCQAttempt, UserMCQStats, computeMcqRankScore } from '../types/mcq.types';
 import { trackEvent } from '../lib/analytics';
 
 const PENDING_QUEUE_KEY = 'mcq_pending_submissions';
@@ -242,7 +243,12 @@ export async function finalizeFirstAttempt(
       const userDoc = await transaction.get(userRef);
       const userStageId = userDoc.exists() ? userDoc.data().stageId : undefined;
 
-      const statsData: Partial<UserMCQStats> = {
+      // Ordering key for the leaderboard. When the user has not answered enough
+      // questions to qualify we REMOVE the field rather than storing 0, so the
+      // ordered query skips them instead of listing them at the bottom.
+      const rankScore = computeMcqRankScore(newTotalCorrect, newTotalAnswered);
+
+      const statsData: any = {
           userId,
           ...(userStageId && { stageId: userStageId }),
           totalFirstAttemptCorrect: newTotalCorrect,
@@ -250,6 +256,7 @@ export async function finalizeFirstAttempt(
           lecturesAttempted: newLecturesAttempted,
           mcqLeaderboardScore: newTotalCorrect * 10,
           accuracy: (newTotalCorrect / Math.max(1, newTotalAnswered)) * 100,
+          mcqRankScore: rankScore === null ? deleteField() : rankScore,
           subjectStats: newSubjectStats,
           lastUpdated: serverTimestamp()
       };

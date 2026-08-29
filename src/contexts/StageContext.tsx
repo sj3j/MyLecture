@@ -1,12 +1,48 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Stage } from '../types';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import {
+  Stage, UserProfile, StageGroupConfig, DEFAULT_GROUP_CONFIG,
+  CourseId, COURSE_IDS, DEFAULT_COURSE_ID,
+} from '../types';
 import { db } from '../lib/firebase';
-import { collection, getDocs, orderBy, query, setDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, setDoc, doc, updateDoc } from 'firebase/firestore';
+
+// Canonical stage list. Kept in sync with scripts/migrateToStages.js so that
+// seeding from either side produces identical documents.
+export const DEFAULT_STAGES: Stage[] = [
+  { id: 'stage_1', nameEn: 'First Stage', nameAr: 'المرحلة الأولى', order: 1 },
+  { id: 'stage_2', nameEn: 'Second Stage', nameAr: 'المرحلة الثانية', order: 2 },
+  { id: 'stage_3', nameEn: 'Third Stage', nameAr: 'المرحلة الثالثة', order: 3 },
+  { id: 'stage_4', nameEn: 'Fourth Stage', nameAr: 'المرحلة الرابعة', order: 4 },
+  { id: 'stage_5', nameEn: 'Fifth Stage', nameAr: 'المرحلة الخامسة', order: 5 },
+];
 
 interface StageContextType {
   stages: Stage[];
+  /** The stage selected in the master-admin picker. Admin UI concern only. */
   currentAppStage: string | null;
   setCurrentAppStage: (stageId: string | null) => void;
+  /**
+   * The stage the signed-in user should actually see data for.
+   * Master admin -> whatever the picker says.
+   * Representative -> the stage they manage.
+   * Everyone else -> their own stage.
+   * Every stage-scoped query should filter on this, never on currentAppStage.
+   */
+  effectiveStageId: string | null;
+  /** Called by App once the user profile is known, so the provider can resolve effectiveStageId. */
+  setActiveUser: (user: UserProfile | null) => void;
+  /** Group/subgroup structure of the effective stage. Never null - falls back to
+   *  DEFAULT_GROUP_CONFIG so stages that were never configured behave as before. */
+  groupConfig: StageGroupConfig;
+  /** Persists a new group config onto the effective stage. */
+  saveGroupConfig: (config: StageGroupConfig) => Promise<void>;
+  /**
+   * Which of the stage's two courses the user is currently browsing.
+   * Shared rather than component-local so Subjects and Records agree - a control
+   * in only one of them would strand the other course's content.
+   */
+  activeCourseId: CourseId;
+  setActiveCourseId: (courseId: CourseId) => void;
   isLoadingStages: boolean;
 }
 
@@ -14,6 +50,7 @@ const StageContext = createContext<StageContextType | undefined>(undefined);
 
 export function StageProvider({ children }: { children: ReactNode }) {
   const [stages, setStages] = useState<Stage[]>([]);
+  const [activeUser, setActiveUser] = useState<UserProfile | null>(null);
   const [currentAppStage, setCurrentAppStage] = useState<string | null>(() => {
     return localStorage.getItem('selectedAdminStage') || null;
   });
@@ -25,22 +62,14 @@ export function StageProvider({ children }: { children: ReactNode }) {
         const stagesRef = collection(db, 'stages');
         const q = query(stagesRef, orderBy('order', 'asc'));
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
           console.log("No stages found. Seeding default stages...");
-          const defaultStages: Stage[] = [
-            { id: 'stage_1', nameEn: 'First Stage', nameAr: 'المرحلة الأولى', order: 1 },
-            { id: 'stage_2', nameEn: 'Second Stage', nameAr: 'المرحلة الثانية', order: 2 },
-            { id: 'stage_3', nameEn: 'Third Stage', nameAr: 'المرحلة الثالثة', order: 3 },
-            { id: 'stage_4', nameEn: 'Fourth Stage', nameAr: 'المرحلة الرابعة', order: 4 },
-            { id: 'stage_5', nameEn: 'Fifth Stage', nameAr: 'المرحلة الخامسة', order: 5 },
-          ];
-          
-          for (const s of defaultStages) {
+          for (const s of DEFAULT_STAGES) {
             await setDoc(doc(db, 'stages', s.id), s);
           }
-          
-          setStages(defaultStages);
+
+          setStages(DEFAULT_STAGES);
           if (!currentAppStage) {
             setCurrentAppStage('stage_3');
           }
@@ -69,8 +98,66 @@ export function StageProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const effectiveStageId = useMemo(() => {
+    if (!activeUser) return null;
+    // Master admin drives the whole app from the Navbar stage picker.
+    if (activeUser.isMasterAdmin) return currentAppStage;
+    // A representative, and any moderator they appointed, is locked to the stage
+    // they manage. Staff with no assignment fall back to the picker value rather
+    // than null, otherwise every stage-filtered admin tool queries stageId == null
+    // and shows nothing.
+    if (activeUser.role === 'admin' || activeUser.role === 'moderator') {
+      return activeUser.managedStageId || currentAppStage;
+    }
+    // Students only ever see their own stage.
+    return activeUser.stageId || null;
+  }, [activeUser, currentAppStage]);
+
+  const groupConfig = useMemo<StageGroupConfig>(() => {
+    const stage = stages.find(s => s.id === effectiveStageId);
+    const groups = stage?.groupConfig?.groups;
+    if (!groups || groups.length === 0) return DEFAULT_GROUP_CONFIG;
+    return { groups };
+  }, [stages, effectiveStageId]);
+
+  const saveGroupConfig = async (config: StageGroupConfig) => {
+    if (!effectiveStageId) throw new Error('No stage selected');
+    await updateDoc(doc(db, 'stages', effectiveStageId), { groupConfig: config });
+    // Keep the local copy in step so the UI updates without a refetch.
+    setStages(prev => prev.map(s => (s.id === effectiveStageId ? { ...s, groupConfig: config } : s)));
+  };
+
+  // Remembered per stage, so switching stage and back keeps your place.
+  const [activeCourseId, setActiveCourseIdState] = useState<CourseId>(DEFAULT_COURSE_ID);
+
+  useEffect(() => {
+    if (!effectiveStageId) return;
+    const saved = localStorage.getItem(`activeCourse:${effectiveStageId}`);
+    setActiveCourseIdState(
+      (COURSE_IDS as readonly string[]).includes(saved || '') ? (saved as CourseId) : DEFAULT_COURSE_ID
+    );
+  }, [effectiveStageId]);
+
+  const setActiveCourseId = (courseId: CourseId) => {
+    setActiveCourseIdState(courseId);
+    if (effectiveStageId) {
+      localStorage.setItem(`activeCourse:${effectiveStageId}`, courseId);
+    }
+  };
+
   return (
-    <StageContext.Provider value={{ stages, currentAppStage, setCurrentAppStage: handleSetCurrentStage, isLoadingStages }}>
+    <StageContext.Provider value={{
+      stages,
+      currentAppStage,
+      setCurrentAppStage: handleSetCurrentStage,
+      effectiveStageId,
+      setActiveUser,
+      groupConfig,
+      saveGroupConfig,
+      activeCourseId,
+      setActiveCourseId,
+      isLoadingStages,
+    }}>
       {children}
     </StageContext.Provider>
   );

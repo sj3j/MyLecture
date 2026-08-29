@@ -8,7 +8,29 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import jwt from "jsonwebtoken";
+import { startNewSeason } from "./shared/seasonReset";
+import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar } from "./shared/seasonRollover";
+import { submitProgression, ProgressionError } from "./shared/progressionSubmit";
+import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "./shared/googleLogin";
+import { createSignupRequest, reviewSignupRequest, SignupError } from "./shared/signupRequest";
+import { OAuth2Client } from "google-auth-library";
+import { activeDaysBetween, addDays, isLiveDay } from "./shared/academicCalendar";
+import {
+  loadZainCashConfig,
+  initTransaction,
+  verifyGatewayToken,
+  resolveAppOrigin,
+  successUrlFor,
+  failureUrlFor,
+  tagOrderId,
+} from "./shared/zaincash";
+import {
+  PLAN_CONFIG,
+  activateSubscription,
+  settleZainCashPayment,
+  NotifyFn,
+  SubscriptionCtx,
+} from "./shared/subscriptions";
 
 dotenv.config();
 
@@ -46,6 +68,35 @@ async function startServer() {
   const PORT = 3000;
   
   app.use(express.json());
+// Capacitor serves the bundled app from https://localhost (Android) and
+// capacitor://localhost (iOS), so every /api call from the native build is a
+// cross-origin request. Without these headers the WebView blocks them all and
+// the app looks broken with no HTTP status to debug from.
+//
+// Bearer-token auth survives this; cookie auth would not, which is why the API
+// stays token-based. No credentials are allowed, so the allowlist is safe.
+const NATIVE_ORIGINS = new Set([
+  "https://localhost",
+  "capacitor://localhost",
+  "http://localhost",
+]);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && NATIVE_ORIGINS.has(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-cron-secret");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    res.header("Access-Control-Max-Age", "86400");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+  }
+  next();
+});
+  // ZainCash posts the webhook as JSON, but their own sample registers both
+  // parsers. Without this a form-encoded delivery reads as an empty body and
+  // we would answer 400 to every retry forever.
+  app.use(express.urlencoded({ extended: true }));
 
   // --- Telegram Bot Setup ---
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -94,7 +145,15 @@ async function startServer() {
     }
   };
 
-  const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Google sign-in accepts a Firebase token (web popup) or a raw Google OAuth
+// token (native plugin). The two need different verifiers, so the OAuth client
+// is built once here. google-auth-library was already a dependency.
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.GOOGLE_WEB_CLIENT_ID ||
+  "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com";
+const googleOAuthClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
+
+const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -369,6 +428,44 @@ async function startServer() {
     }
   });
 
+  // Copies stage assignment from the whitelist collections (`students` /
+  // `allowed_admins`) onto the `users` document.
+  //
+  // This has to happen server-side: firestore.rules only lets a student write
+  // their own `stageId` during progression season, so a client-side merge would
+  // be rejected with permission-denied. Running it on every login also
+  // self-heals accounts that predate the multi-stage rollout.
+  const syncUserStage = async (
+    db: FirebaseFirestore.Firestore,
+    uid: string,
+    source: { stageId?: string | null; managedStageId?: string | null } | undefined,
+  ) => {
+    if (!uid || !source) return;
+    try {
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) return; // created client-side on first login with stageId already set
+
+      const current = userSnap.data() || {};
+      const patch: Record<string, unknown> = {};
+
+      if (source.stageId && current.stageId !== source.stageId) {
+        patch.stageId = source.stageId;
+      }
+      if (source.managedStageId && current.managedStageId !== source.managedStageId) {
+        patch.managedStageId = source.managedStageId;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await userRef.update(patch);
+        console.log(`Synced stage fields for ${uid}:`, patch);
+      }
+    } catch (err) {
+      // Never block a login on this.
+      console.error("Failed to sync user stage:", err);
+    }
+  };
+
   // Student Login
   app.post("/api/login", async (req, res) => {
     if (!admin.apps.length) {
@@ -430,6 +527,7 @@ async function startServer() {
       const usersQuery = await db.collection('users').where('email', '==', email.toLowerCase()).limit(1).get();
       if (!usersQuery.empty) {
         targetUid = usersQuery.docs[0].id;
+        await syncUserStage(db, targetUid, { stageId: studentData?.stageId });
       }
 
       // Create custom token with email claim
@@ -447,70 +545,122 @@ async function startServer() {
 
 
 
+  // --- Self-service signup, approved by the stage representative -------------
+  // Public, but creates NO usable account: login is gated on students/{email},
+  // so a pending request cannot get in. Never log req.body here - it carries the
+  // plaintext password until createSignupRequest hashes it.
+  app.post("/api/signup/request", async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const prepared = await createSignupRequest(
+        db,
+        admin.firestore.FieldValue as any,
+        (plain: string) => bcrypt.hash(plain, 10),
+        req.body || {},
+      );
+      return res.json({ success: true, email: prepared.email, status: "pending" });
+    } catch (error: any) {
+      if (error instanceof SignupError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      console.error("Signup request failed:", error?.message || error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // The stages a signup form can choose from. Public so the form works before
+  // the applicant has any credentials, and deliberately minimal - ids and names
+  // only, plus the group structure needed to validate their choice.
+  app.get("/api/signup/stages", async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const snap = await db.collection("stages").orderBy("order", "asc").get();
+      return res.json({
+        stages: snap.docs.map(d => {
+          const s = d.data() as any;
+          return {
+            id: s.id || d.id,
+            nameAr: s.nameAr || null,
+            nameEn: s.nameEn || null,
+            order: s.order ?? 0,
+            groupConfig: s.groupConfig || null,
+          };
+        }),
+      });
+    } catch (error) {
+      console.error("Signup stages failed:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/signup/:email/:action", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const user = (req as any).user;
+      const action = req.params.action;
+      if (action !== "approve" && action !== "reject") {
+        return res.status(400).json({ error: "Unknown action" });
+      }
+
+      const reviewerDoc = await db.collection("users").doc(user.uid).get();
+      const reviewer = reviewerDoc.data() || {};
+      const masters = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+      const isMaster = !!user.email && masters.includes(String(user.email).toLowerCase());
+
+      const result = await reviewSignupRequest(db, admin.firestore.FieldValue as any, {
+        email: req.params.email,
+        approve: action === "approve",
+        reviewerUid: user.uid,
+        reviewerStageId: reviewer.managedStageId || null,
+        isMasterAdmin: isMaster,
+        reason: req.body?.reason,
+      });
+      return res.json({ success: true, ...result });
+    } catch (error: any) {
+      if (error instanceof SignupError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      console.error("Signup review failed:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/google-login", express.json(), async (req, res) => {
     try {
-      const { idToken } = req.body;
-      if (!idToken) {
-        return res.status(400).json({ error: "Missing idToken" });
-      }
-
-      // Verify the Google ID token (Firebase ID token from the client)
-      const decodedToken = await admin.auth().verifyIdToken(idToken);
-      const email = decodedToken.email;
-
-      if (!email) {
-         return res.status(400).json({ error: "No email associated." });
-      }
-
-      const emailLower = email.toLowerCase();
+      const { idToken, googleIdToken } = req.body || {};
       const db = admin.firestore();
-      
-      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(emailLower);
-      
-      let isAllowed = false;
 
-      if (isMasterAdmin) {
-        isAllowed = true;
-      } else {
-        const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
-        if (adminDoc.exists) {
-           isAllowed = true;
-        } else {
-           const studentDoc = await db.collection('students').doc(emailLower).get();
-           if (!studentDoc.exists) {
-              return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
-           }
-           if (studentDoc.data()?.isActive === false) {
-              return res.status(401).json({ error: "الحساب معطل" });
-           }
-           isAllowed = true;
-        }
+      const identity = await verifyGoogleIdentity({
+        adminAuth: admin.auth(),
+        oauthClient: googleOAuthClient,
+        audience: GOOGLE_WEB_CLIENT_ID,
+        idToken,
+        googleIdToken,
+      });
+
+      const result = await resolveGoogleLogin(db, admin.auth(), identity, {
+        masterAdminEmails: ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"],
+        fallbackUid: identity.email,
+        syncUserStage: (uid, source) => syncUserStage(db, uid, source),
+      });
+
+      res.json({ token: result.customToken });
+    } catch (error: any) {
+      if (error instanceof GoogleLoginError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
       }
-
-      let targetUid = decodedToken.uid;
-      const usersQuery = await db.collection('users').where('email', '==', emailLower).limit(1).get();
-      if (!usersQuery.empty) {
-        targetUid = usersQuery.docs[0].id;
-      }
-
-      const customToken = await admin.auth().createCustomToken(targetUid, { email: emailLower });
-      res.json({ token: customToken });
-
-    } catch (error) {
       console.error("Google login error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
 
-  // Admin Create Student
-  app.post("/api/admin/students", async (req, res) => {
+  app.post("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
 
     try {
-      const { name, email, password, examCode } = req.body;
+      const { name, email, password, examCode, stageId, subgroup } = req.body;
       
       if (!name || !email || !password || !examCode) {
         return res.status(400).json({ error: "All fields are required." });
@@ -534,6 +684,10 @@ async function startServer() {
         password: hashedPassword,
         examCode,
         isActive: true,
+        // Carried onto the users doc at login by syncUserStage. Without it the
+        // student resolves to no stage and sees unfiltered content.
+        ...(stageId ? { stageId } : {}),
+        ...(subgroup ? { subgroup } : {}),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
@@ -545,7 +699,7 @@ async function startServer() {
   });
 
   // Admin Get Students
-  app.get("/api/admin/students", async (req, res) => {
+  app.get("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
@@ -574,7 +728,7 @@ async function startServer() {
   });
 
   // Admin Toggle Student Status
-  app.patch("/api/admin/students/:email/toggle", async (req, res) => {
+  app.patch("/api/admin/students/:email/toggle", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
@@ -596,7 +750,7 @@ async function startServer() {
   });
 
   // Admin Delete Student
-  app.delete("/api/admin/students/:email", async (req, res) => {
+  app.delete("/api/admin/students/:email", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
@@ -615,7 +769,7 @@ async function startServer() {
   });
 
   // Admin Delete All Students
-  app.delete("/api/admin/students", async (req, res) => {
+  app.delete("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
@@ -638,7 +792,7 @@ async function startServer() {
   });
 
   // Admin Edit Student
-  app.put("/api/admin/students/:email", async (req, res) => {
+  app.put("/api/admin/students/:email", verifyAuth, verifyAdmin, async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
@@ -1056,22 +1210,26 @@ async function startServer() {
     return `${ey}-${em.toString().padStart(2, '0')}-${ed.toString().padStart(2, '0')}`;
   };
 
-  const calcDaysDifference = (date1Str: string, date2Str: string) => {
-    const d1 = new Date(`${date1Str}T12:00:00Z`);
-    const d2 = new Date(`${date2Str}T12:00:00Z`);
-    const diff = Math.abs(d1.getTime() - d2.getTime());
-    return Math.round(diff / (1000 * 60 * 60 * 24));
-  };
-
   app.post("/api/record-activity", verifyAuth, async (req, res) => {
     try {
       const user = (req as any).user;
       const db = admin.firestore();
       
-      const appSettingsDoc = await db.collection('app_settings').doc('streak').get();
-      const isVacationMode = appSettingsDoc.exists && appSettingsDoc.data()?.vacationMode === true;
-      if (isVacationMode) {
-        return res.json({ success: true, vacationMode: true, message: "Vacation mode is active. Streaks are paused." });
+      // Whether streaks count today is derived from the academic calendar, not
+      // from a stored flag, so a break pauses the app whether or not the nightly
+      // rollover ever ran. Resolved against the day being CREDITED (grace period
+      // applied), so the gate and the streak arithmetic always agree on the date.
+      const settingsSnap = await db.collection('app_settings').doc('streak').get();
+      const graceHours = settingsSnap.exists ? (settingsSnap.data()?.gracePeriodHours ?? 2) : 2;
+      const { calendar, phase } = await resolveCurrentPhase(db, getEffectiveDateString(graceHours));
+      if (phase.isPaused) {
+        return res.json({
+          success: true,
+          vacationMode: true,
+          phase: phase.phase,
+          resumesOn: phase.nextStart,
+          message: "The competition is paused for the break. Streaks are frozen.",
+        });
       }
 
       const userRef = db.collection('users').doc(user.uid);
@@ -1116,30 +1274,34 @@ async function startServer() {
         if (!processedLastDate) {
           streakCount = 1;
         } else {
-          const daysDiff = calcDaysDifference(effectiveDate, processedLastDate);
-          
+          // Paused days are not misses: a student active on the last live day
+          // before a break and again on the first day of the new term is one
+          // day apart. Without this every student loses their streak across a
+          // break the rollover failed to archive.
+          const daysDiff = activeDaysBetween(calendar, processedLastDate, effectiveDate);
+
           if (daysDiff === 1) {
             streakCount += 1;
           } else if (daysDiff > 1) {
             const missedDays = daysDiff - 1;
-            
+
             if (freezeTokens >= missedDays) {
               freezeTokens -= missedDays;
               streakCount += 1; // It continues from before + effectively covers gap
-              
-              // Log missed days as frozen
-              let d = new Date(`${processedLastDate}T12:00:00Z`);
-              for (let i = 0; i < missedDays; i++) {
-                d.setDate(d.getDate() + 1);
-                const gapY = d.getUTCFullYear();
-                const gapM = d.getUTCMonth() + 1;
-                const gapD = d.getUTCDate();
-                const gapDateStr = `${gapY}-${gapM.toString().padStart(2, '0')}-${gapD.toString().padStart(2, '0')}`;
-                
-                const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDateStr}`);
+
+              // Log the missed LIVE days as frozen. Walking raw calendar days
+              // here would mark break days as covered by a freeze token.
+              let gapDate = processedLastDate;
+              for (let stamped = 0; stamped < missedDays; ) {
+                gapDate = addDays(gapDate, 1);
+                if (gapDate >= effectiveDate) break;
+                if (!isLiveDay(calendar, gapDate)) continue;
+                stamped++;
+
+                const gapHistoryRef = db.collection('streak_history').doc(`${user.uid}_${gapDate}`);
                 t.set(gapHistoryRef, {
                   userId: user.uid,
-                  date: gapDateStr,
+                  date: gapDate,
                   wasActive: true,
                   freezeUsed: true,
                   timestamp: admin.firestore.FieldValue.serverTimestamp()
@@ -1533,119 +1695,126 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/toggle-vacation-mode", verifyAuth, verifyAdmin, async (req, res) => {
+
+  // Ends the current season: archives BOTH boards into each student's profile
+  // with their final rank, zeroes the live boards, and starts the new season.
+
+  // Records a student's end-of-year result and moves them if they passed.
+  //
+  // Server-side because syncUserStage copies students/{email}.stageId onto the
+  // user doc at every login - a client-only write is reverted at next sign-in -
+  // and because students/ is admin-write-only. The round is recomputed from the
+  // calendar rather than trusted, so nobody can skip ahead and promote early.
+  app.post("/api/progression/submit", verifyAuth, async (req, res) => {
     try {
-      const { enable, semesterName } = req.body;
+      const user = (req as any).user;
+      const { round, answer, tahmeelSubjects } = req.body || {};
       const db = admin.firestore();
+      const calendar = await loadCalendar(db);
+
+      const result = await submitProgression(db, admin.firestore.FieldValue as any, calendar, {
+        uid: user.uid,
+        round,
+        answer,
+        tahmeelSubjects: Array.isArray(tahmeelSubjects) ? tahmeelSubjects : [],
+      });
+
+      return res.json({ success: true, ...result });
+    } catch (error: any) {
+      if (error instanceof ProgressionError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Progression submit error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/start-new-season", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { seasonName } = req.body;
       const adminUser = (req as any).user;
 
-      // Make sure admin is allowed
+      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+      if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
+        return res.status(403).json({ error: "Master Admin only" });
+      }
+      if (!seasonName || !String(seasonName).trim()) {
+        return res.status(400).json({ error: "Season name required" });
+      }
+
+      const result = await startNewSeason(
+        admin.firestore(),
+        admin.firestore.FieldValue as any,
+        { seasonName: String(seasonName).trim(), performedBy: adminUser.uid },
+      );
+
+      // Whether the app is live afterwards is the calendar's call, not this
+      // button's - ending a season during a break must leave the break in place.
+      const phase = await syncPhaseMirror(admin.firestore(), admin.firestore.FieldValue as any);
+
+      return res.json({ success: true, ...result, phase: phase.phase, isPaused: phase.isPaused });
+    } catch (error: any) {
+      console.error("Start new season error:", error);
+      return res.status(500).json({ error: error?.message || "Internal server error" });
+    }
+  });
+
+  // Closes any season whose term has ended and syncs the phase mirror. Safe to
+  // call repeatedly - archiving is guarded per term by seasonClosedFor.
+  const seasonRolloverHandler = async (req: any, res: any) => {
+    // Fails closed, unlike the notification cron: this endpoint archives and
+    // zeroes both leaderboards. With no secret configured it stays shut, and the
+    // overdue-season warning in the calendar modal makes that visible.
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+      console.error("Season rollover blocked: CRON_SECRET is not configured.");
+      return res.status(401).send("Cron secret not configured");
+    }
+    const header = req.headers['x-cron-secret'];
+    const bearer = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+    if (header !== secret && bearer !== secret) {
+      return res.status(403).send("Forbidden");
+    }
+
+    try {
+      const result = await runSeasonRollover(
+        admin.firestore(),
+        admin.firestore.FieldValue as any,
+        { performedBy: 'cron' },
+      );
+      if (result.archived) {
+        console.log(`Season rollover archived ${result.archived} as ${result.seasonId}`);
+      }
+      return res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error("Season rollover error:", error);
+      return res.status(500).json({ error: error?.message || "Internal server error" });
+    }
+  };
+
+  // Vercel Cron issues a GET; POST is kept for manual curl and for parity with
+  // the other cron endpoint.
+  app.get("/api/cron/season-rollover", seasonRolloverHandler);
+  app.post("/api/cron/season-rollover", seasonRolloverHandler);
+
+  // Manual fallback for the settings modal, so a missed cron is one click to fix.
+  app.post("/api/admin/run-season-rollover", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const adminUser = (req as any).user;
       const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
       if (!adminUser.email || !adminEmails.includes(adminUser.email.toLowerCase())) {
         return res.status(403).json({ error: "Master Admin only" });
       }
 
-      if (enable) {
-        // Toggle ON: Archive and Reset
-        if (!semesterName) throw new Error("Semester name required");
-
-        const usersSnapshot = await db.collection('users').get();
-        // Calculate Top Students
-        const students = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
-        const topStudents = students
-          .sort((a: any, b: any) => (b.streakCount || 0) - (a.streakCount || 0))
-          .slice(0, 50) // store up to top 50
-          .map((u: any, i: number) => ({
-             rank: i + 1,
-             userId: u.uid,
-             name: u.name,
-             streakCount: u.streakCount || 0,
-             longestStreak: u.longestStreak || 0
-          }));
-
-        const semesterId = `semester_${Date.now()}`;
-        const totalStudents = students.length;
-        const totalStreaks = students.reduce((sum: number, u: any) => sum + (u.streakCount || 0), 0);
-
-        const batchArchive = db.batch();
-        const semesterRef = db.collection('semesterArchives').doc(semesterId);
-        batchArchive.set(semesterRef, {
-          semesterId,
-          semesterName,
-          archivedAt: admin.firestore.FieldValue.serverTimestamp(),
-          archivedBy: adminUser.uid,
-          topStudents,
-          totalStudents,
-          averageStreak: totalStudents > 0 ? (totalStreaks / totalStudents) : 0
-        });
-
-        const actionRef = db.collection('adminActions').doc();
-        batchArchive.set(actionRef, {
-          type: 'semester_streak_reset',
-          performedBy: adminUser.uid,
-          performedAt: admin.firestore.FieldValue.serverTimestamp(),
-          semesterId,
-          studentsAffected: totalStudents
-        });
-
-        // Set system setting
-        batchArchive.set(db.collection('app_settings').doc('streak'), {
-          vacationMode: true,
-          lastArchiveId: semesterId,
-          currentSemesterName: semesterName
-        }, { merge: true });
-
-        await batchArchive.commit();
-
-        // Batch update all users (chunk to 400)
-        let currentBatch = db.batch();
-        let countInBatch = 0;
-        let processedCount = 0;
-
-        for (const doc of usersSnapshot.docs) {
-          const udata = doc.data();
-          const pRef = db.collection('users').doc(doc.id).collection('streakHistory').doc(semesterId);
-          currentBatch.set(pRef, {
-            semesterId,
-            semesterName,
-            finalStreak: udata.streakCount || 0,
-            longestStreak: udata.longestStreak || 0,
-            freezeTokensUsed: 3 - (udata.freezeTokens ?? 3),
-            archivedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-
-          currentBatch.update(doc.ref, {
-             streakCount: 0,
-             longestStreak: 0,
-             lastActiveDate: null,
-             freezeTokens: 3
-          });
-
-          countInBatch += 2; // two writes per user
-          processedCount++;
-
-          if (countInBatch >= 400) {
-            await currentBatch.commit();
-            currentBatch = db.batch();
-            countInBatch = 0;
-          }
-        }
-        if (countInBatch > 0) {
-          await currentBatch.commit();
-        }
-
-        return res.json({ success: true, message: `Archived ${processedCount} users` });
-      } else {
-        // Toggle OFF: Just disable vacationMode
-        await db.collection('app_settings').doc('streak').set({
-          vacationMode: false
-        }, { merge: true });
-        
-        return res.json({ success: true });
-      }
-    } catch (e: any) {
-      console.error(e);
-      res.status(500).json({ error: e.message || "Error toggling vacation mode" });
+      const result = await runSeasonRollover(
+        admin.firestore(),
+        admin.firestore.FieldValue as any,
+        { performedBy: adminUser.uid },
+      );
+      return res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error("Manual season rollover error:", error);
+      return res.status(500).json({ error: error?.message || "Internal server error" });
     }
   });
 
@@ -1694,83 +1863,13 @@ async function startServer() {
   // SUBSCRIPTION ENDPOINTS
   // ===================================================================
 
-  const PLAN_CONFIG: Record<string, { days: number; price: number }> = {
-    monthly: { days: 30, price: 1000 },
-    seasonal: { days: 90, price: 3000 },
-    semi_annual: { days: 180, price: 5000 },
-  };
-
-  /** Helper: activate subscription and update user cache */
-  async function activateSubscription(
-    db: admin.firestore.Firestore,
-    subId: string,
-    userId: string,
-    plan: string,
-    approvedBy?: string
-  ) {
-    const config = PLAN_CONFIG[plan];
-    if (!config) throw new Error(`Invalid plan: ${plan}`);
-
-    // Check if user has existing active subscription to stack time
-    const existingSubs = await db.collection('subscriptions')
-      .where('userId', '==', userId)
-      .where('status', '==', 'active')
-      .get();
-
-    let startDate = admin.firestore.Timestamp.now();
-    let endBaseDate = new Date();
-
-    // Stack: if active sub exists, extend from its end date
-    if (!existingSubs.empty) {
-      const activeSub = existingSubs.docs[0];
-      const activeEndDate = activeSub.data().endDate?.toDate();
-      if (activeEndDate && activeEndDate > new Date()) {
-        endBaseDate = activeEndDate;
-      }
-      // Mark old subscription as replaced
-      await activeSub.ref.update({
-        status: 'inactive',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        notes: `Replaced by subscription ${subId}`,
-      });
-    }
-
-    const endDate = new Date(endBaseDate.getTime() + config.days * 24 * 60 * 60 * 1000);
-
-    const updateData: any = {
-      status: 'active',
-      startDate,
-      endDate: admin.firestore.Timestamp.fromDate(endDate),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-    if (approvedBy) updateData.approvedBy = approvedBy;
-
-    await db.collection('subscriptions').doc(subId).update(updateData);
-
-    // Update user cache
-    await db.collection('users').doc(userId).update({
-      isSubscribed: true,
-      subscriptionEnd: admin.firestore.Timestamp.fromDate(endDate),
-      subscriptionPlan: plan,
-    });
-
-    // Send FCM notification
-    await sendSubscriptionNotification(db, userId, 'activated', plan);
-  }
-
-  /** Helper: send subscription FCM notification */
-  async function sendSubscriptionNotification(
-    db: admin.firestore.Firestore,
-    userId: string,
-    event: 'activated' | 'expired' | 'approved' | 'rejected',
-    plan?: string
-  ) {
+  /** Send a subscription FCM notification. Injected into the shared helpers. */
+  const notifySubscription: NotifyFn = async (userId, event, plan) => {
     try {
+      const db = admin.firestore();
       const tokenDoc = await db.collection('fcm_tokens').doc(userId).get();
       if (!tokenDoc.exists || !tokenDoc.data()?.token) return;
-
       const token = tokenDoc.data()!.token;
-      const planLabel = plan ? (PLAN_CONFIG[plan] ? plan : '') : '';
 
       const titles: Record<string, string> = {
         activated: 'تم تفعيل الاشتراك! ✅',
@@ -1780,7 +1879,7 @@ async function startServer() {
       };
 
       const bodies: Record<string, string> = {
-        activated: `تم تفعيل اشتراكك بنجاح. يمكنك الآن الوصول إلى جميع ميزات الأسئلة.`,
+        activated: 'تم تفعيل اشتراكك بنجاح. يمكنك الآن الوصول إلى جميع ميزات الأسئلة.',
         expired: 'انتهت صلاحية اشتراكك. جدّد الآن للاستمرار في استخدام ميزات الأسئلة.',
         approved: 'تمت الموافقة على دفعتك عبر سوبر كي. تم تفعيل اشتراكك.',
         rejected: 'تم رفض طلب الدفع الخاص بك. تواصل مع الدعم لمزيد من المعلومات.',
@@ -1792,17 +1891,25 @@ async function startServer() {
           title: titles[event] || 'محاضراتي',
           body: bodies[event] || '',
         },
-        data: { type: 'subscription', event },
+        data: { type: 'subscription', event, ...(plan ? { plan } : {}) },
       });
     } catch (err) {
       console.error('FCM notification error:', err);
     }
-  }
+  };
 
-  // --- ZainCash: Initiate Payment ---
+  /** Context handed to the shared subscription helpers. */
+  const subCtx = (): SubscriptionCtx => ({
+    db: admin.firestore(),
+    FieldValue: admin.firestore.FieldValue,
+    Timestamp: admin.firestore.Timestamp,
+    notify: notifySubscription,
+  });
+
+  // --- ZainCash v2: Initiate Payment ---
   app.post('/api/zaincash/init', verifyAuth, async (req, res) => {
     try {
-      const { plan } = req.body;
+      const { plan, lang } = req.body;
       const user = (req as any).user;
       const config = PLAN_CONFIG[plan];
 
@@ -1810,62 +1917,60 @@ async function startServer() {
         return res.status(400).json({ error: 'Invalid plan' });
       }
 
-      const merchantId = process.env.ZAINCASH_MERCHANT_ID;
-      const secret = process.env.ZAINCASH_SECRET;
-      const msisdn = process.env.ZAINCASH_MSISDN;
-      const apiUrl = process.env.ZAINCASH_API_URL || 'https://api.zaincash.iq/transaction/init';
-      const redirectUrl = process.env.ZAINCASH_REDIRECT_URL || `${process.env.APP_URL || 'http://localhost:3000'}/api/zaincash/callback`;
-
-      if (!merchantId || !secret || !msisdn) {
+      let cfg;
+      let origin;
+      try {
+        cfg = loadZainCashConfig();
+        origin = resolveAppOrigin();
+      } catch (e: any) {
+        console.error('ZainCash config error:', e.message);
         return res.status(500).json({ error: 'ZainCash not configured' });
       }
 
-      // Create a pending subscription first
       const db = admin.firestore();
+
+      // Reuse the wallet number from this customer's last successful payment.
+      // Absent on a first payment, in which case the gateway prompts for it.
+      const userDoc = await db.collection('users').doc(user.uid).get();
+      const customerPhone = userDoc.data()?.zaincashMsisdn as string | undefined;
+
+      // Unique per attempt: the gateway's idempotency and reconciliation key.
+      const externalReferenceId = crypto.randomUUID();
+
       const subRef = await db.collection('subscriptions').add({
         userId: user.uid,
         userEmail: user.email || '',
+        userName: userDoc.data()?.name || '',
         plan,
         status: 'pending',
         paymentMethod: 'zaincash',
         amount: config.price,
+        externalReferenceId,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Create ZainCash JWT token
-      const tokenData = {
-        amount: config.price,
-        serviceType: 'محاضراتي - اشتراك',
-        msisdn,
-        orderId: subRef.id,
-        redirectUrl,
-        lang: 'ar',
-      };
+      try {
+        const result = await initTransaction(cfg, {
+          externalReferenceId,
+          orderId: tagOrderId(subRef.id),
+          amount: config.price,
+          language: lang === 'en' ? 'en' : 'ar',
+          successUrl: successUrlFor(origin),
+          failureUrl: failureUrlFor(origin),
+          customerPhone,
+        });
 
-      const zaincashToken = jwt.sign(tokenData, secret, { expiresIn: '4h' });
+        await subRef.update({
+          transactionId: result.transactionId,
+          expiryTime: result.expiryTime || null,
+        });
 
-      // Call ZainCash API
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: zaincashToken,
-          merchantId,
-          lang: 'ar',
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.id) {
-        // Update subscription with ZainCash transaction ID
-        await subRef.update({ transactionId: data.id });
-        const paymentUrl = `https://api.zaincash.iq/transaction/pay?id=${data.id}`;
-        return res.json({ redirectUrl: paymentUrl, subscriptionId: subRef.id });
-      } else {
-        // Clean up failed subscription
-        await subRef.delete();
-        return res.status(400).json({ error: data.err?.msg || 'ZainCash initiation failed' });
+        // Always the gateway's own URL — the spec forbids constructing it.
+        return res.json({ redirectUrl: result.redirectUrl, subscriptionId: subRef.id });
+      } catch (err: any) {
+        await subRef.delete().catch(() => undefined);
+        console.error('ZainCash init error:', err?.httpStatus, err?.body || err?.message);
+        return res.status(400).json({ error: 'ZainCash initiation failed' });
       }
     } catch (error) {
       console.error('ZainCash init error:', error);
@@ -1873,72 +1978,88 @@ async function startServer() {
     }
   });
 
-  // --- ZainCash: Webhook Callback ---
-  app.post('/api/zaincash/callback', async (req, res) => {
+  /**
+   * Shared handler for both redirect targets.
+   *
+   * The gateway returns the customer by browser GET with ?token=<JWT>. The JWT
+   * is verified, but access is granted only on what the Inquiry API reports —
+   * this request reaches us through the customer's browser.
+   */
+  const handleZainCashRedirect = async (req: express.Request, res: express.Response) => {
+    const back = (status: string, extra = '') =>
+      res.redirect(`/?payment=${status}${extra}`);
+
+    const token = req.query?.token as string | undefined;
+    if (!token) return back('error', '&reason=missing_token');
+
+    let cfg;
     try {
-      const { token } = req.body;
-      const secret = process.env.ZAINCASH_SECRET;
-
-      if (!token || !secret) {
-        return res.status(400).json({ error: 'Invalid callback' });
-      }
-
-      // Verify the ZainCash JWT
-      const decoded = jwt.verify(token, secret) as any;
-      const { orderId, status: txStatus } = decoded;
-
-      if (!orderId) {
-        return res.status(400).json({ error: 'Missing orderId' });
-      }
-
-      const db = admin.firestore();
-      const subDoc = await db.collection('subscriptions').doc(orderId).get();
-
-      if (!subDoc.exists) {
-        return res.status(404).json({ error: 'Subscription not found' });
-      }
-
-      const subData = subDoc.data()!;
-
-      if (txStatus === 'success') {
-        // Activate the subscription
-        await activateSubscription(db, orderId, subData.userId, subData.plan);
-        return res.json({ success: true });
-      } else {
-        // Mark as failed
-        await db.collection('subscriptions').doc(orderId).update({
-          status: 'cancelled',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          notes: `ZainCash payment failed: ${txStatus}`,
-        });
-        return res.json({ success: false, reason: txStatus });
-      }
-    } catch (error) {
-      console.error('ZainCash callback error:', error);
-      res.status(500).json({ error: 'Callback processing failed' });
+      cfg = loadZainCashConfig();
+    } catch (e: any) {
+      console.error('ZainCash config error:', e.message);
+      return back('error', '&reason=not_configured');
     }
-  });
 
-  // --- ZainCash: Success redirect page ---
-  app.get('/api/zaincash/success', (req, res) => {
-    res.send(`
-      <html dir="rtl" lang="ar">
-        <head><meta charset="utf-8"><title>تم الدفع بنجاح</title>
-        <style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f9ff;margin:0;}
-        .card{background:white;border-radius:16px;padding:40px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px;}
-        .icon{font-size:64px;margin-bottom:16px;}
-        h1{color:#059669;font-size:24px;margin-bottom:8px;}
-        p{color:#6b7280;margin-bottom:24px;}
-        a{background:#2196F3;color:white;padding:12px 32px;border-radius:12px;text-decoration:none;font-weight:bold;display:inline-block;}
-        </style></head>
-        <body><div class="card">
-          <div class="icon">✅</div>
-          <h1>تم الدفع بنجاح!</h1>
-          <p>تم تفعيل اشتراكك. يمكنك الآن استخدام جميع ميزات الأسئلة.</p>
-          <a href="/">العودة للتطبيق</a>
-        </div></body>
-      </html>
-    `);
+    try {
+      const event = verifyGatewayToken(cfg, token);
+      const result = await settleZainCashPayment(subCtx(), cfg, event, 'redirect');
+
+      switch (result.outcome) {
+        case 'activated':
+        case 'already_settled':
+        case 'duplicate_event':
+          return back('success');
+        case 'still_pending':
+          return back('pending');
+        case 'amount_mismatch':
+          return back('error', '&reason=amount_mismatch');
+        case 'reference_mismatch':
+          return back('error', '&reason=reference_mismatch');
+        default:
+          return back('failed', `&reason=${result.status || result.outcome}`);
+      }
+    } catch (err) {
+      console.error('ZainCash redirect error:', err);
+      return back('error', '&reason=invalid_token');
+    }
+  };
+
+  app.get('/api/zaincash/success', handleZainCashRedirect);
+  app.get('/api/zaincash/failure', handleZainCashRedirect);
+
+  /**
+   * ZainCash webhook — the spec's preferred source of truth.
+   *
+   * Registered by ZainCash's business team, must be a different URL from the
+   * redirect targets, and does not fire in the test environment. Always answers
+   * 200 on a token we accepted, so the gateway does not retry a settled payment.
+   */
+  app.post('/api/zaincash/webhook', async (req, res) => {
+    const token = req.body?.webhook_token;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Missing webhook_token' });
+    }
+
+    let cfg;
+    try {
+      cfg = loadZainCashConfig();
+    } catch (e: any) {
+      console.error('ZainCash config error:', e.message);
+      return res.status(500).json({ success: false, message: 'Not configured' });
+    }
+
+    try {
+      const event = verifyGatewayToken(cfg, token);
+      const result = await settleZainCashPayment(subCtx(), cfg, event, 'webhook');
+      console.log(`[ZainCash] webhook ${event.eventId} -> ${result.outcome}`);
+      return res.status(200).json({ success: true });
+    } catch (err: any) {
+      if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
+        return res.status(401).json({ success: false, message: 'Invalid token' });
+      }
+      console.error('ZainCash webhook error:', err);
+      return res.status(500).json({ success: false });
+    }
   });
 
   // --- Admin: Grant free subscription ---
@@ -1954,7 +2075,6 @@ async function startServer() {
 
       const db = admin.firestore();
 
-      // Check target user exists
       const userDoc = await db.collection('users').doc(userId).get();
       if (!userDoc.exists) {
         return res.status(404).json({ error: 'User not found' });
@@ -1966,14 +2086,14 @@ async function startServer() {
         userEmail: userData.email || '',
         userName: userData.name || '',
         plan,
-        status: 'pending', // will be activated by helper
+        status: 'pending', // activated immediately below
         paymentMethod: 'admin_grant',
         amount: 0,
         notes: notes || 'Admin grant',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      await activateSubscription(db, subRef.id, userId, plan, adminUser.uid);
+      await activateSubscription(subCtx(), subRef.id, userId, plan, adminUser.uid);
 
       res.json({ success: true, subscriptionId: subRef.id });
     } catch (error) {
@@ -1997,10 +2117,8 @@ async function startServer() {
         return res.status(400).json({ error: 'Subscription is not pending' });
       }
 
-      await activateSubscription(db, id, subData.userId, subData.plan, adminUser.uid);
-
-      // Send approval notification
-      await sendSubscriptionNotification(db, subData.userId, 'approved', subData.plan);
+      await activateSubscription(subCtx(), id, subData.userId, subData.plan, adminUser.uid);
+      await notifySubscription(subData.userId, 'approved', subData.plan);
 
       res.json({ success: true });
     } catch (error) {
@@ -2029,7 +2147,7 @@ async function startServer() {
         notes: 'Rejected by admin',
       });
 
-      await sendSubscriptionNotification(db, subData.userId, 'rejected');
+      await notifySubscription(subData.userId, 'rejected');
 
       res.json({ success: true });
     } catch (error) {
@@ -2065,7 +2183,6 @@ async function startServer() {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Update user cache
       await db.collection('users').doc(subData.userId).update({
         subscriptionEnd: admin.firestore.Timestamp.fromDate(newEnd),
       });
@@ -2093,7 +2210,6 @@ async function startServer() {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Update user cache
       await db.collection('users').doc(subData.userId).update({
         isSubscribed: false,
         subscriptionEnd: null,

@@ -1,200 +1,358 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { collection, query, orderBy, limit, getDocs, where, documentId, getCountFromServer, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile, Language } from '../types';
-import { Flame, Medal, Trophy, Crown, Loader2, Target, CheckCircle2, RefreshCw, Palmtree, MoreVertical } from 'lucide-react';
+import { Flame, Medal, Crown, Loader2, Target, RefreshCw, Palmtree, MoreVertical, Users } from 'lucide-react';
 import { UserMCQStats } from '../types/mcq.types';
 import Podium from './ui/Podium';
 import { useStageContext } from '../contexts/StageContext';
+import { useAcademicPhase } from '../hooks/useAcademicPhase';
 
 interface LeaderboardTabProps {
   user: UserProfile | null;
   lang: Language;
 }
 
+const STREAK_LIMIT = 20;
+const MCQ_LIMIT = 10;
+
+/** One row, shared by both boards so they cannot drift apart again. */
+interface RowData {
+  key: string;
+  rank: number;
+  name?: string;
+  photoUrl?: string | null;
+  isMe: boolean;
+  hideName?: boolean;
+  hidePhoto?: boolean;
+  primary: React.ReactNode;
+  secondary?: string;
+  /** Renders a "gap" marker above the row - used for the appended self row. */
+  detached?: boolean;
+}
+
+/** '2027-01-31' -> '2027/1/31'. */
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${y}/${parseInt(m, 10)}/${parseInt(d, 10)}`;
+}
+
+function rankBadge(rank: number) {
+  switch (rank) {
+    case 1: return <Crown className="w-5 h-5 text-yellow-500" />;
+    case 2: return <Medal className="w-5 h-5 text-slate-400" />;
+    case 3: return <Medal className="w-5 h-5 text-amber-700" />;
+    default: return <span className="font-bold text-slate-400 px-1">{rank}</span>;
+  }
+}
+
+function LeaderboardRow({ row, isRtl, accent }: { row: RowData; isRtl: boolean; accent: 'orange' | 'sky' }) {
+  const anonymous = row.hideName && !row.isMe;
+  const displayName = anonymous ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : row.name;
+  const displayPhoto = row.hidePhoto && !row.isMe ? null : row.photoUrl;
+  const accentText = accent === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-sky-600 dark:text-sky-400';
+
+  return (
+    <>
+      {row.detached && (
+        <div className="flex justify-center py-2">
+          <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />
+        </div>
+      )}
+      <div
+        className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
+          row.isMe
+            ? 'bg-sky-50 dark:bg-sky-900/20 border-2 border-sky-100 dark:border-sky-900/50'
+            : 'bg-slate-50 dark:bg-zinc-900 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700'
+        }`}
+      >
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className="w-8 flex justify-center shrink-0">{rankBadge(row.rank)}</div>
+
+          {displayPhoto ? (
+            <img
+              src={displayPhoto}
+              alt={displayName}
+              referrerPolicy="no-referrer"
+              className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm shrink-0"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-400 to-[#2196F3] flex items-center justify-center text-white font-bold text-lg shadow-sm border-2 border-white dark:border-zinc-800 shrink-0">
+              {anonymous ? '?' : displayName?.charAt(0).toUpperCase()}
+            </div>
+          )}
+
+          <div className="min-w-0">
+            <h3 className={`font-bold sm:text-lg truncate ${row.isMe ? accentText : 'text-slate-800 dark:text-slate-200'}`}>
+              {displayName} {row.isMe && (isRtl ? '(أنت)' : '(You)')}
+            </h3>
+            {row.secondary && (
+              <p className={`text-xs truncate ${row.isMe ? accentText : 'text-slate-500'}`}>{row.secondary}</p>
+            )}
+          </div>
+        </div>
+
+        <div className={`flex items-center gap-1.5 font-black text-lg sm:text-xl shrink-0 ${
+          row.isMe ? accentText : 'text-slate-700 dark:text-slate-300'
+        }`}>
+          {row.primary}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
+  return (
+    <div className="text-center py-12">
+      <Icon className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
+      <p className="text-slate-500 font-medium">{text}</p>
+    </div>
+  );
+}
+
 export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
   const isRtl = lang === 'ar';
   const [activeTab, setActiveTab] = useState<'streak' | 'mcq'>('streak');
-  const [streakLeaders, setStreakLeaders] = useState<UserProfile[]>([]);
-  const [mcqLeaders, setMcqLeaders] = useState<(UserMCQStats & { profile?: UserProfile })[]>([]);
-  const [userStreakRank, setUserStreakRank] = useState<number | null>(null);
-  const [userMcqRank, setUserMcqRank] = useState<number | null>(null);
+  const [streakLeaders, setStreakLeaders] = useState<any[]>([]);
+  const [mcqLeaders, setMcqLeaders] = useState<(UserMCQStats & { profile?: UserProfile; _rank?: number })[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isVacationMode, setIsVacationMode] = useState(false);
-  const { currentAppStage } = useStageContext();
+  /** True when the signed-in user has not answered any MCQs yet. */
+  const [mcqUnranked, setMcqUnranked] = useState(false);
+  const { effectiveStageId } = useStageContext();
 
-  const fetchLeaderboard = async (force = false) => {
+  // Whether the season is over is derived from the academic calendar, so the
+  // board switches to the archived winners on the first day of the break
+  // without waiting for the nightly rollover.
+  const { phase } = useAcademicPhase();
+  const isPaused = phase.isPaused;
+  /** Paused AND an archive was found - the board really is showing last season. */
+  const [showingArchive, setShowingArchive] = useState(false);
+
+  /** users/{id} lookups for a list of ids, chunked to respect the 'in' limit. */
+  const fetchProfiles = async (ids: string[]) => {
+    const map = new Map<string, UserProfile>();
+    for (let i = 0; i < ids.length; i += 10) {
+      const chunk = ids.slice(i, i + 10);
+      if (chunk.length === 0) continue;
+      const snap = await getDocs(query(collection(db, 'users'), where(documentId(), 'in', chunk)));
+      snap.forEach(d => map.set(d.id, { uid: d.id, ...d.data() } as unknown as UserProfile));
+    }
+    return map;
+  };
+
+  /**
+   * The finished season's top list for this stage, newest archive.
+   *
+   * The stored array is in document order rather than rank order, so it is
+   * sorted by the stored rank before being renumbered. That is correct both for
+   * per-stage ranks (renumbering is a no-op) and for legacy global ranks, where
+   * sorting first is what makes the per-stage order come out right.
+   */
+  const fetchArchivedRows = async (
+    archiveId: string,
+    field: 'topStudents' | 'topMcqStudents',
+  ): Promise<{ rows: any[]; profiles: Map<string, UserProfile> }> => {
+    const archiveDoc = await getDoc(doc(db, 'semesterArchives', archiveId));
+    if (!archiveDoc.exists()) return { rows: [], profiles: new Map() };
+
+    const archived: any[] = archiveDoc.data()[field] || [];
+    const profiles = await fetchProfiles(archived.map(s => s.userId || s.uid).filter(Boolean));
+
+    // Archives written before stages existed carry no stageId, so fall back to
+    // the student's live stage. Without this every stage renders the same list.
+    const rows = archived
+      .filter(s => (s.stageId || profiles.get(s.userId || s.uid)?.stageId) === effectiveStageId)
+      .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
+      .map((s, i) => ({ ...s, _rank: i + 1 }));
+
+    return { rows, profiles };
+  };
+
+  const fetchStreakBoard = async (paused: boolean, lastArchiveId: string | null) => {
+    // ---- Archived season (break) -----------------------------------------
+    if (paused && lastArchiveId) {
+      const { rows, profiles } = await fetchArchivedRows(lastArchiveId, 'topStudents');
+      setStreakLeaders(rows.map(s => {
+        const live = profiles.get(s.userId || s.uid);
+        return {
+          ...s,
+          name: live?.name || s.name,
+          photoUrl: live?.photoUrl || (live as any)?.photoURL || s.photoUrl,
+          hideNameOnLeaderboard: live?.hideNameOnLeaderboard ?? s.hideNameOnLeaderboard,
+          hidePhotoOnLeaderboard: live?.hidePhotoOnLeaderboard ?? s.hidePhotoOnLeaderboard,
+        };
+      }));
+      return;
+    }
+
+    // ---- Live board ------------------------------------------------------
+    const snap = await getDocs(query(
+      collection(db, 'users'),
+      where('role', '==', 'student'),
+      where('stageId', '==', effectiveStageId),
+      orderBy('streakCount', 'desc'),
+      limit(STREAK_LIMIT),
+    ));
+    // Graduated students keep read-only access in their final stage, so the
+    // stage query still returns them. Filtered here rather than with a where
+    // clause, because an inequality would also drop everyone lacking the field.
+    const leaders: any[] = snap.docs
+      .map(d => ({ uid: d.id, ...(d.data() as any) }))
+      .filter(u => u.graduated !== true)
+      .map((u, i) => ({ ...u, _rank: i + 1 }));
+
+    // Append the signed-in user below the cut if they are not already listed.
+    if (user && !leaders.some(l => (l.uid || l.userId) === user.uid) && (user.streakCount || 0) > 0) {
+      const countSnap = await getCountFromServer(query(
+        collection(db, 'users'),
+        where('role', '==', 'student'),
+        where('stageId', '==', effectiveStageId),
+        where('streakCount', '>', user.streakCount || 0),
+      ));
+      leaders.push({
+        uid: user.uid, name: user.name, photoUrl: user.photoUrl,
+        streakCount: user.streakCount || 0,
+        hideNameOnLeaderboard: user.hideNameOnLeaderboard,
+        hidePhotoOnLeaderboard: user.hidePhotoOnLeaderboard,
+        _rank: countSnap.data().count + 1,
+        _detached: true,
+      });
+    }
+
+    setStreakLeaders(leaders);
+  };
+
+  const fetchMcqBoard = async (paused: boolean, lastArchiveId: string | null) => {
+    // ---- Archived season (break) -----------------------------------------
+    // The reset removes mcqRankScore, so without this the MCQ tab would be
+    // empty for the whole break instead of showing the season's winners.
+    if (paused && lastArchiveId) {
+      const { rows, profiles } = await fetchArchivedRows(lastArchiveId, 'topMcqStudents');
+      setMcqUnranked(false);
+      // Normalised into the live shape so the row mapper below stays single-path.
+      setMcqLeaders(rows.map(s => {
+        const answered = s.totalAnswered || 0;
+        const correct = s.totalCorrect || 0;
+        return {
+          ...s,
+          totalFirstAttemptCorrect: correct,
+          totalFirstAttemptAnswered: answered,
+          accuracy: answered > 0 ? (correct / answered) * 100 : 0,
+          mcqRankScore: (s.score || 0) * 100,
+          profile: profiles.get(s.userId),
+        } as any;
+      }));
+      return;
+    }
+
+    // Ordered by mcqRankScore: accuracy first, volume as tie-break. Documents
+    // without the field (under the qualifying threshold) are skipped by orderBy.
+    const snap = await getDocs(query(
+      collection(db, 'userMCQStats'),
+      where('stageId', '==', effectiveStageId),
+      orderBy('mcqRankScore', 'desc'),
+      limit(MCQ_LIMIT),
+    ));
+    const leaders: any[] = snap.docs.map((d, i) => ({ id: d.id, ...d.data(), _rank: i + 1 }));
+
+    setMcqUnranked(false);
+
+    if (user && !leaders.some(l => l.userId === user.uid)) {
+      const mine = await getDoc(doc(db, 'userMCQStats', user.uid));
+      const data = mine.exists() ? mine.data() : null;
+
+      if (data?.mcqRankScore != null) {
+        const countSnap = await getCountFromServer(query(
+          collection(db, 'userMCQStats'),
+          where('stageId', '==', effectiveStageId),
+          where('mcqRankScore', '>', data.mcqRankScore),
+        ));
+        leaders.push({ id: mine.id, ...data, _rank: countSnap.data().count + 1, _detached: true });
+      } else {
+        // No answers yet - nothing to rank.
+        setMcqUnranked(true);
+      }
+    }
+
+    const profiles = await fetchProfiles(leaders.map(l => l.userId).filter(Boolean));
+    setMcqLeaders(leaders.map(stat => ({ ...stat, profile: profiles.get(stat.userId) })));
+  };
+
+  const fetchLeaderboard = async () => {
     setLoading(true);
     try {
-      const snapSettings = await getDoc(doc(db, 'app_settings', 'streak'));
-      const vacation = snapSettings.exists() && snapSettings.data().vacationMode === true;
-      setIsVacationMode(vacation);
-      const lastArchiveId = snapSettings.exists() ? snapSettings.data().lastArchiveId : null;
+      // Which archive to show still comes from app_settings; WHETHER to show it
+      // comes from the calendar.
+      const settings = await getDoc(doc(db, 'app_settings', 'streak'));
+      const lastArchiveId = settings.exists() ? settings.data().lastArchiveId : null;
+
+      setShowingArchive(isPaused && !!lastArchiveId);
 
       if (activeTab === 'streak') {
-        if (streakLeaders.length === 0 || force) {
-          if (vacation && lastArchiveId) {
-            const archiveDoc = await getDoc(doc(db, 'semesterArchives', lastArchiveId));
-            if (archiveDoc.exists()) {
-              const topStudents = archiveDoc.data().topStudents || [];
-              const userIds = topStudents.map((s: any) => s.userId || s.uid).filter(Boolean);
-              
-              if (userIds.length > 0) {
-                const userMap = new Map<string, UserProfile>();
-                const chunkSize = 10;
-                for (let i = 0; i < userIds.length; i += chunkSize) {
-                  const chunk = userIds.slice(i, i + chunkSize);
-                  if (chunk.length > 0) {
-                    const chunkQuery = query(collection(db, 'users'), where(documentId(), 'in', chunk));
-                    const chunkSnap = await getDocs(chunkQuery);
-                    chunkSnap.forEach(d => userMap.set(d.id, {uid: d.id, ...d.data()} as unknown as UserProfile));
-                  }
-                }
-                
-                const merged = topStudents.map((s: any) => {
-                  const uid = s.userId || s.uid;
-                  const liveData = userMap.get(uid);
-                  if (liveData) {
-                    return { 
-                      ...s, 
-                      name: liveData.name || s.name,
-                      photoUrl: liveData.photoUrl || (liveData as any).photoURL || s.photoUrl || s.photoURL,
-                      hidePhotoOnLeaderboard: liveData.hidePhotoOnLeaderboard ?? s.hidePhotoOnLeaderboard,
-                      hideNameOnLeaderboard: liveData.hideNameOnLeaderboard ?? s.hideNameOnLeaderboard
-                    };
-                  }
-                  return s;
-                });
-                setStreakLeaders(merged);
-              } else {
-                setStreakLeaders(topStudents);
-              }
-            }
-          } else {
-            const q = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage), orderBy('streakCount', 'desc'), limit(20));
-            const snap = await getDocs(q);
-            const data = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as UserProfile));
-            
-            let updatedStreakLeaders = [...data];
-            const isUserInTop = updatedStreakLeaders.some(r => ((r as any).uid || (r as any).userId) === user?.uid);
-            
-            if (user && !vacation && !isUserInTop) {
-              const myStreak = user.streakCount || 0;
-              if (myStreak > 0) {
-                const countQ = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage), where('streakCount', '>', myStreak));
-                const countSnap = await getCountFromServer(countQ);
-                const myRank = countSnap.data().count + 1;
-                setUserStreakRank(myRank);
-                // @ts-ignore
-                updatedStreakLeaders.push({ uid: user.uid, ...user, _actualRank: myRank });
-              } else {
-                setUserStreakRank(null);
-              }
-            } else if (user) {
-              const myStreak = user.streakCount || 0;
-              if (myStreak > 0) {
-                const countQ = query(collection(db, 'users'), where('role', '==', 'student'), where('stageId', '==', currentAppStage), where('streakCount', '>', myStreak));
-                const countSnap = await getCountFromServer(countQ);
-                setUserStreakRank(countSnap.data().count + 1);
-              } else {
-                setUserStreakRank(null);
-              }
-            }
-            
-            setStreakLeaders(updatedStreakLeaders);
-          }
-        }
+        await fetchStreakBoard(isPaused, lastArchiveId);
       } else {
-        if (mcqLeaders.length === 0 || force) {
-          const q = query(collection(db, 'userMCQStats'), where('stageId', '==', currentAppStage), orderBy('mcqLeaderboardScore', 'desc'), limit(10));
-          const snap = await getDocs(q);
-          const rawData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-          
-          let updatedMcqLeaders = [...rawData];
-          const isUserInTop = updatedMcqLeaders.some(r => r.userId === user?.uid);
-          
-          if (user && !isUserInTop) {
-            const myMcqDoc = await getDoc(doc(db, 'userMCQStats', user.uid));
-            if (myMcqDoc.exists()) {
-              const score = myMcqDoc.data().mcqLeaderboardScore || 0;
-              if (score > 0) {
-                const countQ = query(collection(db, 'userMCQStats'), where('stageId', '==', currentAppStage), where('mcqLeaderboardScore', '>', score));
-                const countSnap = await getCountFromServer(countQ);
-                const myRank = countSnap.data().count + 1;
-                setUserMcqRank(myRank);
-                // @ts-ignore
-                updatedMcqLeaders.push({ id: myMcqDoc.id, ...myMcqDoc.data(), _actualRank: myRank } as any);
-              } else {
-                setUserMcqRank(null);
-              }
-            } else {
-              setUserMcqRank(null);
-            }
-          } else if (user) {
-            const myMcqDoc = await getDoc(doc(db, 'userMCQStats', user.uid));
-            if (myMcqDoc.exists()) {
-              const score = myMcqDoc.data().mcqLeaderboardScore || 0;
-              if (score > 0) {
-                const countQ = query(collection(db, 'userMCQStats'), where('stageId', '==', currentAppStage), where('mcqLeaderboardScore', '>', score));
-                const countSnap = await getCountFromServer(countQ);
-                setUserMcqRank(countSnap.data().count + 1);
-              } else {
-                setUserMcqRank(null);
-              }
-            } else {
-              setUserMcqRank(null);
-            }
-          }
-
-          const userIds = updatedMcqLeaders.map(r => r.userId);
-          if (userIds.length > 0) {
-            const userMap = new Map<string, UserProfile>();
-            
-            // Fetch users in chunks of 10 to respect Firestore 'in' limits
-            const chunkSize = 10;
-            for (let i = 0; i < userIds.length; i += chunkSize) {
-              const chunk = userIds.slice(i, i + chunkSize);
-              if (chunk.length > 0) {
-                const chunkQuery = query(collection(db, 'users'), where(documentId(), 'in', chunk));
-                const chunkSnap = await getDocs(chunkQuery);
-                chunkSnap.forEach(d => userMap.set(d.id, {uid: d.id, ...d.data()} as unknown as UserProfile));
-              }
-            }
-            
-            const merged = updatedMcqLeaders.map(stat => ({
-              ...stat,
-              profile: userMap.get(stat.userId)
-            }));
-            setMcqLeaders(merged);
-          }
-        }
+        await fetchMcqBoard(isPaused, lastArchiveId);
       }
     } catch (error) {
-      console.error("Error fetching leaderboard:", error);
+      console.error('Error fetching leaderboard:', error);
+      // Clear rather than leave another stage's board on screen.
+      if (activeTab === 'streak') setStreakLeaders([]); else setMcqLeaders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  // Refetch on tab or stage change. Both boards are cleared first so a slow
+  // request can never leave the previous stage's names visible.
+  const lastKeyRef = useRef('');
   useEffect(() => {
+    const key = `${activeTab}:${effectiveStageId}:${isPaused}`;
+    if (lastKeyRef.current !== key) {
+      lastKeyRef.current = key;
+      setStreakLeaders([]);
+      setMcqLeaders([]);
+    }
     fetchLeaderboard();
-  }, [activeTab]);
+  }, [activeTab, effectiveStageId, isPaused]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchLeaderboard(true);
+    fetchLeaderboard();
   };
 
-  const getRankBadge = (index: number) => {
-    switch(index) {
-      case 0: return <Crown className="w-5 h-5 text-yellow-500" />;
-      case 1: return <Medal className="w-5 h-5 text-slate-400" />;
-      case 2: return <Medal className="w-5 h-5 text-amber-700" />;
-      default: return <span className="font-bold text-slate-400 px-1">{index + 1}</span>;
-    }
-  };
+  const streakRows: RowData[] = streakLeaders.map(l => ({
+    key: `${l.uid || l.userId}-${l._rank}`,
+    rank: l._rank,
+    name: l.name,
+    photoUrl: l.photoUrl || l.photoURL,
+    isMe: user?.uid === (l.uid || l.userId),
+    hideName: l.hideNameOnLeaderboard,
+    hidePhoto: l.hidePhotoOnLeaderboard,
+    detached: l._detached,
+    primary: <><Flame className="w-5 h-5 text-orange-500" />{l.streakCount || 0}</>,
+    secondary: `${l.streakCount || 0} ${isRtl ? 'أيام' : 'days'}`,
+  }));
+
+  const mcqRows: RowData[] = mcqLeaders.map(l => ({
+    key: `${l.userId}-${l._rank}`,
+    rank: l._rank!,
+    name: l.profile?.name,
+    photoUrl: l.profile?.photoUrl || (l.profile as any)?.photoURL,
+    isMe: user?.uid === l.userId,
+    hideName: l.profile?.hideNameOnLeaderboard,
+    hidePhoto: l.profile?.hidePhotoOnLeaderboard,
+    detached: (l as any)._detached,
+    // Headline is the ranking score itself, so the list visibly descends by the
+    // number shown. Effort and precision are both spelled out underneath.
+    primary: <>{Math.round(((l as any).mcqRankScore || 0) / 100)}<span className="text-sm font-medium pe-1">{isRtl ? 'نقطة' : 'pts'}</span></>,
+    secondary: `${l.totalFirstAttemptCorrect}/${l.totalFirstAttemptAnswered} ${isRtl ? 'صحيحة' : 'correct'} • ${Math.round(l.accuracy)}% ${isRtl ? 'دقة' : 'accuracy'}`,
+  }));
+
+  const rows = activeTab === 'streak' ? streakRows : mcqRows;
+  const accent = activeTab === 'streak' ? 'orange' : 'sky';
 
   return (
     <div className="pb-24 max-w-2xl mx-auto relative" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -221,159 +379,70 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
       </div>
 
       <div className="bg-white dark:bg-zinc-800 rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200 dark:border-zinc-700">
-        {isVacationMode && (
-           <div className="mb-4 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 px-4 py-3 rounded-2xl flex items-center gap-3 text-sm font-bold border border-sky-100 dark:border-sky-800">
-             <Palmtree className="w-5 h-5 text-sky-500" />
-             {isRtl ? 'انتهى موسم المرحلة الثالثة، شكرًا لجهودكم وتفانيكم بدراستكم انتظرونا بالرابعة، هنا أبرز الطلاب في لوحة الصدارة' : 'Vacation mode is active. Streak leaderboard shows archived semester data.'}
-           </div>
+        {isPaused && (
+          <div className="mb-4 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 px-4 py-3 rounded-2xl flex items-start gap-3 text-sm font-bold border border-sky-100 dark:border-sky-800">
+            <Palmtree className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
+            <span>
+              {showingArchive
+                ? (isRtl
+                    ? `انتهى ${phase.term ? `«${phase.term.nameAr}»` : 'الموسم'}، شكرًا لجهودكم. هذه نتائج الموسم الماضي لمرحلتكم.`
+                    : `${phase.term ? `"${phase.term.nameEn}"` : 'The season'} has ended. Showing last season's results for your stage.`)
+                : (isRtl
+                    ? 'المنافسة متوقفة خلال العطلة، والستريك لا يُحتسب.'
+                    : 'The competition is paused for the break and streaks are not counting.')}
+              {phase.nextStart && (
+                <span className="block font-medium opacity-90 mt-0.5">
+                  {isRtl
+                    ? `يبدأ الموسم الجديد في ${formatDate(phase.nextStart)}.`
+                    : `The new season opens on ${formatDate(phase.nextStart)}.`}
+                </span>
+              )}
+            </span>
+          </div>
         )}
-        
+
         {loading && !refreshing ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin" />
           </div>
-        ) : activeTab === 'streak' ? (
-          <>
-            {isVacationMode ? (
-              streakLeaders.length > 0 ? (
-                <Podium topStudents={streakLeaders.slice(0, 3)} isRtl={isRtl} type="streak" />
-              ) : null
-            ) : (
-              <div className="space-y-3">
-              {streakLeaders.map((leader, idx) => {
-                 const actualRank = (leader as any)._actualRank || (idx + 1);
-                 const index = actualRank - 1;
-                 const isAppendedUser = (leader as any)._actualRank && (leader as any)._actualRank > 20;
-                 const isMe = user?.uid === (leader.userId || leader.uid);
-                 const hideName = leader.hideNameOnLeaderboard;
-                 const hidePhoto = leader.hidePhotoOnLeaderboard;
-               
-               const displayName = hideName && !isMe ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : leader.name;
-               const displayPhoto = hidePhoto && !isMe ? null : (leader.photoUrl || (leader as any).photoURL);
-               
-               return (
-                 <React.Fragment key={`${leader.userId || leader.uid || 'leader'}-${idx}`}>
-                   {isAppendedUser && (
-                      <div className="flex justify-center py-2">
-                        <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />
-                      </div>
-                   )}
-                 <div 
-                   className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
-                     isMe 
-                       ? 'bg-[#2196F3]/10 border border-[#2196F3]/30 dark:bg-[#2196F3]/20 dark:border-[#2196F3]/40' 
-                       : 'bg-slate-50 dark:bg-zinc-900 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700'
-                   }`}
-                 >
-                   <div className="flex items-center gap-3 sm:gap-4">
-                     <div className="w-8 flex justify-center shrink-0">
-                       {getRankBadge(index)}
-                     </div>
-                     
-                     <div className="relative">
-                       {displayPhoto ? (
-                         <img src={displayPhoto} alt={displayName} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm"  referrerPolicy="no-referrer" />
-                       ) : (
-                         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-400 to-[#2196F3] flex items-center justify-center text-white font-bold text-lg shadow-sm border-2 border-white dark:border-zinc-800">
-                           {hidePhoto && !isMe ? '?' : displayName?.charAt(0).toUpperCase()}
-                         </div>
-                       )}
-                     </div>
-                     
-                     <div>
-                       <h3 className={`font-bold sm:text-lg ${isMe ? 'text-[#2196F3] dark:text-sky-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                         {displayName} {isMe && (isRtl ? '(أنت)' : '(You)')} 
-                       </h3>
-                     </div>
-                   </div>
-                   
-                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 dark:bg-orange-900/20 rounded-xl">
-                     <Flame className="w-4 h-4 text-orange-500" />
-                     <span className="font-bold text-orange-600 dark:text-orange-400">
-                       {leader.streakCount || 0} {isRtl ? 'أيام' : 'days'}
-                     </span>
-                   </div>
-                 </div>
-                </React.Fragment>
-               );
-            })}
-            </div>
-            )}
-          </>
+        ) : rows.length === 0 ? (
+          activeTab === 'mcq' && mcqUnranked ? (
+            <EmptyState
+              icon={Target}
+              text={isRtl
+                ? 'بعدك ما حليت ولا سؤال، ابدأ حتى تدخل التصنيف'
+                : 'No MCQ attempts yet - start solving to enter the ranking'}
+            />
+          ) : (
+            <EmptyState
+              icon={activeTab === 'streak' ? Users : Target}
+              text={isRtl ? 'لا يوجد طلاب في هذه المرحلة بعد' : 'No students in this stage yet'}
+            />
+          )
         ) : (
           <>
-            {mcqLeaders.length > 0 ? (
-              <Podium topStudents={mcqLeaders.slice(0, 3)} isRtl={isRtl} type="mcq" />
-            ) : null}
+            {/* Podium is reserved for the archived season view. */}
+            {showingArchive && (
+              activeTab === 'streak'
+                ? <Podium topStudents={streakLeaders.slice(0, 3)} isRtl={isRtl} type="streak" />
+                : <Podium topStudents={mcqLeaders.slice(0, 3)} isRtl={isRtl} type="mcq" />
+            )}
+
             <div className="space-y-3">
-            {mcqLeaders.length === 0 ? (
-              <div className="text-center py-10">
-                <Target className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500 font-medium">{isRtl ? 'بعدك م حلّيت ولا MCQ، حل حتى ترفع تصنيفك' : 'No MCQ attempts yet, start solving to rank up'}</p>
-              </div>
-            ) : mcqLeaders.slice(3).map((leader, idx) => {
-              const actualRank = (leader as any)._actualRank || (idx + 4);
-              const index = actualRank - 1;
-              const isAppendedUser = (leader as any)._actualRank && (leader as any)._actualRank > 10;
-              const isMe = user?.uid === leader.userId;
+              {rows.map(row => (
+                <React.Fragment key={row.key}>
+                  <LeaderboardRow row={row} isRtl={isRtl} accent={accent} />
+                </React.Fragment>
+              ))}
+            </div>
 
-            const hideName = leader.profile?.hideNameOnLeaderboard;
-            const hidePhoto = leader.profile?.hidePhotoOnLeaderboard;
-            
-            const displayName = hideName && !isMe ? (isRtl ? 'مستخدم مجهول' : 'Anonymous User') : leader.profile?.name;
-            const displayPhoto = hidePhoto && !isMe ? null : (leader.profile?.photoUrl || (leader.profile as any)?.photoURL);
-            
-            return (
-              <React.Fragment key={`${leader.id || leader.userId || 'mcq'}-${idx}`}>
-                {isAppendedUser && (
-                   <div className="flex justify-center py-2">
-                     <MoreVertical className="w-5 h-5 text-slate-300 dark:text-zinc-600" />
-                   </div>
-                )}
-                <div 
-                 className={`flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all ${
-                   isMe 
-                     ? 'bg-sky-50 dark:bg-sky-900/20 border-2 border-sky-100 dark:border-sky-900/50' 
-                     : 'bg-slate-50 dark:bg-zinc-900 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700'
-                 }`}
-               >
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-8 flex justify-center shrink-0">
-                    {getRankBadge(index)}
-                  </div>
-                  
-                  <div className="relative">
-                    {displayPhoto ? (
-                      <img src={displayPhoto} alt={displayName} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-zinc-800 shadow-sm"  referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-400 to-[#2196F3] flex items-center justify-center text-white font-bold text-lg shadow-sm border-2 border-white dark:border-zinc-800">
-                        {hidePhoto && !isMe ? '?' : displayName?.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <h3 className={`font-bold sm:text-lg ${isMe ? 'text-[#2196F3] dark:text-sky-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                      {displayName} {isMe && (isRtl ? '(أنت)' : '(You)')}
-                    </h3>
-                    <p className={`text-xs ${isMe ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500'}`}>
-                      {leader.lecturesAttempted} {isRtl ? 'محاضرة' : 'Lectures'} • {isRtl ? 'دقة' : 'Accuracy'} {Math.round(leader.accuracy)}%
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-end">
-                  <div className={`flex items-center gap-1.5 font-black text-lg sm:text-xl ${
-                    isMe ? 'text-sky-600 dark:text-sky-400' : 'text-slate-700 dark:text-slate-300'
-                  }`}>
-                    {Math.round(leader.mcqLeaderboardScore)} <span className="text-sm font-medium pr-1">نقطة</span>
-                  </div>
-                </div>
-              </div>
-              </React.Fragment>
-            );
-          })}
-          </div>
+            {activeTab === 'mcq' && mcqUnranked && (
+              <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                {isRtl
+                  ? 'ابدأ بحل الأسئلة حتى تدخل التصنيف'
+                  : 'Start solving questions to enter the ranking'}
+              </p>
+            )}
           </>
         )}
       </div>

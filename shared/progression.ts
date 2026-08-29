@@ -1,0 +1,176 @@
+/**
+ * End-of-year progression: what to ask a student, and what their answer means.
+ *
+ * Pure - no Firebase - so the client and the server compute the same answer from
+ * the same inputs. The server recomputes `nextProgressionStep` before accepting
+ * a submission, because the client is not trusted about which question it was
+ * showing.
+ *
+ * The flow:
+ *
+ *   results published  ->  نجحت ? / دور ثاني ?
+ *                            |          |
+ *                       promoted    awaiting_resit, asked nothing more until
+ *                                   the resit results date passes, then:
+ *                                     نجحت / تحميل / رسبت
+ *
+ * Everything is keyed on the calendar's `yearLabel`, so next year's calendar
+ * reopens the cycle for everyone without any migration.
+ */
+import { ProgressionGate } from './academicCalendar';
+
+export type ProgressionRound = 'first' | 'resit';
+export type ProgressionStep = 'none' | ProgressionRound;
+
+/** Round one: نجحت / دور ثاني. */
+export type FirstAnswer = 'passed' | 'resit';
+/** Round two, after the resit results: نجحت / تحميل / رسبت. */
+export type ResitAnswer = 'passed' | 'tahmeel' | 'failed';
+export type ProgressionAnswer = FirstAnswer | ResitAnswer;
+
+export type ProgressionState = 'awaiting_resit' | 'completed';
+
+/** The subset of a user document this module cares about. */
+export interface ProgressionUser {
+  role?: string;
+  stageId?: string;
+  progressionYear?: string;
+  progressionState?: ProgressionState;
+  graduated?: boolean;
+}
+
+export interface StageLike {
+  id: string;
+  order: number;
+  nameAr?: string;
+  nameEn?: string;
+}
+
+/**
+ * Which question this student should be answering right now.
+ *
+ * `none` for anyone who is not a student, has graduated, is already done for
+ * this year, or is waiting on resit results that have not been published.
+ */
+export function nextProgressionStep(opts: {
+  gate: ProgressionGate;
+  yearLabel: string;
+  user: ProgressionUser;
+  /** Stages to ask. Empty/absent asks everyone. */
+  stages?: string[] | null;
+}): ProgressionStep {
+  const { gate, yearLabel, user, stages } = opts;
+
+  if (gate === 'closed') return 'none';
+  if (user.role && user.role !== 'student') return 'none';
+  if (user.graduated) return 'none';
+  // Without a stage there is no "next stage" to compute, and an unknown stage
+  // looks identical to the top of the ladder - answering نجحت would silently
+  // mark them graduated. Leave them alone until an admin assigns a stage.
+  if (!user.stageId) return 'none';
+
+  // Only the cohort that actually sat last year's exams. A stage whose roster
+  // was just imported has no result to report, so asking would just wall them
+  // out of the app.
+  if (stages && stages.length > 0 && !stages.includes(user.stageId)) return 'none';
+
+  const answeredThisYear = user.progressionYear === yearLabel;
+
+  if (answeredThisYear) {
+    if (user.progressionState === 'completed') return 'none';
+    // Sat a resit. Nothing more is asked until those results are out.
+    if (user.progressionState === 'awaiting_resit') {
+      return gate === 'resit_round' ? 'resit' : 'none';
+    }
+  }
+
+  // Never answered this year. Even once the resit round is open they start at
+  // the first question - they may simply not have opened the app in months.
+  return 'first';
+}
+
+export interface ProgressionOutcome {
+  stageId: string;
+  graduated: boolean;
+  tahmeelSubjects: string[];
+  progressionState: ProgressionState;
+  /** True when the stage actually changed, so the UI can congratulate them. */
+  promoted: boolean;
+  nextStage: StageLike | null;
+}
+
+/** The stage after this one, or null at the top of the ladder. */
+export function nextStageOf(stages: StageLike[], stageId?: string): StageLike | null {
+  const current = stages.find(s => s.id === stageId);
+  if (!current) return null;
+  return stages.find(s => s.order === current.order + 1) || null;
+}
+
+/**
+ * Turns an answer into the fields to write.
+ *
+ * `tahmeelSubjects` are subject SLUGS ('biochemistry_ii'), not document ids
+ * ('stage_3__biochemistry_ii'): that is what lectures.subjectId and the
+ * hasStageAccess rule compare against, so an id here would grant nothing.
+ * Callers must validate the slugs against the current stage before saving.
+ */
+export function progressionOutcome(opts: {
+  round: ProgressionRound;
+  answer: ProgressionAnswer;
+  user: ProgressionUser;
+  stages: StageLike[];
+  tahmeelSubjects?: string[];
+}): ProgressionOutcome {
+  const { round, answer, user, stages } = opts;
+  const currentStageId = user.stageId || '';
+  const next = nextStageOf(stages, currentStageId);
+
+  const stay = (state: ProgressionState, tahmeel: string[] = []): ProgressionOutcome => ({
+    stageId: currentStageId,
+    graduated: false,
+    tahmeelSubjects: tahmeel,
+    progressionState: state,
+    promoted: false,
+    nextStage: next,
+  });
+
+  // Passing out of the final stage graduates them: there is no next stage, so
+  // they keep read-only access where they are and are never asked again.
+  const moveUp = (tahmeel: string[] = []): ProgressionOutcome => {
+    if (!next) {
+      return {
+        stageId: currentStageId,
+        graduated: true,
+        tahmeelSubjects: [],
+        progressionState: 'completed',
+        promoted: false,
+        nextStage: null,
+      };
+    }
+    return {
+      stageId: next.id,
+      graduated: false,
+      tahmeelSubjects: tahmeel,
+      progressionState: 'completed',
+      promoted: true,
+      nextStage: next,
+    };
+  };
+
+  if (round === 'first') {
+    if (answer === 'passed') return moveUp();
+    // دور ثاني - nothing changes yet, they are parked until those results land.
+    return stay('awaiting_resit');
+  }
+
+  if (answer === 'passed') return moveUp();
+  if (answer === 'tahmeel') return moveUp(opts.tahmeelSubjects || []);
+  return stay('completed'); // رسبت - repeats the year
+}
+
+/** Is this answer valid for this round? Guards the endpoint against junk input. */
+export function isAnswerValid(round: ProgressionRound, answer: string): boolean {
+  return round === 'first'
+    ? answer === 'passed' || answer === 'resit'
+    : answer === 'passed' || answer === 'tahmeel' || answer === 'failed';
+}

@@ -20,6 +20,7 @@ import {
   Link,
   Eye,
   Users,
+  Flag,
 } from "lucide-react";
 import {
   collection,
@@ -50,8 +51,11 @@ import {
 } from "../lib/firebase";
 import { httpsCallable } from "firebase/functions";
 import { motion, AnimatePresence } from "motion/react";
+import ReportMessageSheet from "./chat/ReportMessageSheet";
+import { filterBlocked } from "../services/moderationService";
 import { forceDownload } from "../lib/utils";
 import { useStageContext } from "../contexts/StageContext";
+import { canManage } from '../lib/permissions';
 
 interface ChatMessage {
   id: string;
@@ -150,6 +154,7 @@ const MessageBubble = React.memo(
     CHAT_DOC_ID,
     renderMessageText,
     appUsers,
+    onReportMessage,
   }: any) => {
     const liveUser = appUsers?.find((u: any) => u.email === msg.senderEmail);
     const displayAvatar = msg.isAnonymous ? "?" : (liveUser && !liveUser.hidePhotoOnLeaderboard && liveUser.photoUrl) || msg.senderAvatar;
@@ -498,6 +503,20 @@ const MessageBubble = React.memo(
                     {isRtl ? "رد" : "Reply"}
                   </button>
 
+                  {!isMe && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onReportMessage?.(msg);
+                        setShowReactionPickerFor(null);
+                      }}
+                      className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/30 text-slate-400 hover:text-rose-500 rounded-full transition-colors"
+                      title={isRtl ? "إبلاغ" : "Report"}
+                    >
+                      <Flag className="w-4 h-4" />
+                    </button>
+                  )}
+
                   {(isAdminOrModerator || isMe) && (
                     <button
                       onClick={(e) => {
@@ -647,12 +666,10 @@ export default function ChatScreen({
 }: ChatScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === "ar";
-  const isAdminOrModerator =
-    (user?.role === "admin") &&
-    user?.permissions?.manageChat !== false;
+  const isAdminOrModerator = canManage(user, 'manageChat');
   const isMasterAdmin = user?.isMasterAdmin;
   const CHAT_DOC_ID = "config";
-  const { currentAppStage } = useStageContext();
+  const { effectiveStageId } = useStageContext();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [settings, setSettings] = useState<ChatSettings>({
@@ -902,11 +919,17 @@ export default function ChatScreen({
 
   const currentChatCollectionPath = activeChat.type === 'group' ? 'chat_messages' : `private_chats/${activeChat.id}/messages`;
 
+  /** Message being reported, or null. Drives ReportMessageSheet. */
+  const [reportTarget, setReportTarget] = useState<{
+    messageId: string; messageText: string;
+    senderId?: string | null; senderName?: string | null; chatPath: string;
+  } | null>(null);
+
   // Listen for Live Messages (Replacing Polling)
   useEffect(() => {
     setIsLoading(true);
     setMessages([]);
-    const constraints = activeChat.type === 'group' ? [where("stageId", "==", currentAppStage)] : [];
+    const constraints = activeChat.type === 'group' ? [where("stageId", "==", effectiveStageId)] : [];
 
     const q = query(
       collection(db, currentChatCollectionPath),
@@ -1018,7 +1041,7 @@ export default function ChatScreen({
     );
 
     return () => unsubscribe();
-  }, [currentChatCollectionPath]);
+  }, [currentChatCollectionPath, activeChat.type, effectiveStageId]);
 
   // Mention handling
   useEffect(() => {
@@ -1152,7 +1175,7 @@ export default function ChatScreen({
         isAnonymous: isAnon,
         originalSenderName: user.name,
         originalSenderExamCode: user.examCode || "",
-        ...(activeChat.type === 'group' ? { stageId: currentAppStage } : {}),
+        ...(activeChat.type === 'group' ? { stageId: effectiveStageId } : {}),
       };
 
       if (finalFileUrl) {
@@ -1292,7 +1315,7 @@ export default function ChatScreen({
       if (messages.length === 0) return;
       const oldestMessage = messages[0];
 
-      const constraints = activeChat.type === 'group' ? [where("stageId", "==", currentAppStage)] : [];
+      const constraints = activeChat.type === 'group' ? [where("stageId", "==", effectiveStageId)] : [];
 
       const q = query(
         collection(db, currentChatCollectionPath),
@@ -1408,7 +1431,7 @@ export default function ChatScreen({
 
       const oldestLoaded = messages[0];
       if (oldestLoaded && oldestLoaded.createdAt > targetTimestamp) {
-        const constraints = activeChat.type === 'group' ? [where("stageId", "==", currentAppStage)] : [];
+        const constraints = activeChat.type === 'group' ? [where("stageId", "==", effectiveStageId)] : [];
 
         const q = query(
           collection(db, currentChatCollectionPath),
@@ -2099,7 +2122,7 @@ export default function ChatScreen({
             </p>
           </div>
         ) : (
-          [...messages].reverse().map((msg, idx, arr) => {
+          filterBlocked([...messages].reverse(), user?.blockedUsers).map((msg, idx, arr) => {
             const isMe = getIsMe(msg);
             const msgDate = new Date(msg.createdAt);
 
@@ -2161,6 +2184,13 @@ export default function ChatScreen({
                   CHAT_DOC_ID={CHAT_DOC_ID}
                   renderMessageText={renderMessageText}
                   appUsers={appUsers}
+                  onReportMessage={(m: any) => setReportTarget({
+                    messageId: m.id,
+                    messageText: m.text || '',
+                    senderId: m.senderId ?? null,
+                    senderName: m.isAnonymous ? null : (m.senderName ?? null),
+                    chatPath: currentChatCollectionPath,
+                  })}
                 />
                 
                 {isDifferentDay && (
@@ -2554,6 +2584,12 @@ export default function ChatScreen({
 
       {/* Clear All Confirm Modal */}
       <AnimatePresence>
+        <ReportMessageSheet
+          lang={lang}
+          target={reportTarget}
+          onClose={() => setReportTarget(null)}
+        />
+
         {messageToDelete && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div
