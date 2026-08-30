@@ -107,10 +107,14 @@ withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_SERVICE_TYPE: '' }, () => {
   check('missing serviceType fails loudly rather than silently', threw.includes('serviceType'), threw);
 });
 
+// apiKey is deliberately NOT required any more: verifyGatewayToken falls back
+// to the client secret, so a config without one can still verify callbacks.
 withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_API_KEY: '' }, () => {
   let threw = '';
-  try { loadZainCashConfig(); } catch (e: any) { threw = e.message; }
-  check('missing apiKey fails loudly', threw.includes('apiKey'), threw);
+  let resolved: any;
+  try { resolved = loadZainCashConfig(); } catch (e: any) { threw = e.message; }
+  check('a missing apiKey no longer blocks config', threw === '', threw);
+  check('and leaves apiKey empty for the fallback to handle', resolved?.apiKey === '');
 });
 
 // The HS256 secret is accepted under two names because the spec is not
@@ -125,18 +129,54 @@ withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat' }, () => {
     loadZainCashConfig().apiKey === 'apikey-hs256');
 });
 
-// The placeholder must fail closed. If it counted as a value, /init would
-// take real money for payments whose callbacks can never verify.
+// The placeholder must never reach jwt.verify as a literal key — a token signed
+// with the string "PENDING_FROM_SUPPORT" would otherwise authenticate itself.
+// It no longer blocks config, though: the client secret can verify on its own.
 withEnv(
   { ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_JWT_SECRET: JWT_SECRET_PLACEHOLDER, ZAINCASH_API_KEY: '' },
   () => {
     let threw = '';
-    try { loadZainCashConfig(); } catch (e: any) { threw = e.message; }
-    check('the PENDING_FROM_SUPPORT placeholder is rejected like a missing key',
-      threw.includes('apiKey'), threw);
-    check('and the error says why', threw.includes('placeholder'), threw);
+    let resolved: any;
+    try { resolved = loadZainCashConfig(); } catch (e: any) { threw = e.message; }
+    check('the placeholder does not block config', threw === '', threw);
+    check('the placeholder is collapsed, never surfaced as a key', resolved?.apiKey === '');
   },
 );
+
+// ---- credentials per environment -----------------------------------------
+
+console.log('\nEnvironment-split credentials:');
+
+const SPLIT = {
+  ZAINCASH_CLIENT_ID_UAT: 'sandbox-id',
+  ZAINCASH_CLIENT_SECRET_UAT: 'sandbox-secret',
+  ZAINCASH_CLIENT_ID_PRODUCTION: 'live-id',
+  ZAINCASH_CLIENT_SECRET_PRODUCTION: 'live-secret',
+};
+
+withEnv({ ...BASE_ENV, ...SPLIT, ZAINCASH_ENV: 'uat' }, () => {
+  const c = loadZainCashConfig();
+  check('uat picks the sandbox credentials', c.clientId === 'sandbox-id', c.clientId);
+  check('and the matching sandbox secret', c.clientSecret === 'sandbox-secret');
+});
+
+// The sandbox pair is published in ZainCash's own docs, so it must never be
+// reachable from a production deploy.
+withEnv({ ...BASE_ENV, ...SPLIT, ZAINCASH_ENV: 'production' }, () => {
+  const c = loadZainCashConfig();
+  check('production takes the live credentials', c.clientId === 'live-id', c.clientId);
+  check('and never falls back to the sandbox pair', c.clientSecret === 'live-secret');
+});
+
+withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat' }, () => {
+  check('an unsuffixed name is still honoured when no split value is set',
+    loadZainCashConfig().clientId === 'cid');
+});
+
+withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_JWT_SECRET_UAT: 'sandbox-jwt' }, () => {
+  check('the JWT secret splits by environment too',
+    loadZainCashConfig().apiKey === 'sandbox-jwt');
+});
 
 // ---- app origin ----------------------------------------------------------
 
@@ -359,6 +399,38 @@ console.log('\nOAuth2 token:');
   let noneRejected = false;
   try { verifyGatewayToken(cfg, unsigned); } catch { noneRejected = true; }
   check('an alg:none token is rejected (HS256 is pinned)', noneRejected);
+
+  // ---- dual-key verification -------------------------------------------
+
+  console.log('\nDual-key verification:');
+
+  // Which secret ZainCash signs with is unresolved: the docs say the API key,
+  // their business team says the issued credentials are all there is, and the
+  // Varmacy code this was ported alongside used the client secret. Both are
+  // accepted until a real callback settles it.
+  const dual: ZainCashConfig = { ...cfg, apiKey: 'the-api-key', clientSecret: 'the-client-secret' };
+
+  const byApiKey = jwt.sign(payload, 'the-api-key', { algorithm: 'HS256' });
+  check('the API key verifies', verifyGatewayToken(dual, byApiKey).data.orderId === 'sub-1');
+
+  const byClientSecret = jwt.sign(payload, 'the-client-secret', { algorithm: 'HS256' });
+  check('the client secret verifies through the fallback',
+    verifyGatewayToken(dual, byClientSecret).data.orderId === 'sub-1');
+
+  // The fallback widens acceptance to exactly two of our own secrets, no more.
+  const byNeither = jwt.sign(payload, 'a-third-value', { algorithm: 'HS256' });
+  let neitherRejected = false;
+  try { verifyGatewayToken(dual, byNeither); } catch { neitherRejected = true; }
+  check('a third value is still rejected', neitherRejected);
+
+  // The case that matters while the API key has not arrived.
+  const keyless: ZainCashConfig = { ...dual, apiKey: '' };
+  check('callbacks still verify with no apiKey configured at all',
+    verifyGatewayToken(keyless, byClientSecret).data.orderId === 'sub-1');
+
+  let noneRejectedDual = false;
+  try { verifyGatewayToken(dual, unsigned); } catch { noneRejectedDual = true; }
+  check('alg:none is rejected on every attempt, not just the first', noneRejectedDual);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);

@@ -31,3 +31,8 @@ build-output/
 
 .vercel
 .env*
+
+# Personal Claude Code settings: .claude/settings.json here pins an absolute
+# path to graphify.EXE on one machine, so committing it fires a broken hook for
+# everyone else. Shared config belongs in .claude/settings.local.json.
+.claude/settings.json

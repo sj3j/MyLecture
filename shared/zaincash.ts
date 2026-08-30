@@ -100,10 +100,15 @@ export class ZainCashError extends Error {
 }
 
 /**
- * Written into ZAINCASH_JWT_SECRET while we wait for ZainCash support to issue
- * the real API Secret Key. Treated as *absent*, not as a value: a present-but-
- * wrong secret would let /init create real payments whose callbacks can never
- * verify, so the customer pays and nothing activates.
+ * Written into ZAINCASH_JWT_SECRET while we wait on ZainCash for the API Secret
+ * Key. Collapsed to "" so it can never be handed to jwt.verify as a literal
+ * key — a token would then have to be signed with the string
+ * "PENDING_FROM_SUPPORT" to pass.
+ *
+ * It no longer blocks /init: verifyGatewayToken falls back to the client
+ * secret, so callbacks are verifiable either way. The go-live gate is
+ * ZAINCASH_ENV, which stays "uat" until a sandbox payment proves which secret
+ * actually signs.
  */
 export const JWT_SECRET_PLACEHOLDER = "PENDING_FROM_SUPPORT";
 
@@ -127,28 +132,34 @@ export function loadZainCashConfig(): ZainCashConfig {
       : process.env.ZAINCASH_BASE_URL_UAT
   )?.replace(/\/+$/, "");
 
-  const apiKey = process.env.ZAINCASH_JWT_SECRET || process.env.ZAINCASH_API_KEY || "";
+  // Credentials are per environment. The docs say so explicitly, and the
+  // published UAT sandbox pair must never be reachable from a production
+  // deploy. The unsuffixed name stays honoured as a fallback.
+  const pick = (name: string): string =>
+    process.env[name + "_" + env.toUpperCase()] || process.env[name] || "";
+
+  // The HS256 callback secret, under any of the names it goes by.
+  const rawApiKey = pick("ZAINCASH_JWT_SECRET") || pick("ZAINCASH_API_KEY");
 
   const cfg: ZainCashConfig = {
     baseUrl: baseUrl || "",
-    clientId: process.env.ZAINCASH_CLIENT_ID || "",
-    clientSecret: process.env.ZAINCASH_CLIENT_SECRET || "",
+    clientId: pick("ZAINCASH_CLIENT_ID"),
+    clientSecret: pick("ZAINCASH_CLIENT_SECRET"),
     scopes: process.env.ZAINCASH_SCOPES || "payment:read payment:write",
-    // The placeholder is deliberately collapsed to "" so it fails the same
-    // check as a missing value.
-    apiKey: apiKey === JWT_SECRET_PLACEHOLDER ? "" : apiKey,
+    // The placeholder is never handed out as a literal key.
+    apiKey: rawApiKey === JWT_SECRET_PLACEHOLDER ? "" : rawApiKey,
     serviceType: process.env.ZAINCASH_SERVICE_TYPE || "",
   };
 
-  const missing = (["baseUrl", "clientId", "clientSecret", "apiKey", "serviceType"] as const)
+  // apiKey is deliberately NOT required. verifyGatewayToken falls back to the
+  // client secret, which is always present, so "nothing to verify with" is not
+  // a reachable state. Which secret ZainCash actually signs with is still
+  // unconfirmed — see verifyGatewayToken.
+  const missing = (["baseUrl", "clientId", "clientSecret", "serviceType"] as const)
     .filter((k) => !cfg[k]);
   if (missing.length) {
-    const why =
-      apiKey === JWT_SECRET_PLACEHOLDER
-        ? " (apiKey is still the placeholder — awaiting the JWT secret from ZainCash support)"
-        : "";
     throw new Error(
-      `ZainCash not configured (env=${env}); missing: ${missing.join(", ")}${why}`,
+      `ZainCash not configured (env=${env}); missing: ${missing.join(", ")}`,
     );
   }
   return cfg;
@@ -438,11 +449,45 @@ export async function reverseTransaction(
 // ─── Callback verification ──────────────────────────────────────────────────
 
 /**
- * Verify a redirect or webhook JWT with the API key.
+ * Verify a redirect or webhook JWT.
  *
- * The algorithm is pinned to HS256 as the spec requires: leaving it open would
- * let a forged token select "none" and bypass verification entirely.
+ * The algorithm is pinned to HS256 on every attempt, as the spec requires:
+ * leaving it open would let a forged token select "none" and bypass
+ * verification entirely.
+ *
+ * WHICH secret ZainCash signs with is not settled. The integration guide and
+ * the FAQ both say the API Secret Key; their business team says the issued
+ * credentials are "standard for all our merchants"; and the code this was
+ * ported from verified with the OAuth2 client secret. So both are tried and
+ * the winner is logged — the first real callback answers the question, after
+ * which the loser should be deleted and the winner pinned.
+ *
+ * Accepting either is not a weakening. Both are our own secrets, neither is
+ * derivable by an attacker, and a token signed with anything else still fails.
  */
 export function verifyGatewayToken(cfg: ZainCashConfig, token: string): ZainCashEvent {
-  return jwt.verify(token, cfg.apiKey, { algorithms: ["HS256"] }) as unknown as ZainCashEvent;
+  const candidates = [
+    { label: "apiKey", secret: cfg.apiKey },
+    { label: "clientSecret", secret: cfg.clientSecret },
+  ].filter((c) => !!c.secret);
+
+  let lastError: unknown;
+  for (const { label, secret } of candidates) {
+    try {
+      const event = jwt.verify(token, secret, {
+        algorithms: ["HS256"],
+      }) as unknown as ZainCashEvent;
+      if (label !== "apiKey") {
+        console.warn(
+          `[ZainCash] callback verified with the ${label}, not the API key. ` +
+            "Pin that secret and drop the fallback.",
+        );
+      }
+      return event;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError ?? new Error("ZainCash callback token could not be verified");
 }
