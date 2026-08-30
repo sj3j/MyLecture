@@ -65,3 +65,44 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## In-app PDF reader
+
+`src/components/pdf/` renders lecture PDFs inside the app with highlighting and
+notes. Two decisions there are expensive to reverse, so they are recorded here.
+
+**Anchoring** (`src/lib/pdfAnchor.ts` — pure, unit-tested via `npm run test:anchor`).
+A highlight stores three redundant locators: canonical character offsets, a W3C
+TextQuoteSelector (`exact`/`prefix`/`suffix`), and quads in **PDF user space**.
+Resolution tries them in that order. Never store pixel coordinates — quads are
+projected through the current viewport, which is what makes highlights survive
+zoom and rotation. `canonicalizePage()` normalizes per item, never across items,
+so an item's length cannot depend on its neighbours; changing it means bumping
+`ANCHOR_ALGO`, which demotes existing anchors to the quote-repair path rather
+than silently misplacing them. An annotation that cannot be located is marked
+orphaned **in memory only** and surfaced in the notes drawer — never deleted.
+
+**Storage is IndexedDB** (`src/lib/localDb.ts`, db `mylecture-local`), not
+localStorage, and device-only — annotations never reach Firestore. localStorage
+is one ~5MB origin-wide quota that `mcq_cache_${lectureId}` already fills
+unboundedly, and `setItem` throws synchronously, so overflow would break MCQ
+caching app-wide rather than merely failing to save a note.
+
+**Downloaded PDF bytes moved into that same IndexedDB.** They cannot live in
+CacheStorage: `vite.config.ts` sets `selfDestroying: mode === 'native'`, and that
+worker's activate handler deletes *every* cache with no allowlist while
+`registerSW.js` re-registers it on every page load — so offline downloads were
+being wiped on each launch. IndexedDB is untouched by it.
+
+The page wrapper, canvas and text layer are pinned `dir="ltr"`. The app shell is
+RTL, and an inherited RTL direction changes bidi run splitting inside pdf.js's
+absolutely-positioned spans, shifting `getClientRects()` and putting every
+highlight in the wrong place.
+
+## Known gap: React has no types here
+
+`@types/react` and `@types/react-dom` are **not installed**, and React 19 ships
+none of its own. `npm run lint` (`tsc --noEmit`) therefore checks the component
+tree with no JSX types at all — props resolve to `any` and prop-type mistakes go
+unreported. Adding the types would be correct but will surface a backlog of
+pre-existing errors, so treat a green `lint` as weak evidence for `.tsx` changes.

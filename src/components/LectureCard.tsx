@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle, Youtube, ClipboardList } from 'lucide-react';
+import { FileText, Download, ExternalLink, Clock, Tag, X, Maximize2, Trash2, Loader2, Edit2, CloudDownload, CheckCircle2, CloudOff, Heart, CheckCircle, Youtube, ClipboardList, BookOpen, Highlighter } from 'lucide-react';
 import { Lecture, CATEGORIES, Language, TRANSLATIONS, UserProfile } from '../types';
 import { canManage } from '../lib/permissions';
 import { motion, AnimatePresence } from 'motion/react';
@@ -19,10 +19,11 @@ interface LectureCardProps {
   onRemoveDownload?: (lecture: Lecture) => void;
   onNavigateToChat?: () => void;
   onOpenMCQ?: (lecture: Lecture) => void;
+  onOpenReader?: (lecture: Lecture) => void;
   key?: string;
 }
 
-export default React.memo(function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat, onOpenMCQ }: LectureCardProps) {
+export default React.memo(function LectureCard({ lecture, lang, user, onEdit, onRemoveDownload, onNavigateToChat, onOpenMCQ, onOpenReader }: LectureCardProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [showPreview, setShowPreview] = useState(false);
@@ -191,7 +192,12 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
             <button
                onClick={(e) => {
                  e.preventDefault();
-                 window.open(offlineUrl, '_blank');
+                 // The reader already prefers the downloaded bytes, so it IS the
+                 // offline view - and it keeps highlights and notes available
+                 // without a connection. window.open stays as the fallback for
+                 // any surface that has not been given a reader handler.
+                 if (onOpenReader) onOpenReader(lecture);
+                 else window.open(offlineUrl, '_blank');
                }}
                className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-4 sm:py-2.5 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-zinc-900 rounded-lg sm:rounded-xl hover:bg-emerald-700 dark:hover:bg-emerald-600 transition-colors text-[11px] sm:text-sm font-semibold min-w-0 sm:min-w-[100px]"
             >
@@ -417,16 +423,27 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
                        <FileText className="w-16 h-16 text-sky-500 mb-4 opacity-80" />
                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">{lecture.title}</h3>
                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-sm">
-                         {isRtl ? 'بسبب قيود متصفحات الهواتف المحمولة، يرجى فتح ملف الـ PDF مباشرة للقراءة او التحميل' : 'Mobile browsers limit inline PDF viewing. Please open the file directly.'}
+                         {isRtl ? 'اقرأ المحاضرة داخل التطبيق مع إمكانية التظليل وإضافة الملاحظات' : 'Read this lecture in the app, with highlighting and notes.'}
                        </p>
-                       <a 
-                         href={lecture.pdfUrl} 
-                         target="_blank" 
-                         rel="noopener noreferrer" 
-                         className="px-6 py-3 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"
+                       {onOpenReader && (
+                         <button
+                           onClick={(e) => { e.preventDefault(); setShowPreview(false); onOpenReader(lecture); }}
+                           className="px-6 py-3 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"
+                         >
+                           <BookOpen className="w-5 h-5" />
+                           {isRtl ? 'اقرأ داخل التطبيق' : 'Read in app'}
+                         </button>
+                       )}
+                       {/* Escape hatch while the reader is new: if a file will not
+                           open in it, the student is not stranded. */}
+                       <a
+                         href={lecture.pdfUrl}
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         className="mt-4 text-xs font-bold text-slate-400 hover:text-sky-500 underline flex items-center gap-1.5 transition-colors"
                        >
-                         <ExternalLink className="w-5 h-5" />
-                         {isRtl ? 'فتح المحاضرة' : 'Open PDF'}
+                         <ExternalLink className="w-3.5 h-3.5" />
+                         {isRtl ? 'فتح في المتصفح بدلاً من ذلك' : 'Open in browser instead'}
                        </a>
                     </div>
                   ) : (
@@ -517,6 +534,15 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
                          <Maximize2 className="w-4 h-4" />
                          <span className="hidden sm:inline">{isRtl ? 'ملء وتدوير' : 'Fullscreen / Rotate'}</span>
                        </button>
+                      {onOpenReader && (
+                        <button
+                          onClick={(e) => { e.preventDefault(); setShowPreview(false); onOpenReader(lecture); }}
+                          className="border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/50 px-4 py-2 rounded-full font-bold flex items-center gap-2 transition-colors"
+                        >
+                          <Highlighter className="w-4 h-4" />
+                          <span className="hidden sm:inline">{isRtl ? 'تظليل وملاحظات' : 'Highlight & notes'}</span>
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.preventDefault();

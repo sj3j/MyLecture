@@ -37,9 +37,10 @@ interface AnnouncementsScreenProps {
   lectures: Lecture[];
   onNavigateToChat?: () => void;
   onOpenMCQ?: (lecture: Lecture) => void;
+  onOpenReader?: (lecture: Lecture) => void;
 }
 
-export default function AnnouncementsScreen({ user, lang, lectures, onNavigateToChat, onOpenMCQ }: AnnouncementsScreenProps) {
+export default function AnnouncementsScreen({ user, lang, lectures, onNavigateToChat, onOpenMCQ, onOpenReader }: AnnouncementsScreenProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
@@ -579,7 +580,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                                     lang={lang} 
                                     user={user} 
                                     onNavigateToChat={onNavigateToChat}
-                                    onOpenMCQ={onOpenMCQ}
+                                    onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader}
                                   />
                                 );
                               })}

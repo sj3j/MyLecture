@@ -17,13 +17,14 @@ interface SubjectBrowserProps {
   user: UserProfile | null;
   onEdit?: (lecture: Lecture) => void;
   onOpenMCQ?: (lecture: Lecture) => void;
+  onOpenReader?: (lecture: Lecture) => void;
   searchQuery?: string;
   isLoading?: boolean;
   onRemoveDownload?: (lecture: Lecture) => void;
   onNavigateToChat?: () => void;
 }
 
-export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ, searchQuery = '', isLoading = false, onRemoveDownload, onNavigateToChat }: SubjectBrowserProps) {
+export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ, onOpenReader, searchQuery = '', isLoading = false, onRemoveDownload, onNavigateToChat }: SubjectBrowserProps) {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   
@@ -149,7 +150,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
           'grid-cols-3'
         }`}>
           {lectures.map(lecture => (
-            <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
+            <LectureCard key={lecture.id} lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
           ))}
         </div>
       </div>
@@ -450,7 +451,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15 }} 
                 >
-                  <LectureCard lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
+                  <LectureCard lecture={lecture} lang={lang} user={user} onEdit={onEdit} onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader} onRemoveDownload={onRemoveDownload} onNavigateToChat={onNavigateToChat} />
                 </motion.div>
               ))}
             </AnimatePresence>

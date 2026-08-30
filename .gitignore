@@ -36,3 +36,6 @@ build-output/
 # path to graphify.EXE on one machine, so committing it fires a broken hook for
 # everyone else. Shared config belongs in .claude/settings.local.json.
 .claude/settings.json
+
+# Generated at build time by scripts/copyPdfjsAssets.mjs (regenerable)
+public/pdfjs/

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit, updateDoc } from 'firebase/firestore';
@@ -35,6 +35,8 @@ import OnboardingScreen from './components/OnboardingScreen';
 import OnboardingSlides from './components/OnboardingSlides';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import MCQOverlay from './components/MCQOverlay';
+// Lazy: pdf.js and its worker are ~1MB and must not land in the main chunk.
+const PdfReaderOverlay = lazy(() => import('./components/pdf/PdfReaderOverlay'));
 import NotificationsModal from './components/NotificationsModal';
 import SubscriptionScreen from './components/SubscriptionScreen';
 import SubscriptionManagement from './components/SubscriptionManagement';
@@ -152,6 +154,7 @@ export default function App() {
   const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [mcqLecture, setMcqLecture] = useState<Lecture | null>(null);
+  const [readerLecture, setReaderLecture] = useState<Lecture | null>(null);
   const [isMobileChatOpenApp, setIsMobileChatOpenApp] = useState(false);
   const { theme, setTheme, cycleTheme } = useTheme();
 
@@ -611,6 +614,8 @@ export default function App() {
     return false;
   };
 
+  const handleOpenReader = useCallback((l: Lecture) => setReaderLecture(l), []);
+
   const handleOpenMCQ = useCallback((l: Lecture) => {
     if (hasMCQAccess(user)) {
       setMcqLecture(l);
@@ -666,7 +671,7 @@ export default function App() {
 
 
 
-  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || showSubManage || showPaywall || (mcqLecture !== null);
+  const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || showSubManage || showPaywall || (mcqLecture !== null) || (readerLecture !== null);
 
   return (
     <div className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-20'} font-sans transition-colors duration-300`} dir={isRtl ? 'rtl' : 'ltr'}>
@@ -726,6 +731,7 @@ export default function App() {
           onNavigateToChat={handleNavigateToChat} 
           onEdit={handleEditLecture} 
           onOpenMCQ={handleOpenMCQ}
+          onOpenReader={handleOpenReader}
           setShowStudentManage={setShowStudentManage}
           setShowStreakManage={setShowStreakManage} 
           setShowAdminManage={setShowAdminManage} 
@@ -733,7 +739,7 @@ export default function App() {
         />
       )}
       {currentTab === 'announcements' && (
-        <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={handleNavigateToChat} onOpenMCQ={handleOpenMCQ} />
+        <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={handleNavigateToChat} onOpenMCQ={handleOpenMCQ} onOpenReader={handleOpenReader} />
       )}
       {currentTab === 'chat' && (
         <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} onMobileChatOpenChange={setIsMobileChatOpenApp} />
@@ -827,6 +833,18 @@ export default function App() {
           lang={lang} 
           onClose={() => setMcqLecture(null)} 
         />
+      )}
+
+      {readerLecture?.pdfUrl && (
+        <Suspense fallback={null}>
+          <PdfReaderOverlay
+            lectureId={readerLecture.id}
+            lectureTitle={readerLecture.title}
+            pdfUrl={readerLecture.pdfUrl}
+            lang={lang}
+            onClose={() => setReaderLecture(null)}
+          />
+        </Suspense>
       )}
 
       <GlobalAudioPlayer isRtl={isRtl} />

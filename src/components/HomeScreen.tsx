@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-function DownloadsTab({ lectures, lang, user, onNavigateToChat, onEdit, onOpenMCQ }: any) {
+function DownloadsTab({ lectures, lang, user, onNavigateToChat, onEdit, onOpenMCQ, onOpenReader }: any) {
   const [trigger, setTrigger] = useState(0);
   const isRtl = lang === 'ar';
 
@@ -42,7 +42,7 @@ function DownloadsTab({ lectures, lang, user, onNavigateToChat, onEdit, onOpenMC
           user={user}
           onNavigateToChat={onNavigateToChat}
           onEdit={onEdit}
-          onOpenMCQ={onOpenMCQ}
+          onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader}
           onRemoveDownload={() => setTrigger(t => t + 1)}
         />
       ))}
@@ -61,6 +61,7 @@ interface HomeScreenProps {
   onNavigateToChat: () => void;
   onEdit: (l: Lecture) => void;
   onOpenMCQ?: (l: Lecture) => void;
+  onOpenReader?: (l: Lecture) => void;
   setShowStudentManage: (val: boolean) => void;
   setShowStreakManage: (val: boolean) => void;
   setShowAdminManage: (val: boolean) => void;
@@ -76,6 +77,7 @@ export default function HomeScreen({
   onNavigateToChat,
   onEdit,
   onOpenMCQ,
+  onOpenReader,
   setShowStudentManage,
   setShowStreakManage,
   setShowAdminManage,
@@ -206,7 +208,7 @@ export default function HomeScreen({
                 isLoading={isLoading}
                 onNavigateToChat={onNavigateToChat}
                 onEdit={onEdit}
-                onOpenMCQ={onOpenMCQ}
+                onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader}
               />
               
               {tahmeelLectures.length > 0 && (
@@ -227,7 +229,7 @@ export default function HomeScreen({
                     isLoading={isLoading}
                     onNavigateToChat={onNavigateToChat}
                     onEdit={onEdit}
-                    onOpenMCQ={onOpenMCQ}
+                    onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader}
                   />
                 </div>
               )}
@@ -241,7 +243,7 @@ export default function HomeScreen({
              user={user}
              onNavigateToChat={onNavigateToChat}
              onEdit={onEdit}
-             onOpenMCQ={onOpenMCQ}
+             onOpenMCQ={onOpenMCQ} onOpenReader={onOpenReader}
           />
         )}
         {activeTab === 'weekly' && (

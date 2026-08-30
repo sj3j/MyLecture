@@ -1,6 +1,59 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { STORE_BLOBS, dbGet, dbPut, dbDelete, isLocalDbAvailable } from '../lib/localDb';
 
-const CACHE_NAME = 'offline-pdfs-v1';
+/**
+ * Downloaded lecture PDFs, kept on the device.
+ *
+ * These used to live in CacheStorage under 'offline-pdfs-v1'. They cannot any
+ * more: the native build registers a self-destroying service worker (see
+ * vite.config.ts `selfDestroying`) whose activate handler calls caches.keys()
+ * and deletes EVERY cache, with no allowlist - and registerSW re-registers it on
+ * every page load. Downloads were therefore wiped on each launch, and because
+ * checkIsDownloaded() removes the `pdf_${id}` marker when the bytes are missing,
+ * the Downloads tab emptied itself too.
+ *
+ * IndexedDB is untouched by that worker, so the bytes now live there. The
+ * localStorage marker stays exactly as it was - HomeScreen's DownloadsTab scans
+ * it synchronously to build the list.
+ */
+
+const LEGACY_CACHE = 'offline-pdfs-v1';
+
+interface StoredPdf {
+  url: string;
+  blob: Blob;
+  savedAt: number;
+}
+
+/** One-time rescue of anything the old cache still happens to hold. */
+async function migrateFromCacheStorage(url: string): Promise<Blob | null> {
+  if (!('caches' in window)) return null;
+  try {
+    const cache = await caches.open(LEGACY_CACHE);
+    const hit = await cache.match(url);
+    if (!hit) return null;
+    const blob = await hit.blob();
+    await dbPut<StoredPdf>(STORE_BLOBS, { url, blob, savedAt: Date.now() });
+    await cache.delete(url);
+    return blob;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stored bytes for a URL, or null. Standalone so the reader can prefer the
+ * downloaded copy without needing the hook's React lifecycle.
+ */
+export async function readStoredPdf(url: string): Promise<ArrayBuffer | null> {
+  if (!isLocalDbAvailable()) return null;
+  try {
+    const rec = await dbGet<StoredPdf>(STORE_BLOBS, url);
+    return rec?.blob ? await rec.blob.arrayBuffer() : null;
+  } catch {
+    return null;
+  }
+}
 
 export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
   const [isDownloaded, setIsDownloaded] = useState(false);
@@ -8,95 +61,104 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [offlineUrl, setOfflineUrl] = useState<string | null>(null);
 
+  // Revoking on unmount alone leaks whenever the URL is replaced mid-life.
+  const objectUrlRef = useRef<string | null>(null);
+
+  const setObjectUrl = useCallback((blob: Blob | null) => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = blob ? URL.createObjectURL(blob) : null;
+    setOfflineUrl(objectUrlRef.current);
+  }, []);
+
   const checkIsDownloaded = useCallback(async () => {
-    if (!pdfUrl || !('caches' in window)) return;
+    if (!pdfUrl || !isLocalDbAvailable()) return;
     try {
-      const cache = await caches.open(CACHE_NAME);
-      const response = await cache.match(pdfUrl);
-      if (response) {
+      let rec = await dbGet<StoredPdf>(STORE_BLOBS, pdfUrl);
+      let blob = rec?.blob ?? null;
+
+      if (!blob) blob = await migrateFromCacheStorage(pdfUrl);
+
+      if (blob) {
         setIsDownloaded(true);
-        if (lectureId) {
-          if (localStorage.getItem(`pdf_${lectureId}`) === 'true' || !localStorage.getItem(`pdf_${lectureId}`)) {
-            localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
-          }
+        setObjectUrl(blob);
+        if (lectureId && !localStorage.getItem(`pdf_${lectureId}`)) {
+          localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
         }
-        // Create a blob URL for offline viewing
-        const blob = await response.blob();
-        setOfflineUrl(URL.createObjectURL(blob));
       } else {
         setIsDownloaded(false);
-        setOfflineUrl(null);
+        setObjectUrl(null);
         if (lectureId) localStorage.removeItem(`pdf_${lectureId}`);
       }
     } catch (error) {
-      console.error('Error checking cache:', error);
+      console.error('Error checking offline store:', error);
     }
-  }, [pdfUrl, lectureId]);
+  }, [pdfUrl, lectureId, setObjectUrl]);
 
   useEffect(() => {
     checkIsDownloaded();
-    
-    // Cleanup blob URL on unmount
-    return () => {
-      if (offlineUrl) {
-        URL.revokeObjectURL(offlineUrl);
-      }
-    };
   }, [checkIsDownloaded]);
 
+  // Release the blob URL only when the hook itself goes away.
+  useEffect(() => () => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+  }, []);
+
+  /** Raw bytes for the in-app reader, skipping the blob-URL round trip. */
+  const getBytes = useCallback(async (): Promise<ArrayBuffer | null> => {
+    if (!pdfUrl || !isLocalDbAvailable()) return null;
+    try {
+      const rec = await dbGet<StoredPdf>(STORE_BLOBS, pdfUrl);
+      return rec?.blob ? await rec.blob.arrayBuffer() : null;
+    } catch {
+      return null;
+    }
+  }, [pdfUrl]);
+
   const downloadPDF = async () => {
-    if (!pdfUrl || !('caches' in window)) return;
-    
+    if (!pdfUrl) return;
+    if (!isLocalDbAvailable()) {
+      alert('التخزين على الجهاز غير متاح في هذا المتصفح.');
+      return;
+    }
+
     setIsDownloading(true);
     setDownloadProgress(0);
-    
+
     try {
-      // Fetch the PDF
       const response = await fetch(pdfUrl);
       if (!response.ok) throw new Error('Network response was not ok');
-      
+
       const contentLength = response.headers.get('content-length');
       const total = contentLength ? parseInt(contentLength, 10) : 0;
-      let loaded = 0;
-      
-      // If we can't track progress, just cache it directly
+
+      let blob: Blob;
       if (total === 0 || !response.body) {
-        const cache = await caches.open(CACHE_NAME);
-        await cache.put(pdfUrl, response);
-        if (lectureId) localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
-        await checkIsDownloaded();
-        setIsDownloading(false);
-        return;
+        // No length header - no progress to report, just take the bytes.
+        blob = await response.blob();
+      } else {
+        const reader = response.body.getReader();
+        const chunks: BlobPart[] = [];
+        let loaded = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value as unknown as BlobPart);
+          loaded += value.length;
+          setDownloadProgress(Math.round((loaded / total) * 100));
+        }
+        blob = new Blob(chunks, { type: 'application/pdf' });
       }
 
-      // Track progress
-      const reader = response.body.getReader();
-      const chunks = [];
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        chunks.push(value);
-        loaded += value.length;
-        setDownloadProgress(Math.round((loaded / total) * 100));
-      }
-      
-      const blob = new Blob(chunks, { type: 'application/pdf' });
-      const cacheResponse = new Response(blob, {
-        headers: { 'Content-Type': 'application/pdf' }
-      });
-      
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(pdfUrl, cacheResponse);
-      
+      await dbPut<StoredPdf>(STORE_BLOBS, { url: pdfUrl, blob, savedAt: Date.now() });
       if (lectureId) localStorage.setItem(`pdf_${lectureId}`, Date.now().toString());
-      
+
       await checkIsDownloaded();
     } catch (error) {
       console.error('Error downloading PDF:', error);
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        alert('Failed to download PDF. This is usually caused by missing CORS configuration on your Firebase Storage bucket. Please see the console for instructions on how to fix this.');
+        // Lectures are served from Firebase Storage; a cross-origin GET needs
+        // that bucket's CORS policy to allow this origin.
+        alert('تعذّر تنزيل الملف. تحقق من إعدادات CORS في Firebase Storage.');
         console.info(
           '%cHow to fix the CORS error:', 'font-size: 16px; font-weight: bold;',
           '\n\n1. Go to the Google Cloud Console: https://console.cloud.google.com/',
@@ -104,10 +166,10 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
           '\n3. Run this command to create a cors.json file:',
           '\n   echo \'[{"origin": ["*"],"method": ["GET"],"maxAgeSeconds": 3600}]\' > cors.json',
           '\n4. Run this command to apply it to your bucket:',
-          '\n   gsutil cors set cors.json gs://mylectures-app.firebasestorage.app'
+          '\n   gsutil cors set cors.json gs://mylectures-app.firebasestorage.app',
         );
       } else {
-        alert('Failed to download PDF for offline viewing.');
+        alert('تعذّر تنزيل الملف للقراءة بدون إنترنت.');
       }
     } finally {
       setIsDownloading(false);
@@ -115,19 +177,22 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
     }
   };
 
+  /**
+   * Removes the downloaded bytes.
+   *
+   * Deliberately leaves annotations alone: this is about reclaiming space, and
+   * a student's highlights are not the app's to discard alongside the file.
+   * Deleting notes is its own confirmed action in the reader's notes drawer.
+   */
   const removePDF = async () => {
-    if (!pdfUrl || !('caches' in window)) return;
+    if (!pdfUrl || !isLocalDbAvailable()) return;
     try {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.delete(pdfUrl);
-      if (offlineUrl) {
-        URL.revokeObjectURL(offlineUrl);
-      }
+      await dbDelete(STORE_BLOBS, pdfUrl);
       setIsDownloaded(false);
-      setOfflineUrl(null);
+      setObjectUrl(null);
       if (lectureId) localStorage.removeItem(`pdf_${lectureId}`);
     } catch (error) {
-      console.error('Error removing PDF from cache:', error);
+      console.error('Error removing offline PDF:', error);
     }
   };
 
@@ -136,7 +201,8 @@ export function useOfflinePDF(pdfUrl: string | undefined, lectureId?: string) {
     isDownloading,
     downloadProgress,
     offlineUrl,
+    getBytes,
     downloadPDF,
-    removePDF
+    removePDF,
   };
 }

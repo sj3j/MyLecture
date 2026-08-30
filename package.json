@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "build:native": "vite build --mode native && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "node scripts/copyPdfjsAssets.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:native": "node scripts/copyPdfjsAssets.mjs && vite build --mode native && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "check:payment-surface": "node scripts/assert-no-payment-surface.mjs android/app/src/main/assets/public",
     "check:indexes": "node scripts/checkIndexDrift.mjs --verbose",
     "android:sync": "npm run build:native && node scripts/pruneNativeWebDir.mjs dist && npx cap sync android",
@@ -24,13 +24,16 @@
     "test:promotion": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/promotion.test.ts\"",
     "test:progression": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/progression.test.ts\"",
     "test:google": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/googleLogin.test.ts\"",
-    "test:signup": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/signup.test.ts\""
+    "test:signup": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/signup.test.ts\"",
+    "test:anchor": "npx tsx scripts/pdfAnchor.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",
     "@aws-sdk/s3-request-presigner": "^3.1030.0",
     "@capacitor-firebase/authentication": "^7.5.0",
     "@capacitor/android": "^7.6.8",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/browser": "^7.0.5",
     "@capacitor/core": "^7.6.8",
     "@capacitor/push-notifications": "^7.0.7",
     "@google/genai": "^1.29.0",
@@ -49,6 +52,7 @@
     "jsonwebtoken": "^9.0.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdfjs-dist": "^5.7.284",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.14.0",

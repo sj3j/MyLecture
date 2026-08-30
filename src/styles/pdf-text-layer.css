@@ -1,0 +1,133 @@
+/**
+ * pdf.js text-layer contract.
+ *
+ * Copied from pdfjs-dist/web/pdf_viewer.css rather than importing that file,
+ * which also carries the entire default viewer chrome AND pdf.js's own
+ * `.textLayer .highlight` editor styles - those would fight the highlight layer
+ * this app paints itself.
+ *
+ * pdf.js 5.x sizes every span through custom properties, so `--total-scale-factor`
+ * MUST be set on the page wrapper (see PdfPage.tsx) or all text collapses to
+ * zero size and selection silently stops working.
+ *
+ * Keep in sync when bumping pdfjs-dist.
+ */
+
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 2;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span[role='img'] {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/*
+ * Selection must be visible against the page behind it. Tailwind cannot express
+ * ::selection, so it lives here.
+ */
+.textLayer ::selection {
+  background: rgb(56 132 255 / 0.35);
+}
+
+.textLayer br::selection {
+  color: transparent;
+}
+
+/*
+ * Text is the ONLY selectable thing in the reader. Selecting the chrome while
+ * dragging to highlight is the fastest way to make the gesture feel broken.
+ *
+ * Note what is deliberately absent: -webkit-touch-callout: none. Setting it
+ * would kill long-press selection outright on iOS, which is the only way to
+ * start a selection there.
+ */
+.pdfReaderSurface {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdfReaderSurface .textLayer,
+.pdfReaderSurface .textLayer * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/*
+ * Painted under the transparent text so glyphs stay crisp on top of colour.
+ *
+ * Deliberately NO z-index. Any z-index here would make this a stacking context,
+ * and mix-blend-mode on the rects would then blend against this layer's own
+ * transparent backdrop rather than the page canvas - rendering each highlight
+ * as an opaque block that hides the very word it is marking. DOM order already
+ * places this above the canvas and below the text layer.
+ */
+.pdfHighlightLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pdfHighlightRect {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+.pdfHighlightHit {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  background: transparent;
+}
+
+@keyframes pdfHighlightFlash {
+  0%, 100% { filter: none; }
+  50% { filter: brightness(0.78); }
+}
+
+.pdfHighlightFlash {
+  animation: pdfHighlightFlash 0.6s ease-in-out 2;
+}
