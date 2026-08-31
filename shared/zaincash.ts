@@ -195,17 +195,21 @@ export function loadZainCashConfig(): ZainCashConfig {
   // useful fact — "clientId came from the unsuffixed slot while the host is
   // UAT" is.
   const pickedFrom: Record<string, string> = {};
+  const trimmedNames: string[] = [];
   const pick = (name: string): string => {
     const suffixed = `${name}_${env.toUpperCase()}`;
-    if (process.env[suffixed]) {
-      pickedFrom[name] = suffixed;
-      return process.env[suffixed]!;
-    }
-    if (process.env[name]) {
-      pickedFrom[name] = `${name} (unsuffixed)`;
-      return process.env[name]!;
-    }
-    return "";
+    const from = process.env[suffixed] ? suffixed : process.env[name] ? name : null;
+    if (!from) return "";
+    pickedFrom[name] = from === name ? `${name} (unsuffixed)` : from;
+
+    // Surrounding whitespace is stripped rather than passed on. A tab or
+    // newline pasted into a dashboard field is invisible there, and the OAuth
+    // endpoint answers it with 400 invalid_request — which surfaces as a
+    // rejected *payment* several layers up and looks nothing like a typo.
+    const raw = process.env[from]!;
+    const value = raw.trim();
+    if (value !== raw) trimmedNames.push(from);
+    return value;
   };
 
   // The HS256 callback secret, under any of the names it goes by.
@@ -236,6 +240,33 @@ export function loadZainCashConfig(): ZainCashConfig {
   }
 
   assertHostMatchesEnv(env, cfg.baseUrl);
+
+  if (trimmedNames.length) {
+    console.warn(
+      `[ZainCash] stripped surrounding whitespace from ${trimmedNames.join(", ")}. ` +
+        "Worth removing at the source: it is invisible in a dashboard field.",
+    );
+  }
+
+  // Interior whitespace cannot be part of an OAuth credential, so it is always
+  // a paste accident — and one that only shows up as a gateway error.
+  const malformed = (["clientId", "clientSecret"] as const).filter((k) => /\s/.test(cfg[k]));
+  if (malformed.length) {
+    throw new Error(
+      `ZainCash credentials contain whitespace: ${malformed
+        .map((k) => pickedFrom[k === "clientId" ? "ZAINCASH_CLIENT_ID" : "ZAINCASH_CLIENT_SECRET"] ?? k)
+        .join(", ")}. The gateway answers these with 400 invalid_request.`,
+    );
+  }
+
+  // The id and the secret are different credentials; identical values mean one
+  // was pasted into both fields, which authenticates as nobody.
+  if (cfg.clientId === cfg.clientSecret) {
+    throw new Error(
+      "ZainCash client id and client secret are identical — the same value is in both fields.",
+    );
+  }
+
   return cfg;
 }
 

@@ -178,6 +178,33 @@ withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_JWT_SECRET_UAT: 'sandbox-jw
     loadZainCashConfig().apiKey === 'sandbox-jwt');
 });
 
+// ---- credential hygiene ---------------------------------------------------
+
+console.log('\nCredential hygiene:');
+
+// The bug this exists for: a tab had been pasted into ZAINCASH_CLIENT_ID in the
+// Vercel dashboard, where whitespace is invisible. The OAuth endpoint answers
+// that with 400 invalid_request, which surfaced as "ZainCash rejected the
+// transaction (HTTP 400)" — a payment error, nowhere near the actual typo.
+withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_CLIENT_ID: '\tcid\n' }, () => {
+  check('surrounding whitespace is stripped from a credential',
+    loadZainCashConfig().clientId === 'cid', JSON.stringify(loadZainCashConfig().clientId));
+});
+
+withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_CLIENT_ID: 'ci d' }, () => {
+  let threw = '';
+  try { loadZainCashConfig(); } catch (e: any) { threw = e.message; }
+  check('interior whitespace in a credential is rejected', threw.includes('whitespace'), threw);
+});
+
+// The other half of the same accident: the secret was pasted into the id field.
+withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_CLIENT_ID: 'csecret' }, () => {
+  let threw = '';
+  try { loadZainCashConfig(); } catch (e: any) { threw = e.message; }
+  check('the same value in both credential fields is rejected',
+    threw.includes('identical'), threw);
+});
+
 // ---- environment / host pairing ------------------------------------------
 
 console.log('\nEnvironment must be explicit and agree with the host:');
