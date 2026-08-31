@@ -124,8 +124,63 @@ export const JWT_SECRET_PLACEHOLDER = "PENDING_FROM_SUPPORT";
  * ZAINCASH_API_KEY stays honoured so a deploy that already has it set does not
  * break, and so pasting the secret under either name works.
  */
+export type ZainCashEnv = "uat" | "production";
+
+/**
+ * Resolve ZAINCASH_ENV. Deliberately has NO default.
+ *
+ * It used to fall back to "uat", and that is exactly how a production deploy
+ * ended up sending production credentials to the sandbox host: the variable was
+ * simply never set, and nothing said so. The mismatch then surfaces as a bare
+ * 401 from the gateway, three layers below anything that names a cause.
+ */
+function resolveEnv(): ZainCashEnv {
+  const raw = (process.env.ZAINCASH_ENV || "").trim().toLowerCase();
+  if (raw === "uat" || raw === "production") return raw;
+  throw new Error(
+    raw
+      ? `ZAINCASH_ENV is "${process.env.ZAINCASH_ENV}"; expected "uat" or "production"`
+      : 'ZAINCASH_ENV is not set; expected "uat" or "production"',
+  );
+}
+
+/**
+ * Reject a base URL that disagrees with the environment.
+ *
+ * ZainCash credentials are bound to their host — verified against the live
+ * gateway: our production pair answers 401 at the UAT host, and the published
+ * sandbox pair answers 401 at production. So a mismatched pair can never work,
+ * and saying so here costs far less than debugging an opaque gateway 401.
+ *
+ * Only the UAT hostname is checked, never production's. The docs say the
+ * production host is "provided during onboarding" and may differ per merchant,
+ * so hardcoding ours would reject a legitimate future one.
+ */
+function assertHostMatchesEnv(env: ZainCashEnv, baseUrl: string): void {
+  let hostname: string;
+  try {
+    hostname = new URL(baseUrl).hostname;
+  } catch {
+    throw new Error(`ZainCash base URL is not a valid URL: ${baseUrl}`);
+  }
+
+  const isUatHost = hostname.includes("-uat");
+  if (env === "uat" && !isUatHost) {
+    throw new Error(
+      `ZAINCASH_ENV=uat but the base URL is ${hostname}, which is not a UAT host. ` +
+        "Credentials are host-bound, so this pair can only ever return 401.",
+    );
+  }
+  if (env === "production" && isUatHost) {
+    throw new Error(
+      `ZAINCASH_ENV=production but the base URL is ${hostname}, a UAT host. ` +
+        "Credentials are host-bound, so this pair can only ever return 401.",
+    );
+  }
+}
+
 export function loadZainCashConfig(): ZainCashConfig {
-  const env = (process.env.ZAINCASH_ENV || "uat").toLowerCase();
+  const env = resolveEnv();
   const baseUrl = (
     env === "production"
       ? process.env.ZAINCASH_BASE_URL_PRODUCTION
@@ -135,8 +190,23 @@ export function loadZainCashConfig(): ZainCashConfig {
   // Credentials are per environment. The docs say so explicitly, and the
   // published UAT sandbox pair must never be reachable from a production
   // deploy. The unsuffixed name stays honoured as a fallback.
-  const pick = (name: string): string =>
-    process.env[name + "_" + env.toUpperCase()] || process.env[name] || "";
+  //
+  // Which name won is recorded, because "clientId is present" was never the
+  // useful fact — "clientId came from the unsuffixed slot while the host is
+  // UAT" is.
+  const pickedFrom: Record<string, string> = {};
+  const pick = (name: string): string => {
+    const suffixed = `${name}_${env.toUpperCase()}`;
+    if (process.env[suffixed]) {
+      pickedFrom[name] = suffixed;
+      return process.env[suffixed]!;
+    }
+    if (process.env[name]) {
+      pickedFrom[name] = `${name} (unsuffixed)`;
+      return process.env[name]!;
+    }
+    return "";
+  };
 
   // The HS256 callback secret, under any of the names it goes by.
   const rawApiKey = pick("ZAINCASH_JWT_SECRET") || pick("ZAINCASH_API_KEY");
@@ -159,9 +229,13 @@ export function loadZainCashConfig(): ZainCashConfig {
     .filter((k) => !cfg[k]);
   if (missing.length) {
     throw new Error(
-      `ZainCash not configured (env=${env}); missing: ${missing.join(", ")}`,
+      `ZainCash not configured (env=${env}, host=${cfg.baseUrl || "unset"}, ` +
+        `clientId from ${pickedFrom.ZAINCASH_CLIENT_ID || "nowhere"}); ` +
+        `missing: ${missing.join(", ")}`,
     );
   }
+
+  assertHostMatchesEnv(env, cfg.baseUrl);
   return cfg;
 }
 

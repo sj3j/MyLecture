@@ -178,6 +178,58 @@ withEnv({ ...BASE_ENV, ZAINCASH_ENV: 'uat', ZAINCASH_JWT_SECRET_UAT: 'sandbox-jw
     loadZainCashConfig().apiKey === 'sandbox-jwt');
 });
 
+// ---- environment / host pairing ------------------------------------------
+
+console.log('\nEnvironment must be explicit and agree with the host:');
+
+const configThrows = (vars: Record<string, string>): string => {
+  let threw = '';
+  withEnv({ ...BASE_ENV, ...vars }, () => {
+    try { loadZainCashConfig(); } catch (e: any) { threw = e.message; }
+  });
+  return threw;
+};
+
+// The regression this exists for: ZAINCASH_ENV was never set in Vercel, so it
+// silently defaulted to uat while the only credentials present were the
+// production pair. Credentials are host-bound, so that pair can only ever 401 -
+// which is what "Failed to initialize transaction" actually was.
+check('an unset ZAINCASH_ENV is a named error, not a silent uat default',
+  configThrows({ ZAINCASH_ENV: '' }).includes('ZAINCASH_ENV is not set'),
+  configThrows({ ZAINCASH_ENV: '' }));
+
+check('an unrecognised ZAINCASH_ENV is rejected',
+  configThrows({ ZAINCASH_ENV: 'staging' }).includes('expected "uat" or "production"'),
+  configThrows({ ZAINCASH_ENV: 'staging' }));
+
+check('surrounding whitespace and case are tolerated',
+  configThrows({ ZAINCASH_ENV: '  Production  ' }) === '',
+  configThrows({ ZAINCASH_ENV: '  Production  ' }));
+
+check('uat pointed at a production host is rejected',
+  configThrows({
+    ZAINCASH_ENV: 'uat',
+    ZAINCASH_BASE_URL_UAT: 'https://pg-api.zaincash.iq',
+  }).includes('not a UAT host'));
+
+check('production pointed at a uat host is rejected',
+  configThrows({
+    ZAINCASH_ENV: 'production',
+    ZAINCASH_BASE_URL_PRODUCTION: 'https://pg-api-uat.zaincash.iq',
+  }).includes('a UAT host'));
+
+// The error has to say WHY, or it is just another opaque failure.
+check('the mismatch error explains that credentials are host-bound',
+  configThrows({
+    ZAINCASH_ENV: 'uat',
+    ZAINCASH_BASE_URL_UAT: 'https://pg-api.zaincash.iq',
+  }).includes('host-bound'));
+
+check('a correctly paired uat config resolves',
+  configThrows({ ZAINCASH_ENV: 'uat' }) === '');
+check('a correctly paired production config resolves',
+  configThrows({ ZAINCASH_ENV: 'production' }) === '');
+
 // ---- app origin ----------------------------------------------------------
 
 console.log('\nAPP_URL:');
