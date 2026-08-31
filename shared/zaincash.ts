@@ -529,16 +529,24 @@ export async function reverseTransaction(
  * leaving it open would let a forged token select "none" and bypass
  * verification entirely.
  *
- * WHICH secret ZainCash signs with is not settled. The integration guide and
- * the FAQ both say the API Secret Key; their business team says the issued
- * credentials are "standard for all our merchants"; and the code this was
- * ported from verified with the OAuth2 client secret. So both are tried and
- * the winner is logged — the first real callback answers the question, after
- * which the loser should be deleted and the winner pinned.
+ * WHICH secret ZainCash signs with is only half settled. A completed UAT
+ * payment on 2026-08-31 verified with the **client secret** — but that is
+ * weaker evidence than it looks, because ZainCash issue no API key for the
+ * sandbox at all, so it was the only candidate. It tells us their scheme uses
+ * the client secret where no separate key exists; it does not tell us what a
+ * production merchant with an API key would do.
+ *
+ * So both stay. The order is what makes this self-resolving: an API key, if one
+ * is ever issued and set, wins automatically; absent one, the client secret
+ * carries it. Only a real production callback can narrow this further, and
+ * there is nothing to gain by guessing early.
  *
  * Accepting either is not a weakening. Both are our own secrets, neither is
  * derivable by an attacker, and a token signed with anything else still fails.
  */
+/** Reported once per cold start, not once per payment. */
+let fallbackReported = false;
+
 export function verifyGatewayToken(cfg: ZainCashConfig, token: string): ZainCashEvent {
   const candidates = [
     { label: "apiKey", secret: cfg.apiKey },
@@ -551,10 +559,10 @@ export function verifyGatewayToken(cfg: ZainCashConfig, token: string): ZainCash
       const event = jwt.verify(token, secret, {
         algorithms: ["HS256"],
       }) as unknown as ZainCashEvent;
-      if (label !== "apiKey") {
+      if (label !== "apiKey" && !fallbackReported) {
+        fallbackReported = true;
         console.warn(
-          `[ZainCash] callback verified with the ${label}, not the API key. ` +
-            "Pin that secret and drop the fallback.",
+          `[ZainCash] callbacks verify with the ${label}; no API key is in use.`,
         );
       }
       return event;
