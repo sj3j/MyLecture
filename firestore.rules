@@ -287,7 +287,12 @@ service cloud.firestore {
                         // and unlock every paid course, since App.tsx gates access on it.
                         && request.resource.data.get('isSubscribed', false) == resource.data.get('isSubscribed', false)
                         && request.resource.data.get('subscriptionEnd', null) == resource.data.get('subscriptionEnd', null)
-                        && request.resource.data.get('subscriptionPlan', null) == resource.data.get('subscriptionPlan', null));
+                        && request.resource.data.get('subscriptionPlan', null) == resource.data.get('subscriptionPlan', null)
+                        // Points at the ZainCash payment currently open at the
+                        // gateway. /api/zaincash/init refuses to start a second
+                        // one while it is set, so a client that could clear it
+                        // could mint duplicate transactions at will.
+                        && request.resource.data.get('pendingZainCashRef', '') == resource.data.get('pendingZainCashRef', ''));
                       // Progression is recorded by /api/progression/submit with the
                       // Admin SDK, which also has to write students/{email}.stageId -
                       // a student cannot, and syncUserStage would otherwise revert the

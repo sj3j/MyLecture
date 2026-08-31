@@ -28,6 +28,7 @@ import {
   PLAN_CONFIG,
   activateSubscription,
   settleZainCashPayment,
+  findLiveZainCashPayment,
   NotifyFn,
   SubscriptionCtx,
 } from "./shared/subscriptions.js";
@@ -1929,6 +1930,34 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
 
       const db = admin.firestore();
 
+      // Reuse a payment that is still live rather than opening a second one.
+      // ZainCash refuses to settle while another transaction is open on the
+      // same wallet, and a transaction lives about fifteen minutes — so a
+      // customer who backs out of the gateway page and retries would otherwise
+      // lock themselves out of both, with the refusal shown on ZainCash's page
+      // where we never see it.
+      const live = await findLiveZainCashPayment(subCtx(), cfg, user.uid);
+      if (live) {
+        if (live.plan === plan) {
+          // The ordinary retry. Same link, nothing created.
+          return res.json({
+            redirectUrl: live.redirectUrl,
+            subscriptionId: live.subscriptionId,
+            reused: true,
+          });
+        }
+        // A different plan. Reusing would charge the old plan's price, and a
+        // new transaction is exactly what the gateway rejects.
+        return res.status(409).json({
+          code: 'payment_in_progress',
+          error: 'A payment is already in progress',
+          pendingPlan: live.plan,
+          pendingAmount: live.amount,
+          minutesLeft: live.minutesLeft,
+          redirectUrl: live.redirectUrl,
+        });
+      }
+
       // Reuse the wallet number from this customer's last successful payment.
       // Absent on a first payment, in which case the gateway prompts for it.
       const userDoc = await db.collection('users').doc(user.uid).get();
@@ -1960,10 +1989,22 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
           customerPhone,
         });
 
+        // redirectUrl is kept so a retry can be handed this same live payment.
+        // The spec forbids reconstructing it, so storing it is the only way to
+        // resume one.
         await subRef.update({
           transactionId: result.transactionId,
           expiryTime: result.expiryTime || null,
+          redirectUrl: result.redirectUrl,
         });
+
+        // Points at the payment now in flight. Server-written only — a client
+        // that could clear it could mint duplicate transactions at will.
+        await db
+          .collection('users')
+          .doc(user.uid)
+          .update({ pendingZainCashRef: subRef.id })
+          .catch(() => undefined);
 
         // Always the gateway's own URL — the spec forbids constructing it.
         return res.json({ redirectUrl: result.redirectUrl, subscriptionId: subRef.id });

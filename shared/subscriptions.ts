@@ -16,6 +16,7 @@ import {
   ZainCashStatus,
   inquireTransaction,
   parseOrderId,
+  tagOrderId,
 } from './zaincash.js';
 
 /**
@@ -156,6 +157,111 @@ async function releaseClaim(ctx: SubscriptionCtx, subId: string): Promise<void> 
 }
 
 /**
+ * Forget the payment this user had in flight.
+ *
+ * The pointer only exists to stop a second payment opening while one is live,
+ * so the moment this one reaches a terminal state it has to go — otherwise the
+ * customer's next purchase is blocked by a record that can no longer be paid.
+ */
+async function clearPendingPointer(ctx: SubscriptionCtx, userId: string): Promise<void> {
+  await ctx.db
+    .collection('users')
+    .doc(userId)
+    .update({ pendingZainCashRef: ctx.FieldValue.delete() })
+    .catch(() => undefined);
+}
+
+/** A subscription payment of this user's that is still open at the gateway. */
+export interface LiveZainCashPayment {
+  subscriptionId: string;
+  plan: string;
+  amount: number;
+  redirectUrl: string;
+  minutesLeft: number;
+}
+
+/**
+ * Find this user's in-flight payment, or null.
+ *
+ * ZainCash refuses to settle while another transaction is open on the same
+ * wallet ("System - Duplicate Transaction Exist") and a transaction lives about
+ * fifteen minutes, so opening a second one locks the customer out of both. This
+ * is what lets /init hand back the first instead.
+ *
+ * Reached through a pointer on the user document rather than a query on
+ * subscriptions, which would need a composite index for two equality filters
+ * plus an ordering.
+ *
+ * Anything the gateway has already finished is settled on the way through —
+ * routed via settleZainCashPayment so there is exactly one settlement path,
+ * with its claim, its idempotency and its amount check.
+ */
+export async function findLiveZainCashPayment(
+  ctx: SubscriptionCtx,
+  cfg: ZainCashConfig,
+  userId: string,
+): Promise<LiveZainCashPayment | null> {
+  const { db } = ctx;
+
+  const ref = (await db.collection('users').doc(userId).get()).data()?.pendingZainCashRef;
+  if (!ref || typeof ref !== 'string') return null;
+
+  const snap = await db.collection('subscriptions').doc(ref).get();
+  const sub = snap.exists ? snap.data()! : null;
+
+  // Missing, already resolved, or written before the gateway answered.
+  if (!sub || sub.status !== 'pending' || !sub.redirectUrl || !sub.transactionId) {
+    await clearPendingPointer(ctx, userId);
+    return null;
+  }
+
+  const expiresAt = Date.parse(sub.expiryTime ?? '');
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    await clearPendingPointer(ctx, userId);
+    return null;
+  }
+
+  // settleZainCashPayment always inquires and ignores the status carried in the
+  // event, so this synthetic one is only a carrier for the identifiers. The
+  // eventId is deterministic, which makes a repeat a duplicate rather than a
+  // second settlement.
+  const probe: ZainCashEvent = {
+    eventType: 'STATUS_CHANGED',
+    eventId: `inquiry-${sub.transactionId}`,
+    timestamp: new Date().toISOString(),
+    data: {
+      transactionId: sub.transactionId,
+      merchantReferenceId: sub.externalReferenceId,
+      orderId: tagOrderId(ref),
+      currentStatus: 'PENDING',
+    },
+  };
+
+  let outcome: SettlementOutcome;
+  try {
+    outcome = (await settleZainCashPayment(ctx, cfg, probe, 'redirect')).outcome;
+  } catch (err) {
+    // Gateway unreachable. Treat the payment as live: opening a second one
+    // while the first may still be open is the failure being prevented here.
+    outcome = 'still_pending';
+  }
+
+  if (outcome !== 'still_pending') {
+    // Finished, and now delivered. Let a new payment through.
+    await clearPendingPointer(ctx, userId);
+    return null;
+  }
+
+  return {
+    subscriptionId: ref,
+    plan: sub.plan,
+    amount: Number(sub.amount) || 0,
+    redirectUrl: sub.redirectUrl,
+    minutesLeft: Math.max(1, Math.ceil((expiresAt - Date.now()) / 60000)),
+  };
+}
+
+/**
  * Settle a ZainCash payment from a verified redirect or webhook event.
  *
  * The event's JWT signature is verified by the caller, but the event itself is
@@ -212,6 +318,7 @@ export async function settleZainCashPayment(
           updatedAt: FieldValue.serverTimestamp(),
           notes: `Amount mismatch: paid ${paid}, expected ${expected} for plan ${sub.plan}`,
         });
+        await clearPendingPointer(ctx, sub.userId);
         return {
           outcome: 'amount_mismatch',
           subscriptionId: subId,
@@ -240,6 +347,7 @@ export async function settleZainCashPayment(
           .catch(() => undefined);
       }
 
+      await clearPendingPointer(ctx, sub.userId);
       return { outcome: 'activated', subscriptionId: subId, status };
     }
 
@@ -250,6 +358,7 @@ export async function settleZainCashPayment(
         updatedAt: FieldValue.serverTimestamp(),
         notes: `ZainCash ${status}${event.data.errorMessage ? `: ${event.data.errorMessage}` : ''}`,
       });
+      await clearPendingPointer(ctx, sub.userId);
       return { outcome: 'failed', subscriptionId: subId, status };
     }
 
@@ -265,6 +374,7 @@ export async function settleZainCashPayment(
         .doc(sub.userId)
         .update({ isSubscribed: false, subscriptionEnd: null, subscriptionPlan: null })
         .catch(() => undefined);
+      await clearPendingPointer(ctx, sub.userId);
       return { outcome: 'refunded', subscriptionId: subId, status };
     }
 

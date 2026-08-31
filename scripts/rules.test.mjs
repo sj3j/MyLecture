@@ -230,6 +230,10 @@ await check('student CANNOT extend their own subscription',
   assertFails(updateDoc(doc(student, 'users/stu_uid'), { subscriptionEnd: new Date('2099-01-01') })));
 await check('student CANNOT upgrade their own plan',
   assertFails(updateDoc(doc(student, 'users/stu_uid'), { subscriptionPlan: 'semi_annual' })));
+// Clearing this would let them open a second gateway transaction while one is
+// still live, which ZainCash then refuses to settle - locking them out of both.
+await check('student CANNOT clear the in-flight payment pointer',
+  assertFails(updateDoc(doc(student, 'users/stu_uid'), { pendingZainCashRef: null })));
 
 console.log('\nUGC moderation: reporting and blocking');
 // Apple 1.2 / Play UGC. A report names its reporter, so the reported party
