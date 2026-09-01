@@ -66,6 +66,12 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
   const [flashId, setFlashId] = useState<string | null>(null);
   const [orphanIds, setOrphanIds] = useState<Set<string>>(new Set());
 
+  /** Transient pinch factor applied as a CSS transform; 1 when not pinching. */
+  const [liveZoom, setLiveZoom] = useState(1);
+  // Pointer handlers need the current value without re-subscribing.
+  const liveZoomRef = useRef(1);
+  liveZoomRef.current = liveZoom;
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const pages = useRef(new Map<number, PageHandle>());
   const fingerprint = useRef('');
@@ -206,11 +212,109 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
     setCurrent(n);
   }, [layout]);
 
+  /**
+   * Two-finger pinch zoom.
+   *
+   * The live gesture only sets a CSS transform on the page column - re-rendering
+   * canvases on every pointermove would drop frames badly on a mid-range phone.
+   * The real `scale` is committed once on release, which is also when the pages
+   * re-rasterise crisply.
+   *
+   * The page viewport meta sets user-scalable=no, so the browser's own pinch is
+   * off and these gestures arrive as plain pointer events with nothing to fight.
+   */
+  const pinch = useRef<{ startDist: number; startScale: number; focalY: number } | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+
+  const dist = () => {
+    const [a, b] = [...pointers.current.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2) {
+      const el = scrollRef.current;
+      const box = el?.getBoundingClientRect();
+      const [a, b] = [...pointers.current.values()];
+      pinch.current = {
+        startDist: dist() || 1,
+        startScale: scale,
+        focalY: (a.y + b.y) / 2 - (box?.top ?? 0),
+      };
+      setLiveZoom(1);
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size !== 2 || !pinch.current) return;
+    e.preventDefault();
+
+    const raw = dist() / pinch.current.startDist;
+    // Clamp against the absolute limits, not just the gesture, or the rubber
+    // band keeps growing after the scale can no longer follow it.
+    const target = Math.min(MAX_SCALE, Math.max(MIN_SCALE, pinch.current.startScale * raw));
+    setLiveZoom(target / pinch.current.startScale);
+  };
+
+  const endPointer = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size >= 2 || !pinch.current) return;
+
+    const { startScale, focalY } = pinch.current;
+    const k = liveZoomRef.current;
+    pinch.current = null;
+    setLiveZoom(1);
+
+    if (Math.abs(k - 1) < 0.01) return;
+
+    // Keep whatever was under the fingers under the fingers. The scroll fix-up
+    // itself lives in the scale effect below, which every zoom path shares.
+    zoomAnchorY.current = focalY;
+    setScale(+Math.min(MAX_SCALE, Math.max(MIN_SCALE, startScale * k)).toFixed(3));
+  };
+
   const scrollToPage = useCallback((n: number) => {
     const el = scrollRef.current;
     if (!el || !layout[n - 1]) return;
     el.scrollTo({ top: Math.max(0, layout[n - 1].top - 8), behavior: 'smooth' });
   }, [layout]);
+
+  /**
+   * Hold position across a zoom.
+   *
+   * Changing scale makes every page taller but does not move scrollTop and does
+   * not fire a scroll event - so the viewport silently lands on a different page
+   * while `current` still points at the old one, and the pages actually on
+   * screen fall outside the mounted window and render as blank placeholders.
+   *
+   * Rescaling scrollTop around an anchor keeps the same content in view, and the
+   * explicit onScroll() re-derives `current` so virtualization follows.
+   */
+  const prevScale = useRef(scale);
+  const zoomAnchorY = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || prevScale.current === scale) return;
+    const factor = scale / prevScale.current;
+    prevScale.current = scale;
+    if (layout.length === 0) return;
+
+    // Default to the middle of the viewport; a pinch supplies its focal point.
+    const anchor = zoomAnchorY.current ?? el.clientHeight / 2;
+    zoomAnchorY.current = null;
+    el.scrollTop = Math.max(0, (el.scrollTop + anchor) * factor - anchor);
+
+    // Horizontally too, or zooming past the viewport width leaves the reader
+    // pinned to scrollLeft 0 - which is the page's blank margin, not its text.
+    const halfW = el.clientWidth / 2;
+    el.scrollLeft = Math.max(0, (el.scrollLeft + halfW) * factor - halfW);
+
+    onScroll();
+  }, [scale, layout, onScroll]);
 
   // Once the page boxes exist, honour a remembered page.
   useEffect(() => {
@@ -445,7 +549,14 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
         dir="ltr"
+        // touch-action must go to none mid-pinch or the WebView keeps scrolling
+        // under the gesture and the zoom fights the pan.
+        style={{ touchAction: liveZoom === 1 ? 'auto' : 'none' }}
         className="flex-1 overflow-y-auto overflow-x-auto bg-slate-200 dark:bg-zinc-950 px-2"
       >
         {error && (
@@ -461,7 +572,17 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
           </div>
         )}
 
-        {pdfDoc && layout.map((box, i) => {
+        {pdfDoc && (
+        <div
+          style={{
+            // Only the live gesture rides on a transform. Once committed, the
+            // pages re-render at the real scale so text stays crisp.
+            transform: liveZoom === 1 ? undefined : `scale(${liveZoom})`,
+            transformOrigin: '50% 0',
+            willChange: liveZoom === 1 ? undefined : 'transform',
+          }}
+        >
+        {layout.map((box, i) => {
           const n = i + 1;
           return isLive(n) ? (
             <PdfPage
@@ -470,6 +591,8 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
               pageNumber={n}
               scale={scale}
               rotation={rotation}
+              boxW={box.w}
+              boxH={box.h}
               annotations={byPage.get(n) ?? NO_ANNOTATIONS}
               registerPage={registerPage}
               onHighlightTap={setEditing}
@@ -487,6 +610,8 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
             />
           );
         })}
+        </div>
+        )}
       </div>
 
       <footer className="shrink-0 flex items-center justify-center gap-1 px-3 py-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] border-t border-slate-200 dark:border-zinc-800">

@@ -28,7 +28,10 @@ export default function Navbar({ user, searchQuery, setSearchQuery, onShowUpload
   const isMasterAdmin = user?.isMasterAdmin || false;
 
   return (
-    <nav className="sticky top-0 z-50 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-slate-200 dark:border-zinc-800 transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
+    // index.html sets viewport-fit=cover, so the WebView paints beneath the
+    // status bar. Without this inset the header icons sit under the system
+    // clock and battery on a notched phone.
+    <nav className="sticky top-0 z-50 w-full pt-[env(safe-area-inset-top)] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-slate-200 dark:border-zinc-800 transition-colors duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           <div className="flex items-center gap-2">

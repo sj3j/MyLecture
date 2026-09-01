@@ -35,6 +35,17 @@ interface Props {
   scale: number;
   rotation: number;
   annotations: PdfAnnotation[];
+  /**
+   * Expected box for this page at the current scale, from the overlay's layout.
+   *
+   * Applied immediately so the page reserves its correct height before the
+   * async render finishes. Sizing from render output alone left the mounted
+   * pages briefly at their PREVIOUS scale while the placeholders around them
+   * had already grown, so the total scroll height was wrong exactly when the
+   * zoom anchor tried to use it - and a zoom jumped several pages.
+   */
+  boxW: number;
+  boxH: number;
   registerPage: (n: number, h: PageHandle | null) => void;
   onHighlightTap: (a: PdfAnnotation) => void;
   onOrphan: (id: string, orphaned: boolean) => void;
@@ -64,7 +75,7 @@ interface PaintedRect {
  * would re-run its canvas render on both.
  */
 export default React.memo(function PdfPage({
-  pdfDoc, pageNumber, scale, rotation, annotations,
+  pdfDoc, pageNumber, scale, rotation, annotations, boxW, boxH,
   registerPage, onHighlightTap, onOrphan, onPinPoint, flashId,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -251,7 +262,12 @@ export default React.memo(function PdfPage({
     return () => {
       cancelled = true;
       try { renderTask?.cancel(); } catch { /* already settled */ }
-      try { page?.cleanup(); } catch { /* page may not have loaded */ }
+      // Deliberately NOT page.cleanup(). pdfDoc.getPage() hands back a CACHED
+      // proxy, so on a rapid zoom the outgoing effect's teardown would wipe the
+      // very object the incoming render is drawing from - the canvas then paints
+      // nothing and the page shows as blank white. Page data is released when
+      // the document is destroyed on unmount, and only three pages are ever
+      // mounted, so nothing leaks by leaving it alone.
       // Release the backing store rather than waiting for GC - this is what
       // keeps memory flat while scrolling a long lecture.
       const c = canvasRef.current;
@@ -285,8 +301,8 @@ export default React.memo(function PdfPage({
       onDoubleClick={handlePointerDown}
       className="relative mx-auto my-3 bg-white shadow-lg shadow-black/20"
       style={{
-        width: size.width || undefined,
-        height: size.height || undefined,
+        width: size.width || boxW || undefined,
+        height: size.height || boxH || undefined,
         ['--total-scale-factor' as any]: scale,
       }}
     >

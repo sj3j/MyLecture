@@ -44,7 +44,16 @@ export default function CourseTabs({ lang, counts, className = '' }: CourseTabsP
           >
             {isRtl ? COURSE_LABELS[id].ar : COURSE_LABELS[id].en}
             {typeof count === 'number' && (
-              <span className={`ms-2 text-xs font-black ${isActive ? 'opacity-70' : 'opacity-50'}`}>
+              // Its own pill, and pinned LTR: a bare number sitting against an
+              // Arabic label reads as part of the label rather than as a count.
+              <span
+                dir="ltr"
+                className={`ms-2 inline-block min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-[11px] font-black tabular-nums ${
+                  isActive
+                    ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300'
+                    : 'bg-slate-200 text-slate-600 dark:bg-zinc-700 dark:text-slate-300'
+                }`}
+              >
                 {count}
               </span>
             )}

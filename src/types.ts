@@ -36,8 +36,11 @@ export const COURSE_IDS = ['course_1', 'course_2'] as const;
 export type CourseId = typeof COURSE_IDS[number];
 
 export const COURSE_LABELS: Record<CourseId, { en: string; ar: string }> = {
-  course_1: { en: 'Course I', ar: 'كورس ١' },
-  course_2: { en: 'Course II', ar: 'كورس ٢' },
+  // Spelled out rather than numbered on purpose. 'كورس ١' ended in an
+  // Arabic-Indic numeral and the tab renders a Latin subject count right after
+  // it, so RTL ran the two together and the chip read 'كورس ١6'.
+  course_1: { en: 'First Course', ar: 'الكورس الأول' },
+  course_2: { en: 'Second Course', ar: 'الكورس الثاني' },
 };
 
 /** All existing content predates courses and belongs to Course II. */
