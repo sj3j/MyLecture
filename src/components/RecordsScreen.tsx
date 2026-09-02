@@ -78,10 +78,15 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
   const { effectiveStageId, activeCourseId } = useStageContext();
 
   useEffect(() => {
-    let q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
-    if (effectiveStageId) {
-      q = query(collection(db, 'records'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
+    // Without a stage there is no safe query to run - an unfiltered read would
+    // return every stage's recordings.
+    if (!effectiveStageId) {
+      setRecords([]);
+      setIsLoading(false);
+      return;
     }
+
+    const q = query(collection(db, 'records'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as RecordItem));
       setRecords(docs);

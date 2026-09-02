@@ -37,6 +37,9 @@ export interface ProgressionUser {
   progressionYear?: string;
   progressionState?: ProgressionState;
   graduated?: boolean;
+  /** True only for the master admin, who is staff rather than a student and so
+   *  never sits exams. Representatives and moderators ARE students. */
+  isMasterAdmin?: boolean;
 }
 
 export interface StageLike {
@@ -62,7 +65,12 @@ export function nextProgressionStep(opts: {
   const { gate, yearLabel, user, stages } = opts;
 
   if (gate === 'closed') return 'none';
-  if (user.role && user.role !== 'student') return 'none';
+  // A stage representative and the moderators they appoint are STUDENTS who hold
+  // extra permissions - they sit the same exams and move up the same ladder. Only
+  // the master admin is staff-not-student. This used to exclude every non-student
+  // role, which quietly froze representatives in their stage for ever: they were
+  // never asked whether they passed, so their stageId never advanced.
+  if (user.isMasterAdmin || user.role === 'master_admin') return 'none';
   if (user.graduated) return 'none';
   // Without a stage there is no "next stage" to compute, and an unknown stage
   // looks identical to the top of the ladder - answering نجحت would silently

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { History, Award, Calendar, Target, Flame, Hash } from 'lucide-react';
+import { History, Award, Calendar, Target, Flame, Hash, BookOpen } from 'lucide-react';
 
 interface SemesterHistoryListProps {
   userUid: string;
@@ -10,6 +10,7 @@ interface SemesterHistoryListProps {
 
 export default function SemesterHistoryList({ userUid, isRtl }: SemesterHistoryListProps) {
   const [history, setHistory] = useState<any[]>([]);
+  const [years, setYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,11 +18,17 @@ export default function SemesterHistoryList({ userUid, isRtl }: SemesterHistoryL
       try {
         // Streak and MCQ are archived under the same season id, so the two
         // subcollections merge into one row per season.
-        const [streakSnap, mcqSnap] = await Promise.all([
+        const [streakSnap, mcqSnap, yearSnap] = await Promise.all([
           getDocs(query(collection(db, 'users', userUid, 'streakHistory'), orderBy('archivedAt', 'desc'))),
           getDocs(query(collection(db, 'users', userUid, 'mcqHistory'), orderBy('archivedAt', 'desc')))
             .catch(() => null), // collection may not exist yet
+          // The year card. Everything behind these numbers is deleted by the
+          // year-end wipe, so this is all that is left of that year.
+          getDocs(query(collection(db, 'users', userUid, 'yearHistory'), orderBy('archivedAt', 'desc')))
+            .catch(() => null),
         ]);
+
+        setYears((yearSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })));
 
         const merged = new Map<string, any>();
         streakSnap.docs.forEach(d => {
@@ -47,9 +54,52 @@ export default function SemesterHistoryList({ userUid, isRtl }: SemesterHistoryL
   }, [userUid]);
 
   if (loading) return null;
-  if (history.length === 0) return null;
+  if (history.length === 0 && years.length === 0) return null;
 
   return (
+    <>
+    {years.length > 0 && (
+      <div className="mt-8 border-t border-orange-100 dark:border-orange-800/30 pt-6">
+        <h4 className="text-sm font-bold text-orange-900 dark:text-orange-300 mb-4 flex items-center gap-2">
+          <Award className="w-4 h-4 text-orange-500" />
+          {isRtl ? 'سجل السنوات السابقة' : 'Previous Years'}
+        </h4>
+        <div className="space-y-3">
+          {years.map(y => (
+            <div key={y.id} className="bg-white/60 dark:bg-zinc-800/60 rounded-2xl p-4 border border-orange-100 dark:border-orange-800/30 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  {y.yearLabel || y.id}
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-slate-100 dark:border-zinc-700/60">
+                <span className="text-xs font-bold text-sky-600 dark:text-sky-400 flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5" />
+                  {isRtl ? 'الحصيلة' : 'Total'}
+                </span>
+                <div className="flex items-center gap-4 text-end">
+                  <Stat label={isRtl ? 'النقاط' : 'Score'} value={y.score ?? 0} tone="sky" />
+                  <Stat label={isRtl ? 'أسئلة MCQ' : 'MCQs'} value={`${y.mcqCorrect ?? 0}/${y.mcqSolved ?? 0}`} tone="slate" />
+                  <Stat label={isRtl ? 'الدقة' : 'Accuracy'} value={`${Math.round(y.accuracy ?? 0)}%`} tone="emerald" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-slate-100 dark:border-zinc-700/60">
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  {isRtl ? 'بنك الأسئلة' : 'Question Bank'}
+                </span>
+                <div className="flex items-center gap-4 text-end">
+                  <Stat label={isRtl ? 'أجبت' : 'Answered'} value={y.bankAnswered ?? 0} tone="amber" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {history.length > 0 && (
     <div className="mt-8 border-t border-orange-100 dark:border-orange-800/30 pt-6">
       <h4 className="text-sm font-bold text-orange-900 dark:text-orange-300 mb-4 flex items-center gap-2">
         <History className="w-4 h-4 text-orange-500" />
@@ -111,6 +161,8 @@ export default function SemesterHistoryList({ userUid, isRtl }: SemesterHistoryL
         })}
       </div>
     </div>
+    )}
+    </>
   );
 }
 

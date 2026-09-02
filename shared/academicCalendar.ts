@@ -137,6 +137,18 @@ function sortedTerms(cal: AcademicCalendar): AcademicTerm[] {
 }
 
 /**
+ * The last term of the year, or null when no terms are configured.
+ *
+ * The year-end wipe uses it to refuse to run until that term's season has been
+ * archived - startNewSeason reads the very stats the wipe deletes, so wiping
+ * first would file a year of empty leaderboard cards.
+ */
+export function finalTermOf(cal: AcademicCalendar): AcademicTerm | null {
+  const terms = sortedTerms(cal);
+  return terms.length > 0 ? terms[terms.length - 1] : null;
+}
+
+/**
  * What state is the app in on `today`?
  *
  * Both ends of the calendar pause: before the first term is the summer holiday

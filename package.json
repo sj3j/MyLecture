@@ -25,7 +25,8 @@
     "test:progression": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/progression.test.ts\"",
     "test:google": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/googleLogin.test.ts\"",
     "test:signup": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/signup.test.ts\"",
-    "test:anchor": "npx tsx scripts/pdfAnchor.test.ts"
+    "test:anchor": "npx tsx scripts/pdfAnchor.test.ts",
+    "test:wipe": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/wipe.test.ts\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",

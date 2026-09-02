@@ -103,11 +103,17 @@ export function StageProvider({ children }: { children: ReactNode }) {
     // Master admin drives the whole app from the Navbar stage picker.
     if (activeUser.isMasterAdmin) return currentAppStage;
     // A representative, and any moderator they appointed, is locked to the stage
-    // they manage. Staff with no assignment fall back to the picker value rather
-    // than null, otherwise every stage-filtered admin tool queries stageId == null
-    // and shows nothing.
+    // they manage. Staff with NO assignment resolve to null and see nothing.
+    //
+    // This used to fall back to currentAppStage so the admin tools were not
+    // empty, but currentAppStage is localStorage the client controls, so an
+    // unassigned representative silently operated on - and uploaded into -
+    // whichever stage the picker happened to hold. firestore.rules refuses their
+    // writes anyway once managedStageId is required, so an empty screen is the
+    // honest reflection of what they may do. Run
+    // scripts/assignStageRepresentatives.mjs to pin every staff account.
     if (activeUser.role === 'admin' || activeUser.role === 'moderator') {
-      return activeUser.managedStageId || currentAppStage;
+      return activeUser.managedStageId || null;
     }
     // Students only ever see their own stage.
     return activeUser.stageId || null;

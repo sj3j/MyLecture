@@ -35,6 +35,13 @@ export interface PromotionMatch {
   userIds: string[];
   /** Subset of userIds that actually has a userMCQStats doc. */
   statsIds: string[];
+  /**
+   * Subset of userIds holding a stage-scoped staff role (representative or
+   * moderator) that this move would strand. Their seat belongs to the stage
+   * they are leaving, so it is vacated on promotion - see applyPromotion. The
+   * master admin is never included.
+   */
+  vacatingStaffIds: string[];
   /** Already in the destination stage - a re-run, so this is a no-op. */
   alreadyPromoted: boolean;
   /** Had a non-empty tahmeelSubjects, which the promotion clears. */
@@ -166,6 +173,12 @@ export async function planPromotion(
       previousSubgroup: data.subgroup || null,
       userIds: userDocs.map(d => d.id),
       statsIds: userDocs.map(d => d.id).filter(uid => statsIds.has(uid)),
+      vacatingStaffIds: userDocs
+        .filter(d => {
+          const u = d.data() as any;
+          return !u.isMasterAdmin && (u.role === 'admin' || u.role === 'moderator');
+        })
+        .map(d => d.id),
       alreadyPromoted,
       hadTahmeel: userDocs.some(d => ((d.data() as any).tahmeelSubjects || []).length > 0),
     });
@@ -187,6 +200,8 @@ export interface PromotionResult {
   studentsUpdated: number;
   usersUpdated: number;
   statsUpdated: number;
+  /** Representative/moderator seats released because their holder moved stage. */
+  staffVacated: number;
 }
 
 /**
@@ -217,7 +232,7 @@ export async function applyPromotion(
     }
   };
 
-  const result: PromotionResult = { studentsUpdated: 0, usersUpdated: 0, statsUpdated: 0 };
+  const result: PromotionResult = { studentsUpdated: 0, usersUpdated: 0, statsUpdated: 0, staffVacated: 0 };
 
   for (const m of plan.matched) {
     // The whitelist copy. Without this, syncUserStage undoes everything below
@@ -231,7 +246,7 @@ export async function applyPromotion(
     await flush();
 
     for (const uid of m.userIds) {
-      batch.set(db.collection('users').doc(uid), {
+      const patch: Record<string, any> = {
         stageId: plan.to,
         group: m.subgroup,          // what App.tsx actually gates on
         tahmeelSubjects: [],        // ids from the old stage; stale after a move
@@ -239,9 +254,27 @@ export async function applyPromotion(
         lastProgressionYear: opts.progressionYear,
         progressionYear: opts.progressionYear,
         progressionState: 'completed',
-      }, { merge: true });
+      };
+      // Same rule as submitProgression: a representative or moderator represents
+      // the stage they study in, so moving them up vacates the seat rather than
+      // carrying authority over a stage they have left.
+      if (m.vacatingStaffIds.includes(uid)) {
+        patch.role = 'student';
+        patch.managedStageId = FieldValue.delete();
+        patch.permissions = FieldValue.delete();
+      }
+      batch.set(db.collection('users').doc(uid), patch, { merge: true });
       ops++;
       result.usersUpdated++;
+      await flush();
+    }
+
+    // allowed_admins is the second place a role is read from (syncUserStage and
+    // firestore.rules), so it has to go too or the next login restores it.
+    if (m.vacatingStaffIds.length > 0) {
+      batch.delete(db.collection('allowed_admins').doc(m.email));
+      ops++;
+      result.staffVacated++;
       await flush();
     }
 

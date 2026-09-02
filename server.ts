@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { Telegraf } from "telegraf";
 import dotenv from "dotenv";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import admin from "firebase-admin";
 import bcrypt from "bcryptjs";
@@ -13,8 +13,12 @@ import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar }
 import { submitProgression, ProgressionError } from "./shared/progressionSubmit.js";
 import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "./shared/googleLogin.js";
 import { createSignupRequest, reviewSignupRequest, SignupError } from "./shared/signupRequest.js";
+import { deleteUserAccount, mergeUserAccounts } from "./shared/adminUsers.js";
+import { planYearWipe, runYearWipe, YearWipeError } from "./shared/yearWipe.js";
+import { summariseYear } from "./shared/yearSummary.js";
+import { deleteWipedFiles } from "./shared/yearWipeFiles.js";
 import { OAuth2Client } from "google-auth-library";
-import { activeDaysBetween, addDays, isLiveDay } from "./shared/academicCalendar.js";
+import { activeDaysBetween, addDays, isLiveDay, finalTermOf } from "./shared/academicCalendar.js";
 import {
   loadZainCashConfig,
   initTransaction,
@@ -154,28 +158,50 @@ const GOOGLE_WEB_CLIENT_ID =
   "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com";
 const googleOAuthClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
 
+// Kept identical to api/index.ts. A master admin bypasses the stage checks
+// below; firestore.rules hardcodes the same first address.
+const MASTER_ADMIN_EMAILS = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+
+/**
+ * The stage the caller is allowed to act on, as decided by the server.
+ *
+ * Attached to the request by verifyAdmin so routes never have to trust a
+ * stageId from the body. `null` managedStageId on a non-master caller means
+ * "assigned to no stage", which every stage-scoped route below treats as
+ * "may act on nothing" - the same posture firestore.rules takes.
+ */
+type CallerStage = { isMasterAdmin: boolean; role: string; managedStageId: string | null };
+
+const callerStage = (req: express.Request): CallerStage =>
+  (req as any).staff || { isMasterAdmin: false, role: '', managedStageId: null };
+
 const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
-    if (user.email && adminEmails.includes(user.email.toLowerCase())) {
-      return next();
-    }
-
     try {
       const db = admin.firestore();
+      const email = (user.email || '').toLowerCase();
+      const isMaster = MASTER_ADMIN_EMAILS.includes(email);
+
       const userDoc = await db.collection('users').doc(user.uid).get();
-      
-      if (!userDoc.exists) {
+
+      if (!userDoc.exists && !isMaster) {
         return res.status(403).json({ error: 'Forbidden: User not found' });
       }
 
-      const role = userDoc.data()?.role;
-      if (role !== 'admin' && role !== 'moderator') {
+      const data = userDoc.data() || {};
+      const role = data.role;
+      if (!isMaster && role !== 'admin' && role !== 'moderator' && role !== 'master_admin') {
         return res.status(403).json({ error: 'Forbidden: Requires admin privileges' });
       }
-      
+
+      (req as any).staff = {
+        isMasterAdmin: isMaster || role === 'master_admin' || data.isMasterAdmin === true,
+        role: role || 'admin',
+        managedStageId: data.managedStageId || null,
+      } satisfies CallerStage;
+
       next();
     } catch (error) {
       console.error('Role verification failed:', error);
@@ -667,9 +693,30 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
         return res.status(400).json({ error: "All fields are required." });
       }
 
+      // The stage is the SERVER's decision, not the caller's. This route used to
+      // take req.body.stageId verbatim, so a stage-1 representative could plant a
+      // student in stage 5 - and syncUserStage then copied that onto the user doc
+      // at login, granting them another stage's content.
+      const staff = callerStage(req);
+      let effectiveStage: string | null;
+      if (staff.isMasterAdmin) {
+        effectiveStage = stageId || null;
+        if (!effectiveStage) {
+          return res.status(400).json({ error: "stageId is required." });
+        }
+      } else {
+        if (!staff.managedStageId) {
+          return res.status(403).json({ error: "You are not assigned to a stage." });
+        }
+        if (stageId && stageId !== staff.managedStageId) {
+          return res.status(403).json({ error: "You may only add students to your own stage." });
+        }
+        effectiveStage = staff.managedStageId;
+      }
+
       const db = admin.firestore();
       const emailLower = email.toLowerCase();
-      
+
       const studentRef = db.collection('students').doc(emailLower);
       const studentDoc = await studentRef.get();
 
@@ -687,7 +734,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
         isActive: true,
         // Carried onto the users doc at login by syncUserStage. Without it the
         // student resolves to no stage and sees unfiltered content.
-        ...(stageId ? { stageId } : {}),
+        stageId: effectiveStage,
         ...(subgroup ? { subgroup } : {}),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
@@ -706,9 +753,19 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     }
 
     try {
+      // Scoped to the caller's stage. This was an unfiltered scan of the whole
+      // students collection, so every representative saw every stage's roster
+      // (names, emails and exam codes) - and the projection dropped stageId, so
+      // the client could not even have filtered it back down.
+      const staff = callerStage(req);
       const db = admin.firestore();
-      const snapshot = await db.collection('students').get();
-      
+      let studentsQuery: FirebaseFirestore.Query = db.collection('students');
+      if (!staff.isMasterAdmin) {
+        if (!staff.managedStageId) return res.json({ students: [] });
+        studentsQuery = studentsQuery.where('stageId', '==', staff.managedStageId);
+      }
+      const snapshot = await studentsQuery.get();
+
       const students = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -717,6 +774,8 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
           email: data.email,
           examCode: data.examCode,
           isActive: data.isActive,
+          stageId: data.stageId ?? null,
+          subgroup: data.subgroup ?? null,
           createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now()
         };
       });
@@ -776,16 +835,27 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     }
 
     try {
+      // Scoped to the caller's own stage. This deleted the ENTIRE students
+      // collection across all five stages on the strength of role == 'admin',
+      // so one representative could wipe the whole university's whitelist.
+      const staff = callerStage(req);
       const db = admin.firestore();
-      const snapshot = await db.collection('students').get();
-      
+      let victims: FirebaseFirestore.Query = db.collection('students');
+      if (!staff.isMasterAdmin) {
+        if (!staff.managedStageId) {
+          return res.status(403).json({ error: "You are not assigned to a stage." });
+        }
+        victims = victims.where('stageId', '==', staff.managedStageId);
+      }
+      const snapshot = await victims.get();
+
       const batch = db.batch();
       snapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);
       });
-      
+
       await batch.commit();
-      res.json({ success: true });
+      res.json({ success: true, deleted: snapshot.size });
     } catch (error) {
       console.error("Delete all students error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -846,79 +916,17 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     }
   });
 
-  // Admin Create Announcement
-  app.post("/api/admin/announcements", async (req, res) => {
-    if (!admin.apps.length) {
-      return res.status(500).json({ error: "Firebase Admin is not configured." });
-    }
-
-    try {
-      const { content, type, imageUrl, videoUrl, embeddedLectures, createdBy, authorName } = req.body;
-      
-      const db = admin.firestore();
-      await db.collection('announcements').add({
-        content: content || '',
-        type: type || 'text',
-        imageUrl: imageUrl || null,
-        videoUrl: videoUrl || null,
-        embeddedLectures: embeddedLectures || [],
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdBy: createdBy || null,
-        authorName: authorName || null
-      });
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Create announcement error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // Admin Delete Announcement
-  app.delete("/api/admin/announcements/:id", async (req, res) => {
-    if (!admin.apps.length) {
-      return res.status(500).json({ error: "Firebase Admin is not configured." });
-    }
-
-    try {
-      const { id } = req.params;
-      
-      const db = admin.firestore();
-      await db.collection('announcements').doc(id).delete();
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Delete announcement error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // Admin Delete Record
-  app.delete("/api/admin/records/:id", async (req, res) => {
-    if (!admin.apps.length) {
-      return res.status(500).json({ error: "Firebase Admin is not configured." });
-    }
-
-    try {
-      const { id } = req.params;
-      
-      const db = admin.firestore();
-      await db.collection('records').doc(id).delete();
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Delete record error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
+  // REMOVED: POST /api/admin/announcements, DELETE /api/admin/announcements/:id
+  // and DELETE /api/admin/records/:id. See the matching note in api/index.ts -
+  // all three were unauthenticated, trusted the body for authorship, and never
+  // stamped stageId. Nothing in src/ calls them.
 
   // Admin Delete User Account Permanently
   app.delete("/api/admin/users/:uid", verifyAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
-      
+      const isMasterAdmin = MASTER_ADMIN_EMAILS.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+
       if (!isMasterAdmin) {
         return res.status(403).json({ error: "Forbidden: Requires master admin privileges to delete Auth accounts" });
       }
@@ -928,10 +936,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
       }
 
       const { uid } = req.params;
-      const db = admin.firestore();
-      
-      await db.collection('users').doc(uid).delete();
-      await admin.auth().deleteUser(uid);
+      await deleteUserAccount(admin.firestore(), admin.auth(), uid);
 
       res.json({ success: true });
     } catch (error) {
@@ -944,9 +949,8 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
   app.post("/api/admin/users/merge", verifyAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const adminEmails = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
-      const isMasterAdmin = adminEmails.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
-      
+      const isMasterAdmin = MASTER_ADMIN_EMAILS.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+
       if (!isMasterAdmin) {
         return res.status(403).json({ error: "Forbidden: Requires master admin privileges" });
       }
@@ -958,141 +962,15 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
       const { primaryUid, secondaryUid } = req.body;
       const keepUid = primaryUid || req.body.keepUid;
       const deleteUid = secondaryUid || req.body.deleteUid;
-      
+
       if (!keepUid || !deleteUid) {
         return res.status(400).json({ error: "primaryUid and secondaryUid are required" });
       }
-
-      const db = admin.firestore();
-      
-      // Fetch both user docs
-      const keepUserRef = db.collection('users').doc(keepUid);
-      const deleteUserRef = db.collection('users').doc(deleteUid);
-      
-      const [keepUserSnap, deleteUserSnap] = await Promise.all([
-        keepUserRef.get(),
-        deleteUserRef.get()
-      ]);
-
-      const deleteUserData = deleteUserSnap.exists ? deleteUserSnap.data() || {} : {};
-      const keepUserData = keepUserSnap.exists ? keepUserSnap.data() || {} : {};
-
-      // Merge data
-      const updateData: any = {};
-      
-      // Arrays
-      const mergeArrays = (field: string) => {
-        const keepArr = Array.isArray(keepUserData[field]) ? keepUserData[field] : [];
-        const deleteArr = Array.isArray(deleteUserData[field]) ? deleteUserData[field] : [];
-        if (deleteArr.length > 0) {
-          updateData[field] = Array.from(new Set([...keepArr, ...deleteArr]));
-        }
-      };
-      
-      mergeArrays('studied');
-      mergeArrays('favorites');
-      mergeArrays('completedWeeklyTasks');
-      mergeArrays('favoriteLectures'); // Just in case it's named this way
-      
-      // Numbers
-      if ((deleteUserData.streakCount || 0) > (keepUserData.streakCount || 0)) {
-        updateData.streakCount = deleteUserData.streakCount;
-      }
-      if ((deleteUserData.longestStreak || 0) > (keepUserData.longestStreak || 0)) {
-        updateData.longestStreak = deleteUserData.longestStreak;
-      }
-      if ((deleteUserData.freezeTokens || 0) > (keepUserData.freezeTokens || 0)) {
-        updateData.freezeTokens = deleteUserData.freezeTokens;
+      if (keepUid === deleteUid) {
+        return res.status(400).json({ error: "primaryUid and secondaryUid must differ" });
       }
 
-      // Merge user doc
-      if (Object.keys(updateData).length > 0) {
-        await keepUserRef.set(updateData, { merge: true });
-      }
-
-      // Move subcollection: streakHistory
-      const streakDocs = await deleteUserRef.collection('streakHistory').get();
-      if (!streakDocs.empty) {
-        const promises: Promise<any>[] = [];
-        for (const doc of streakDocs.docs) {
-          promises.push(keepUserRef.collection('streakHistory').doc(doc.id).set(doc.data(), { merge: true }));
-          promises.push(doc.ref.delete());
-        }
-        await Promise.all(promises);
-      }
-
-      // Merge MCQ Stats
-      const deleteMcqStatsRef = db.collection('userMCQStats').doc(deleteUid);
-      const keepMcqStatsRef = db.collection('userMCQStats').doc(keepUid);
-      const delMcqStatsSnap = await deleteMcqStatsRef.get();
-      if (delMcqStatsSnap.exists) {
-        const keepMcqStatsSnap = await keepMcqStatsRef.get();
-        const delMcqData = delMcqStatsSnap.data() || {};
-        const mergedMcqData = keepMcqStatsSnap.exists ? keepMcqStatsSnap.data() || {} : { userId: keepUid };
-        
-        mergedMcqData.mcqLeaderboardScore = Math.max((mergedMcqData.mcqLeaderboardScore || 0), (delMcqData.mcqLeaderboardScore || 0));
-        mergedMcqData.totalFirstAttemptCorrect = Math.max((mergedMcqData.totalFirstAttemptCorrect || 0), (delMcqData.totalFirstAttemptCorrect || 0));
-        mergedMcqData.accuracy = Math.max((mergedMcqData.accuracy || 0), (delMcqData.accuracy || 0));
-        mergedMcqData.lecturesAttempted = Math.max((mergedMcqData.lecturesAttempted || 0), (delMcqData.lecturesAttempted || 0));
-        
-        if (delMcqData.subjectStats) {
-          mergedMcqData.subjectStats = mergedMcqData.subjectStats || {};
-          for (const key of Object.keys(delMcqData.subjectStats)) {
-            if (!mergedMcqData.subjectStats[key]) {
-               mergedMcqData.subjectStats[key] = delMcqData.subjectStats[key];
-            } else {
-               mergedMcqData.subjectStats[key].correct = Math.max((mergedMcqData.subjectStats[key].correct || 0), (delMcqData.subjectStats[key].correct || 0));
-               mergedMcqData.subjectStats[key].total = Math.max((mergedMcqData.subjectStats[key].total || 0), (delMcqData.subjectStats[key].total || 0));
-               mergedMcqData.subjectStats[key].lecturesAttempted = Math.max((mergedMcqData.subjectStats[key].lecturesAttempted || 0), (delMcqData.subjectStats[key].lecturesAttempted || 0));
-            }
-          }
-        }
-        await keepMcqStatsRef.set(mergedMcqData, { merge: true });
-        await deleteMcqStatsRef.delete();
-      }
-
-      // Merge MCQ Answers
-      const delAnswersLecturesDocs = await db.collection('userMCQAnswers').doc(deleteUid).collection('lectures').get();
-      if (!delAnswersLecturesDocs.empty) {
-        const keepAnswersAnswersRef = db.collection('userMCQAnswers').doc(keepUid).collection('lectures');
-        const promises: Promise<any>[] = [];
-        for (const doc of delAnswersLecturesDocs.docs) {
-          promises.push(keepAnswersAnswersRef.doc(doc.id).set({ ...doc.data(), userId: keepUid }, { merge: true }));
-          promises.push(doc.ref.delete());
-        }
-        await Promise.all(promises);
-        await db.collection('userMCQAnswers').doc(deleteUid).delete();
-      }
-
-      // Move global streak_history
-      const streakHistoryDocsSnap = await db.collection('streak_history').where('userId', '==', deleteUid).get();
-      if (!streakHistoryDocsSnap.empty) {
-        const promises: Promise<any>[] = [];
-        for (const doc of streakHistoryDocsSnap.docs) {
-          const data = doc.data();
-          const targetDateStr = doc.id.split('_')[1]; // format is {uid}_{date}
-          if (targetDateStr) {
-             promises.push(db.collection('streak_history').doc(`${keepUid}_${targetDateStr}`).set({ ...data, userId: keepUid }, { merge: true }));
-          }
-          promises.push(doc.ref.delete());
-        }
-        await Promise.all(promises);
-      }
-
-      // Move pending_streak_resets
-      const pendingDeleteSnap = await db.collection('pending_streak_resets').doc(deleteUid).get();
-      if (pendingDeleteSnap.exists) {
-        await db.collection('pending_streak_resets').doc(keepUid).set(pendingDeleteSnap.data() || {}, { merge: true });
-        await pendingDeleteSnap.ref.delete();
-      }
-
-      // Delete the duplicate user from Firestore and Auth
-      await deleteUserRef.delete();
-      try {
-        await admin.auth().deleteUser(deleteUid);
-      } catch (authError: any) {
-        console.error("Auth user delete error (may not exist):", authError);
-      }
+      await mergeUserAccounts(admin.firestore(), admin.auth(), keepUid, deleteUid);
 
       res.json({ success: true });
     } catch (error) {
@@ -1410,6 +1288,67 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     } catch (error) {
       console.error("Error fetching streak history:", error);
       res.status(500).json({ error: "Failed to fetch streak history" });
+    }
+  });
+
+
+  // Year-end wipe. Empties every stage's content so the next year starts clean,
+  // keeping the question bank. The single most destructive endpoint in the app, so
+  // it is master-admin only on top of verifyAdmin, refuses a year label that does
+  // not match the live calendar, and refuses to run before the final season has
+  // been archived. POST { yearLabel, dryRun? }.
+  app.post("/api/admin/wipe-year", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const adminUser = (req as any).user;
+      if (!adminUser.email || !MASTER_ADMIN_EMAILS.includes(adminUser.email.toLowerCase())) {
+        return res.status(403).json({ error: "Master Admin only" });
+      }
+
+      const db = admin.firestore();
+      const calendar = await loadCalendar(db);
+      const { yearLabel, dryRun } = req.body || {};
+
+      // A dry run is what the confirmation dialog is built from - it must never
+      // write anything, so it is answered before any of the wipe path is entered.
+      if (dryRun) {
+        const plan = await planYearWipe(db, {
+          yearLabel: yearLabel || calendar.yearLabel,
+          r2PublicUrl: process.env.R2_PUBLIC_URL || "",
+        });
+        return res.json({ success: true, dryRun: true, calendarYearLabel: calendar.yearLabel, plan });
+      }
+
+      const finalTerm = finalTermOf(calendar);
+      const { plan, wipe, summarised, documentsExported } = await runYearWipe(
+        db,
+        admin.firestore.FieldValue as any,
+        {
+          yearLabel,
+          performedBy: adminUser.uid,
+          r2PublicUrl: process.env.R2_PUBLIC_URL || "",
+          calendarYearLabel: calendar.yearLabel,
+          finalTermId: finalTerm ? finalTerm.id : null,
+          summarise: (yl: string) => summariseYear(db, admin.firestore.FieldValue as any, { yearLabel: yl }),
+        },
+      );
+
+      // Files last: Firestore is snapshotted into contentArchives first, so a
+      // failure here leaves the documents recoverable. Failures are reported, not
+      // thrown - the wipe itself has already committed.
+      const files = await deleteWipedFiles(plan.files, {
+        s3: s3Client,
+        DeleteObjectCommand,
+        r2Bucket: process.env.R2_BUCKET_NAME || "lecture-audio",
+        storageBucket: admin.storage ? admin.storage().bucket() : null,
+      });
+
+      return res.json({ success: true, summarised, documentsExported, ...wipe, files });
+    } catch (error: any) {
+      if (error instanceof YearWipeError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Year wipe error:", error);
+      return res.status(500).json({ error: error?.message || "Internal server error" });
     }
   });
 

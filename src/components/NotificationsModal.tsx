@@ -3,6 +3,7 @@ import { collection, query, getDocs, orderBy, limit, where, addDoc, serverTimest
 import { db } from '../lib/firebase';
 import { X, Bell, MessageSquare, BookOpen, Clock, ShieldAlert } from 'lucide-react';
 import { Language, TRANSLATIONS, UserProfile, Homework } from '../types';
+import { useStageContext } from '../contexts/StageContext';
 
 const formatTimeAgo = (timestamp: number, isRtl: boolean) => {
   const diffInSeconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -41,6 +42,7 @@ interface NotificationItem {
 export default function NotificationsModal({ user, lang, onClose }: NotificationsModalProps) {
   const isRtl = lang === 'ar';
   const t = TRANSLATIONS[lang];
+  const { effectiveStageId } = useStageContext();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
@@ -95,11 +97,17 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
       try {
         const items: NotificationItem[] = [];
         
-        // 1. Fetch Weekly Homeworks (latest 10)
+        // 1. Fetch Weekly Homeworks (latest 10), scoped to the reader's stage -
+        //    an unscoped read notified every stage about every stage's homework.
         try {
-          const hwQuery = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(10));
-          const hwSnap = await getDocs(hwQuery);
-          
+          const hwQuery = effectiveStageId ? query(
+            collection(db, 'homeworks'),
+            where('stageId', '==', effectiveStageId),
+            orderBy('createdAt', 'desc'),
+            limit(10)
+          ) : null;
+          const hwSnap = hwQuery ? await getDocs(hwQuery) : { forEach: () => {} };
+
           hwSnap.forEach(docSnap => {
             const data = docSnap.data() as Homework;
             items.push({
@@ -221,7 +229,7 @@ export default function NotificationsModal({ user, lang, onClose }: Notification
     };
 
     fetchNotifications();
-  }, [user.name, user.uid, user.email, isRtl]);
+  }, [user.name, user.uid, user.email, isRtl, effectiveStageId]);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir={isRtl ? 'rtl' : 'ltr'}>

@@ -7,8 +7,12 @@ import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar }
 import { submitProgression, ProgressionError } from "../shared/progressionSubmit.js";
 import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "../shared/googleLogin.js";
 import { createSignupRequest, reviewSignupRequest, SignupError } from "../shared/signupRequest.js";
+import { deleteUserAccount, mergeUserAccounts } from "../shared/adminUsers.js";
+import { planYearWipe, runYearWipe, YearWipeError } from "../shared/yearWipe.js";
+import { summariseYear } from "../shared/yearSummary.js";
+import { deleteWipedFiles } from "../shared/yearWipeFiles.js";
 import { OAuth2Client } from "google-auth-library";
-import { activeDaysBetween, addDays, isLiveDay } from "../shared/academicCalendar.js";
+import { activeDaysBetween, addDays, isLiveDay, finalTermOf } from "../shared/academicCalendar.js";
 import {
   loadZainCashConfig,
   initTransaction,
@@ -26,7 +30,7 @@ import {
   NotifyFn,
   SubscriptionCtx,
 } from "../shared/subscriptions.js";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const app = express();
@@ -118,23 +122,54 @@ const GOOGLE_WEB_CLIENT_ID =
   "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com";
 const googleOAuthClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
 
+// Kept identical to server.ts. A master admin bypasses the stage checks below;
+// firestore.rules hardcodes the same first address.
+const MASTER_ADMIN_EMAILS = ["almdrydyl335@gmail.com", "jempe.kn@gmail.com"];
+
+/**
+ * The stage the caller is allowed to act on, as decided by the server.
+ *
+ * Attached to the request by verifyAdmin so routes never have to trust a
+ * stageId from the body. `null` managedStageId on a non-master caller means
+ * "assigned to no stage", which every stage-scoped route below treats as
+ * "may act on nothing" - the same posture firestore.rules takes.
+ */
+type CallerStage = { isMasterAdmin: boolean; role: string; managedStageId: string | null };
+
+const callerStage = (req: express.Request): CallerStage =>
+  (req as any).staff || { isMasterAdmin: false, role: '', managedStageId: null };
+
 const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const user = (req as any).user;
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
     const db = admin.firestore();
+    const email = (user.email || '').toLowerCase();
+    const isMaster = MASTER_ADMIN_EMAILS.includes(email);
+
     const userDoc = await db.collection('users').doc(user.uid).get();
-    
-    if (!userDoc.exists) {
+
+    // The master admin is identified by address, so they stay reachable even if
+    // their users doc is missing or carries an unexpected role. server.ts has
+    // always done this; api/index.ts did not, so a master_admin was 403'd in
+    // production while working in dev.
+    if (!userDoc.exists && !isMaster) {
       return res.status(403).json({ error: 'Forbidden: User not found' });
     }
 
-    const role = userDoc.data()?.role;
-    if (role !== 'admin' && role !== 'moderator') {
+    const data = userDoc.data() || {};
+    const role = data.role;
+    if (!isMaster && role !== 'admin' && role !== 'moderator' && role !== 'master_admin') {
       return res.status(403).json({ error: 'Forbidden: Requires admin privileges' });
     }
-    
+
+    (req as any).staff = {
+      isMasterAdmin: isMaster || role === 'master_admin' || data.isMasterAdmin === true,
+      role: role || 'admin',
+      managedStageId: data.managedStageId || null,
+    } satisfies CallerStage;
+
     next();
   } catch (error) {
     console.error('Role verification failed:', error);
@@ -145,6 +180,158 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
 // --- API Routes ---
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+// Ported from server.ts, where these four lived only in the dev server. vercel.json
+// routes /api/* here, so in production they 404 - and src/ calls two of them:
+// adminLogService.ts hits /api/admin-logs, StudentManagement.tsx hits
+// /api/admin/users/*. Every admin action was silently failing to be logged.
+
+// Bootstrap admin permissions
+app.post("/api/bootstrap-admin", verifyAuth, async (req, res) => {
+  const user = (req as any).user;
+  if (!user || !user.email) return res.status(401).json({ error: 'Unauthorized' });
+
+  if (!MASTER_ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+    return res.status(403).json({ error: 'Not an admin email' });
+  }
+
+  try {
+    const db = admin.firestore();
+    const emailLower = user.email.toLowerCase();
+
+    const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
+    if (!adminDoc.exists) {
+      await db.collection('allowed_admins').doc(emailLower).set({
+        email: emailLower,
+        role: 'admin',
+        name: 'Master Admin'
+      }, { merge: true });
+    }
+
+    if (user.role !== 'master_admin') {
+      await admin.auth().setCustomUserClaims(user.uid, { role: 'master_admin' });
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to bootstrap admin:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin Logs API
+app.post("/api/admin-logs", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const user = (req as any).user;
+    const { action, details, targetId } = req.body;
+
+    if (!action || !details) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    await db.collection('adminLogs').add({
+      adminId: user.uid,
+      adminName: user.name || user.email || 'Unknown',
+      adminEmail: user.email || 'unknown@example.com',
+      action,
+      details,
+      targetId: targetId || null,
+      // Which stage the acting representative manages, so the master admin can
+      // tell whose action a log line records.
+      stageId: callerStage(req).managedStageId,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to add admin log:", error);
+    return res.status(500).json({ error: "Failed to log action" });
+  }
+});
+
+app.get("/api/admin-logs", verifyAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const isMasterAdmin = MASTER_ADMIN_EMAILS.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+
+    if (!isMasterAdmin) {
+      return res.status(403).json({ error: "Forbidden: Requires master admin privileges" });
+    }
+
+    const limitCount = parseInt(req.query.limit as string) || 100;
+    const db = admin.firestore();
+
+    const snapshot = await db.collection('adminLogs')
+      .orderBy('timestamp', 'desc')
+      .limit(limitCount)
+      .get();
+
+    const logs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      timestamp: doc.data().timestamp ? doc.data().timestamp.toMillis() : Date.now()
+    }));
+
+    return res.json({ logs });
+  } catch (error) {
+    console.error("Failed to read admin logs:", error);
+    return res.status(500).json({ error: "Failed to read logs" });
+  }
+});
+
+// Admin Delete User Account Permanently
+app.delete("/api/admin/users/:uid", verifyAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const isMasterAdmin = MASTER_ADMIN_EMAILS.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+
+    if (!isMasterAdmin) {
+      return res.status(403).json({ error: "Forbidden: Requires master admin privileges to delete Auth accounts" });
+    }
+    if (!admin.apps.length) {
+      return res.status(500).json({ error: "Firebase Admin is not configured." });
+    }
+
+    await deleteUserAccount(admin.firestore(), admin.auth(), req.params.uid);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete user account error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Admin Merge User Accounts
+app.post("/api/admin/users/merge", verifyAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const isMasterAdmin = MASTER_ADMIN_EMAILS.includes(user.email?.toLowerCase()) || user.role === 'master_admin';
+
+    if (!isMasterAdmin) {
+      return res.status(403).json({ error: "Forbidden: Requires master admin privileges" });
+    }
+    if (!admin.apps.length) {
+      return res.status(500).json({ error: "Firebase Admin is not configured." });
+    }
+
+    const { primaryUid, secondaryUid } = req.body;
+    const keepUid = primaryUid || req.body.keepUid;
+    const deleteUid = secondaryUid || req.body.deleteUid;
+
+    if (!keepUid || !deleteUid) {
+      return res.status(400).json({ error: "primaryUid and secondaryUid are required" });
+    }
+    if (keepUid === deleteUid) {
+      return res.status(400).json({ error: "primaryUid and secondaryUid must differ" });
+    }
+
+    await mergeUserAccounts(admin.firestore(), admin.auth(), keepUid, deleteUid);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Merge user accounts error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // Generate Presigned URL for Cloudflare R2 Upload
@@ -507,6 +694,25 @@ app.post("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
     const { name, email, password, examCode, stageId, subgroup } = req.body;
     if (!name || !email || !password || !examCode) return res.status(400).json({ error: "All fields are required." });
 
+    // The stage is the SERVER's decision, not the caller's. This route used to
+    // take req.body.stageId verbatim, so a stage-1 representative could plant a
+    // student in stage 5 - and syncUserStage then copied that onto the user doc
+    // at login, granting them another stage's content.
+    const staff = callerStage(req);
+    let effectiveStage: string | null;
+    if (staff.isMasterAdmin) {
+      effectiveStage = stageId || null;
+      if (!effectiveStage) return res.status(400).json({ error: "stageId is required." });
+    } else {
+      if (!staff.managedStageId) {
+        return res.status(403).json({ error: "You are not assigned to a stage." });
+      }
+      if (stageId && stageId !== staff.managedStageId) {
+        return res.status(403).json({ error: "You may only add students to your own stage." });
+      }
+      effectiveStage = staff.managedStageId;
+    }
+
     const db = admin.firestore();
     const emailLower = email.toLowerCase();
     const studentRef = db.collection('students').doc(emailLower);
@@ -523,7 +729,7 @@ app.post("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
       examCode,
       isActive: true,
       // Carried onto the users doc at login by syncUserStage.
-      ...(stageId ? { stageId } : {}),
+      stageId: effectiveStage,
       ...(subgroup ? { subgroup } : {}),
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
@@ -539,9 +745,19 @@ app.get("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
+    // Scoped to the caller's stage. This was an unfiltered scan of the whole
+    // students collection, so every representative saw every stage's roster
+    // (names, emails and exam codes) - and the projection dropped stageId, so
+    // the client could not even have filtered it back down.
+    const staff = callerStage(req);
     const db = admin.firestore();
-    const snapshot = await db.collection('students').get();
-    
+    let query: FirebaseFirestore.Query = db.collection('students');
+    if (!staff.isMasterAdmin) {
+      if (!staff.managedStageId) return res.json({ students: [] });
+      query = query.where('stageId', '==', staff.managedStageId);
+    }
+    const snapshot = await query.get();
+
     const students = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -550,6 +766,8 @@ app.get("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
         email: data.email,
         examCode: data.examCode,
         isActive: data.isActive,
+        stageId: data.stageId ?? null,
+        subgroup: data.subgroup ?? null,
         createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now()
       };
     });
@@ -594,12 +812,23 @@ app.delete("/api/admin/students", verifyAuth, verifyAdmin, async (req, res) => {
   if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
 
   try {
+    // Scoped to the caller's own stage. This deleted the ENTIRE students
+    // collection across all five stages on the strength of role == 'admin',
+    // so one representative could wipe the whole university's whitelist.
+    const staff = callerStage(req);
     const db = admin.firestore();
-    const snapshot = await db.collection('students').get();
+    let victims: FirebaseFirestore.Query = db.collection('students');
+    if (!staff.isMasterAdmin) {
+      if (!staff.managedStageId) {
+        return res.status(403).json({ error: "You are not assigned to a stage." });
+      }
+      victims = victims.where('stageId', '==', staff.managedStageId);
+    }
+    const snapshot = await victims.get();
     const batch = db.batch();
     snapshot.docs.forEach((doc) => { batch.delete(doc.ref); });
     await batch.commit();
-    res.json({ success: true });
+    res.json({ success: true, deleted: snapshot.size });
   } catch (error) {
     res.status(500).json({ error: "Internal server error" });
   }
@@ -650,56 +879,18 @@ app.put("/api/admin/students/:email", verifyAuth, verifyAdmin, async (req, res) 
   }
 });
 
-// Admin Create Announcement
-app.post("/api/admin/announcements", async (req, res) => {
-  if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
-
-  try {
-    const { content, type, imageUrl, videoUrl, embeddedLectures, createdBy, authorName } = req.body;
-    const db = admin.firestore();
-    await db.collection('announcements').add({
-      content: content || '',
-      type: type || 'text',
-      imageUrl: imageUrl || null,
-      videoUrl: videoUrl || null,
-      embeddedLectures: embeddedLectures || [],
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdBy: createdBy || null,
-      authorName: authorName || null
-    });
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Admin Delete Announcement
-app.delete("/api/admin/announcements/:id", async (req, res) => {
-  if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
-
-  try {
-    const { id } = req.params;
-    const db = admin.firestore();
-    await db.collection('announcements').doc(id).delete();
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Admin Delete Record
-app.delete("/api/admin/records/:id", async (req, res) => {
-  if (!admin.apps.length) return res.status(500).json({ error: "Firebase Admin is not configured." });
-
-  try {
-    const { id } = req.params;
-    const db = admin.firestore();
-    await db.collection('records').doc(id).delete();
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+// REMOVED: POST /api/admin/announcements, DELETE /api/admin/announcements/:id and
+// DELETE /api/admin/records/:id.
+//
+// All three ran with NO auth middleware whatsoever - anyone on the internet could
+// post an announcement to every student or delete any recording, and the create
+// route took createdBy/authorName straight from the request body, so the forged
+// post carried whatever author name the caller chose. They also never set stageId,
+// so anything they created was invisible to the stage-filtered readers anyway.
+//
+// Nothing in src/ calls them: announcements and records are written through the
+// Firestore SDK, where firestore.rules enforces the stage boundary. Deleting the
+// routes closes the hole rather than guarding a door nobody uses.
 
 // Check Whitelist
 app.post("/api/check-whitelist", async (req, res) => {
@@ -1130,6 +1321,67 @@ app.post("/api/admin/run-season-rollover", verifyAuth, verifyAdmin, async (req, 
     return res.json({ success: true, ...result });
   } catch (error: any) {
     console.error("Manual season rollover error:", error);
+    return res.status(500).json({ error: error?.message || "Internal server error" });
+  }
+});
+
+
+// Year-end wipe. Empties every stage's content so the next year starts clean,
+// keeping the question bank. The single most destructive endpoint in the app, so
+// it is master-admin only on top of verifyAdmin, refuses a year label that does
+// not match the live calendar, and refuses to run before the final season has
+// been archived. POST { yearLabel, dryRun? }.
+app.post("/api/admin/wipe-year", verifyAuth, verifyAdmin, async (req, res) => {
+  try {
+    const adminUser = (req as any).user;
+    if (!adminUser.email || !MASTER_ADMIN_EMAILS.includes(adminUser.email.toLowerCase())) {
+      return res.status(403).json({ error: "Master Admin only" });
+    }
+
+    const db = admin.firestore();
+    const calendar = await loadCalendar(db);
+    const { yearLabel, dryRun } = req.body || {};
+
+    // A dry run is what the confirmation dialog is built from - it must never
+    // write anything, so it is answered before any of the wipe path is entered.
+    if (dryRun) {
+      const plan = await planYearWipe(db, {
+        yearLabel: yearLabel || calendar.yearLabel,
+        r2PublicUrl: process.env.R2_PUBLIC_URL || "",
+      });
+      return res.json({ success: true, dryRun: true, calendarYearLabel: calendar.yearLabel, plan });
+    }
+
+    const finalTerm = finalTermOf(calendar);
+    const { plan, wipe, summarised, documentsExported } = await runYearWipe(
+      db,
+      admin.firestore.FieldValue as any,
+      {
+        yearLabel,
+        performedBy: adminUser.uid,
+        r2PublicUrl: process.env.R2_PUBLIC_URL || "",
+        calendarYearLabel: calendar.yearLabel,
+        finalTermId: finalTerm ? finalTerm.id : null,
+        summarise: (yl: string) => summariseYear(db, admin.firestore.FieldValue as any, { yearLabel: yl }),
+      },
+    );
+
+    // Files last: Firestore is snapshotted into contentArchives first, so a
+    // failure here leaves the documents recoverable. Failures are reported, not
+    // thrown - the wipe itself has already committed.
+    const files = await deleteWipedFiles(plan.files, {
+      s3: s3Client,
+      DeleteObjectCommand,
+      r2Bucket: process.env.R2_BUCKET_NAME || "lecture-audio",
+      storageBucket: admin.storage ? admin.storage().bucket() : null,
+    });
+
+    return res.json({ success: true, summarised, documentsExported, ...wipe, files });
+  } catch (error: any) {
+    if (error instanceof YearWipeError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error("Year wipe error:", error);
     return res.status(500).json({ error: error?.message || "Internal server error" });
   }
 });

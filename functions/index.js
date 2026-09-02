@@ -11,7 +11,15 @@ admin.initializeApp();
 const db = admin.firestore();
 db.settings({ databaseId: '(default)' });
 
-async function getTokensWithPreferences(preferenceKey) {
+/**
+ * Device tokens for everyone who wants `preferenceKey` notifications.
+ *
+ * `stageId` restricts the fan-out to that stage. Every content type is
+ * stage-owned, so without it a stage-1 homework woke up all five stages'
+ * phones for something those students cannot even open. Pass null only for a
+ * genuinely university-wide notification.
+ */
+async function getTokensWithPreferences(preferenceKey, stageId = null) {
   const tokensSnapshot = await db.collection('fcm_tokens').get();
   
   if (tokensSnapshot.empty) {
@@ -46,6 +54,10 @@ async function getTokensWithPreferences(preferenceKey) {
       fetchedUserIds.add(doc.id);
       const userData = doc.data();
       const prefs = userData.notificationPreferences || {};
+      // Wrong stage: this notification is not theirs to see.
+      if (stageId && userData.stageId && userData.stageId !== stageId) {
+        return;
+      }
       // If preference is not explicitly false, it's true by default
       if (prefs[preferenceKey] !== false) {
         const token = tokenMap.get(doc.id);
@@ -117,7 +129,7 @@ exports.sendLectureNotificationV3 = onDocumentCreated({
 
     console.log('New lecture created:', lectureTitle);
 
-    const { tokens, tokenDocs } = await getTokensWithPreferences('lectures');
+    const { tokens, tokenDocs } = await getTokensWithPreferences('lectures', lectureData.stageId || null);
 
     if (tokens.length === 0) {
       console.log('No valid tokens found for lecture notifications.');
@@ -181,7 +193,7 @@ exports.sendAnnouncementNotificationV3 = onDocumentCreated({
 
     console.log('New announcement created:', content);
 
-    const { tokens, tokenDocs } = await getTokensWithPreferences('announcements');
+    const { tokens, tokenDocs } = await getTokensWithPreferences('announcements', announcementData.stageId || null);
 
     if (tokens.length === 0) {
       console.log('No valid tokens found for announcement notifications.');
@@ -346,7 +358,7 @@ exports.sendHomeworkNotificationV3 = onDocumentCreated({
 
     // Assuming we want to send to everyone who wants announcements for now
     // Or we could add a specific 'homework' preference later
-    const { tokens, tokenDocs } = await getTokensWithPreferences('announcements');
+    const { tokens, tokenDocs } = await getTokensWithPreferences('announcements', homeworkData.stageId || null);
 
     if (tokens.length === 0) {
       console.log('No valid tokens found for homework notifications.');

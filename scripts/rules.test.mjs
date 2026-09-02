@@ -80,6 +80,13 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'stages/stage_4'), { id: 'stage_4', nameEn: 'Fourth Stage', order: 4 });
   await setDoc(doc(db, 'lectures/lec1'), { title: 'L1', stageId: 'stage_3', category: 'biochemistry' });
   await setDoc(doc(db, 'degreeBatches/b1'), { examName: 'Mid', stageId: 'stage_3' });
+
+  // Content belonging to a stage nobody in this test represents or studies in.
+  // Every "CANNOT read/write another stage" assertion below reads these.
+  await setDoc(doc(db, 'records/rec_stage4'), { title: 'R4', stageId: 'stage_4' });
+  await setDoc(doc(db, 'announcements/ann_stage4'), { content: 'A4', stageId: 'stage_4' });
+  await setDoc(doc(db, 'homeworks/hw_stage4'), { subject: 'biochemistry', stageId: 'stage_4' });
+  await setDoc(doc(db, 'chat_messages/msg_stage4'), { text: 'C4', stageId: 'stage_4' });
   await setDoc(doc(db, 'subjects/stage_3__biochemistry_ii'), {
     id: 'biochemistry_ii', stageId: 'stage_3', courseId: 'course_2',
     nameEn: 'Biochemistry II', nameAr: 'Biochemistry II', order: 0, isActive: true,
@@ -181,8 +188,65 @@ await check('student CAN read subjects',
 console.log('\nLegacy allowed_admins entries (no role field) still work');
 await check('legacy admin CAN read students',
   assertSucceeds(getDoc(doc(legacy, 'students/stu@x.com'))));
-await check('legacy admin CAN write a lecture (unassigned -> any stage)',
-  assertSucceeds(setDoc(doc(legacy, 'lectures/lec_legacy'), { title: 'L', stageId: 'stage_3' })));
+// Previously an unassigned admin could write to ANY stage, which made stage
+// isolation a no-op while no account carried managedStageId. Now they write
+// nowhere until scripts/assignStageRepresentatives.mjs pins them to a stage.
+await check('unassigned admin CANNOT write a lecture any more',
+  assertFails(setDoc(doc(legacy, 'lectures/lec_legacy'), { title: 'L', stageId: 'stage_3' })));
+await check('unassigned admin CANNOT write a record',
+  assertFails(setDoc(doc(legacy, 'records/rec_legacy'), { title: 'R', stageId: 'stage_3' })));
+await check('unassigned admin CANNOT write an announcement',
+  assertFails(setDoc(doc(legacy, 'announcements/ann_legacy'), { content: 'A', stageId: 'stage_3' })));
+await check('unassigned admin CANNOT write a homework',
+  assertFails(setDoc(doc(legacy, 'homeworks/hw_legacy'), { subject: 'biochemistry', stageId: 'stage_3' })));
+
+console.log('\nRecords, announcements and homework are stage-scoped');
+await check('representative CAN create a record on their stage',
+  assertSucceeds(setDoc(doc(rep, 'records/rec_own'), { title: 'R', stageId: 'stage_3' })));
+await check('representative CANNOT create a record on another stage',
+  assertFails(setDoc(doc(rep, 'records/rec_other'), { title: 'R', stageId: 'stage_4' })));
+await check('representative CAN create an announcement on their stage',
+  assertSucceeds(setDoc(doc(rep, 'announcements/ann_own'), { content: 'A', stageId: 'stage_3' })));
+await check('representative CANNOT create an announcement on another stage',
+  assertFails(setDoc(doc(rep, 'announcements/ann_other'), { content: 'A', stageId: 'stage_4' })));
+await check('representative CAN create a homework on their stage',
+  assertSucceeds(setDoc(doc(rep, 'homeworks/hw_own'), { subject: 'biochemistry', stageId: 'stage_3' })));
+await check('representative CANNOT create a homework on another stage',
+  assertFails(setDoc(doc(rep, 'homeworks/hw_other'), { subject: 'biochemistry', stageId: 'stage_4' })));
+await check('moderator CANNOT create a record on another stage',
+  assertFails(setDoc(doc(mod, 'records/rec_mod_other'), { title: 'R', stageId: 'stage_4' })));
+await check('representative CANNOT delete another stage record',
+  assertFails(deleteDoc(doc(rep, 'records/rec_stage4'))));
+await check('representative CANNOT move their record to another stage',
+  assertFails(updateDoc(doc(rep, 'records/rec_own'), { stageId: 'stage_4' })));
+
+console.log('\nStudents read only their own stage');
+await check('student CAN read a record on their stage',
+  assertSucceeds(getDoc(doc(student, 'records/rec_own'))));
+await check('student CANNOT read a record on another stage',
+  assertFails(getDoc(doc(student, 'records/rec_stage4'))));
+await check('student CANNOT read an announcement on another stage',
+  assertFails(getDoc(doc(student, 'announcements/ann_stage4'))));
+await check('student CANNOT read a homework on another stage',
+  assertFails(getDoc(doc(student, 'homeworks/hw_stage4'))));
+await check('student CANNOT read another stage group chat',
+  assertFails(getDoc(doc(student, 'chat_messages/msg_stage4'))));
+await check('representative CANNOT read another stage record',
+  assertFails(getDoc(doc(rep, 'records/rec_stage4'))));
+
+console.log('\nLeaderboard stats cannot be moved to another stage');
+await check('student CAN write their own stats on their own stage',
+  assertSucceeds(setDoc(doc(student, 'userMCQStats/stu_uid'), {
+    userId: 'stu_uid', stageId: 'stage_3', mcqRankScore: 10,
+  })));
+await check('student CANNOT put their stats on another stage',
+  assertFails(setDoc(doc(student, 'userMCQStats/stu_uid'), {
+    userId: 'stu_uid', stageId: 'stage_4', mcqRankScore: 999999,
+  })));
+await check('student CANNOT write someone else stats',
+  assertFails(setDoc(doc(student, 'userMCQStats/rep_uid'), {
+    userId: 'rep_uid', stageId: 'stage_3', mcqRankScore: 0,
+  })));
 
 console.log('\nAcademic calendar is master-admin only');
 // It decides whether the competition is running for the WHOLE university, so a
@@ -257,6 +321,19 @@ await check('student CAN block someone',
   assertSucceeds(updateDoc(doc(student, 'users/stu_uid'), { blockedUsers: ['rep_uid'] })));
 await check('blockedUsers must be a list',
   assertFails(updateDoc(doc(student, 'users/stu_uid'), { blockedUsers: 'rep_uid' })));
+
+console.log('\nThe year card survives the wipe, so it cannot be forged');
+// All the evidence behind these numbers is deleted by the year-end wipe. If a
+// student could write the card afterwards there would be nothing left to check
+// it against.
+await check('a student CAN read their own year card',
+  assertSucceeds(getDoc(doc(student, 'users/stu_uid/yearHistory/2026-2027'))));
+await check('a student CANNOT write their own year card',
+  assertFails(setDoc(doc(student, 'users/stu_uid/yearHistory/2026-2027'), { score: 999999 })));
+await check('a representative CANNOT write a year card either',
+  assertFails(setDoc(doc(rep, 'users/stu_uid/yearHistory/2026-2027'), { score: 1 })));
+await check('a student CANNOT read someone else year card',
+  assertFails(getDoc(doc(student, 'users/mod_uid/yearHistory/2026-2027'))));
 
 console.log('\nSignup queue is server-owned');
 await check('nobody can create a signup request from the client',

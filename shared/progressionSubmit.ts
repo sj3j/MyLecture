@@ -113,6 +113,23 @@ export async function submitProgression(
   // Clearing it drops them onto the existing onboarding screen to pick again.
   if (outcome.promoted) userPatch.group = FieldValue.delete();
 
+  // Leaving the stage vacates the seat.
+  //
+  // A representative represents the stage they study in. Once they move up (or
+  // graduate) they are an ordinary student again and the seat is left empty for
+  // the master admin to fill - nobody keeps write access over a stage they have
+  // left, and nobody silently acquires power over the stage they arrive in.
+  //
+  // Moderators are appointed by a representative for one stage, so they are
+  // released on the same rule.
+  const wasStaff = user.role === 'admin' || user.role === 'moderator';
+  const leavingStage = outcome.promoted || outcome.graduated;
+  if (wasStaff && leavingStage && !user.isMasterAdmin) {
+    userPatch.role = 'student';
+    userPatch.managedStageId = FieldValue.delete();
+    userPatch.permissions = FieldValue.delete();
+  }
+
   batch.set(userRef, userPatch, { merge: true });
 
   // The whitelist copy. Without this syncUserStage undoes the promotion at the
@@ -124,6 +141,15 @@ export async function submitProgression(
       const studentPatch: Record<string, any> = { stageId: outcome.stageId };
       if (outcome.promoted) studentPatch.subgroup = FieldValue.delete();
       batch.set(studentRef, studentPatch, { merge: true });
+    }
+
+    // The other half of vacating the seat. allowed_admins is the second source
+    // syncUserStage and firestore.rules read a role from, so demoting only the
+    // users doc would be undone at the next login - they would silently get the
+    // role back on a stage they no longer study in.
+    if (wasStaff && leavingStage && !user.isMasterAdmin) {
+      const allowedRef = db.collection('allowed_admins').doc(email);
+      if ((await allowedRef.get()).exists) batch.delete(allowedRef);
     }
   }
 

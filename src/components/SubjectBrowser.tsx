@@ -77,7 +77,10 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
       const snap = await getDocs(q);
       const loaded: LectureTab[] = [];
       snap.forEach(d => {
-        loaded.push({ id: d.id, ...d.data() } as LectureTab);
+        const tab = { id: d.id, ...d.data() } as LectureTab;
+        // Only this stage's tabs. Tabs predating the per-stage split have no
+        // stageId and stay visible everywhere - see ManageLectureTabsModal.
+        if (!tab.stageId || tab.stageId === effectiveStageId) loaded.push(tab);
       });
       setCustomTabs(loaded);
     } catch (err) {

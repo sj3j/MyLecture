@@ -76,10 +76,14 @@ export default function BankQuizScreen({ questions: initialQuestions, onFinish, 
         const { getDoc, doc, addDoc, collection, serverTimestamp } = await import('firebase/firestore');
         const { db } = await import('../../lib/firebase');
         let lectureTitle = 'محاضرة';
+        // The correction belongs to the stage of the lecture it is about; an
+        // announcement with no stageId is invisible to every reader.
+        let lectureStageId: string | null = null;
         if (manualEditQuestion.lectureId) {
           const lectureDoc = await getDoc(doc(db, 'lectures', manualEditQuestion.lectureId));
           if (lectureDoc.exists()) {
             lectureTitle = lectureDoc.data().title || lectureTitle;
+            lectureStageId = lectureDoc.data().stageId ?? null;
           }
         }
 
@@ -94,7 +98,8 @@ ${questionText}`;
           text: announcementText,
           authorName: userName || 'Admin',
           createdAt: serverTimestamp(),
-          date: Date.now()
+          date: Date.now(),
+          stageId: lectureStageId
         });
       } catch (announcementErr) {
         console.error("Failed to post announcement", announcementErr);

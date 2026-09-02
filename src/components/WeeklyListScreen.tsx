@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, doc, setDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, getDocs, getDoc, doc, setDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Lecture, Language, TRANSLATIONS, UserProfile, CATEGORIES, Homework } from '../types';
@@ -13,6 +13,11 @@ interface WeeklyListScreenProps {
   lang: Language;
   user: UserProfile | null;
 }
+
+/** Timetable photo doc for a stage. The pre-multi-stage build wrote one global
+ *  `settings/weekly_schedule`, which meant each stage's representative
+ *  overwrote every other stage's timetable. */
+const schedulePhotoDocId = (stageId: string) => `weekly_schedule_${stageId}`;
 
 export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) {
   const t = TRANSLATIONS[lang];
@@ -49,33 +54,62 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const { effectiveStageId } = useStageContext();
 
   useEffect(() => {
-    // Load homeworks
-    let q = query(collection(db, 'homeworks'), orderBy('dueDate', 'asc'));
-    if (effectiveStageId) {
-      q = query(collection(db, 'homeworks'), where('stageId', '==', effectiveStageId), orderBy('dueDate', 'asc'));
-    }
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Homework));
-      setHomeworks(docs);
+    // Load homeworks. With no resolved stage there is no safe query to run -
+    // the old unfiltered fallback listed every stage's homework.
+    let unsubscribe = () => {};
+    if (!effectiveStageId) {
+      setHomeworks([]);
       setIsLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'homeworks');
-    });
+    } else {
+      const q = query(collection(db, 'homeworks'), where('stageId', '==', effectiveStageId), orderBy('dueDate', 'asc'));
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Homework));
+        setHomeworks(docs);
+        setIsLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'homeworks');
+      });
+    }
 
-    // Load schedule photo
-    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'weekly_schedule'), (docSnap) => {
-      if (docSnap.exists()) {
-        setSchedulePhotoUrl(docSnap.data().photoUrl);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'settings/weekly_schedule');
-    });
+    // Load schedule photo. The timetable is per stage; the pre-multi-stage app
+    // kept a single global doc, so fall back to it when this stage has no photo
+    // of its own yet. Writes always go to the per-stage doc.
+    let unsubscribeSettings = () => {};
+    if (effectiveStageId) {
+      unsubscribeSettings = onSnapshot(doc(db, 'settings', schedulePhotoDocId(effectiveStageId)), async (docSnap) => {
+        if (docSnap.exists()) {
+          setSchedulePhotoUrl(docSnap.data().photoUrl);
+          return;
+        }
+        try {
+          const legacy = await getDoc(doc(db, 'settings', 'weekly_schedule'));
+          setSchedulePhotoUrl(legacy.exists() ? legacy.data().photoUrl : null);
+        } catch {
+          setSchedulePhotoUrl(null);
+        }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, 'settings/weekly_schedule');
+      });
+    } else {
+      setSchedulePhotoUrl(null);
+    }
 
-    // Load all lectures for everyone (needed for links and admin dropdown)
+    // Lectures for the link picker and the admin dropdown. Scoped to this stage:
+    // an unscoped read let a representative attach another stage's lecture to
+    // their homework.
     const fetchLectures = async () => {
+      if (!effectiveStageId) {
+        setAllLectures([]);
+        return;
+      }
       try {
-        const lecturesSnapshot = await getDocs(collection(db, 'lectures'));
-        const lecturesData = lecturesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Lecture));
+        const lecturesSnapshot = await getDocs(
+          query(collection(db, 'lectures'), where('stageId', '==', effectiveStageId))
+        );
+        const lecturesData = lecturesSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as Lecture))
+          // Wiped-year stubs have no PDF to attach - see the filter in App.tsx.
+          .filter(l => !(l as any).archived);
         setAllLectures(lecturesData);
       } catch (error) {
         console.error('Error fetching lectures:', error);
@@ -92,6 +126,11 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+    // Without a stage we cannot tell which stage's timetable this replaces.
+    if (!effectiveStageId) {
+      alert(isRtl ? 'لم يتم تحديد المرحلة. أعد تحميل الصفحة.' : 'No stage resolved. Please reload.');
+      return;
+    }
 
     setIsUploadingPhoto(true);
     try {
@@ -107,8 +146,9 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
         },
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          await setDoc(doc(db, 'settings', 'weekly_schedule'), {
+          await setDoc(doc(db, 'settings', schedulePhotoDocId(effectiveStageId)), {
             photoUrl: downloadURL,
+            stageId: effectiveStageId,
             updatedAt: serverTimestamp(),
             updatedBy: user.uid
           });
@@ -165,6 +205,14 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Refuse rather than guess. This used to default to 'stage_3', so a
+    // representative whose stage had not resolved posted homework into someone
+    // else's stage.
+    if (!effectiveStageId) {
+      alert(isRtl ? 'لم يتم تحديد المرحلة. أعد تحميل الصفحة.' : 'No stage resolved. Please reload.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       let finalDueDate = null;
@@ -173,12 +221,12 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
          finalDueDate.setHours(23, 59, 59, 999);
       }
 
-      const homeworkData: any = {
+      const homeworkData: Partial<Homework> = {
         subject,
         type,
         note,
         lectures: selectedLectures,
-        stageId: effectiveStageId || 'stage_3'
+        stageId: effectiveStageId,
       };
 
       if (finalDueDate) {

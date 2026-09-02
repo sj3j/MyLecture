@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Shield, Loader2, AlertCircle } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, setDoc, deleteField } from 'firebase/firestore';
 import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { logAdminAction } from '../services/adminLogService';
@@ -139,6 +139,13 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
     }
   }, [isOpen, viewerIsMaster, effectiveStageId]);
 
+  // Which stages currently have nobody representing them. Seats fall vacant on
+  // their own every year - a representative who moves up a stage is released -
+  // so the master admin needs to see the gaps rather than remember them.
+  const stagesWithoutRep = viewerIsMaster
+    ? stages.filter(st => !admins.some(a => a.role === 'admin' && a.managedStageId === st.id))
+    : [];
+
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -160,6 +167,38 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
         setError(isRtl ? 'يرجى اختيار المرحلة' : 'Please select a stage');
         setIsSubmitting(false);
         return;
+      }
+
+      // A representative must already be a student who has signed in at least
+      // once: the role is written onto users/{uid}, and without that doc the
+      // appointment would sit in allowed_admins doing nothing visible.
+      const existingUser = await getDocs(
+        query(collection(db, 'users'), where('email', '==', email.toLowerCase()))
+      );
+      if (existingUser.empty) {
+        setError(isRtl
+          ? 'لا يوجد حساب بهذا البريد. يجب أن يسجّل الدخول مرة واحدة أولاً.'
+          : 'No account with that email. They must sign in once first.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // One representative per stage. Appointing a second silently created two
+      // people with authority over the same stage and no way to tell which is
+      // current - replace the sitting one instead.
+      if (roleToSave === 'admin') {
+        const sitting = admins.find(
+          a => a.role === 'admin' && a.managedStageId === stageToSave && a.id !== email.toLowerCase()
+        );
+        if (sitting) {
+          const stageName = stages.find(st => st.id === stageToSave);
+          const label = (isRtl ? stageName?.nameAr : stageName?.nameEn) || stageToSave;
+          const ok = window.confirm(isRtl
+            ? `${label} لديها ممثل بالفعل (${sitting.id}). هل تريد استبداله؟`
+            : `${label} already has a representative (${sitting.id}). Replace them?`);
+          if (!ok) { setIsSubmitting(false); return; }
+          await replaceSittingRepresentative(sitting.id);
+        }
       }
 
       await setDoc(doc(db, 'allowed_admins', email.toLowerCase()), {
@@ -236,25 +275,45 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
     }
   };
 
+  /**
+   * Returns someone to being an ordinary student.
+   *
+   * Both halves matter: allowed_admins is what syncUserStage and firestore.rules
+   * read a role from, so deleting only the users patch lets the next login put
+   * the role back. managedStageId is cleared too - left behind it is stale data
+   * that reads as authority over a stage the moment anyone is re-promoted.
+   *
+   * Every users doc with that email is patched, not just the first: an email can
+   * legitimately have two (password-login uids are the email, Google-login uids
+   * are not), and patching one leaves the other still holding the role.
+   */
+  const revokeStaffRole = async (id: string) => {
+    await deleteDoc(doc(db, 'allowed_admins', id));
+
+    const userSnap = await getDocs(query(collection(db, 'users'), where('email', '==', id)));
+    for (const d of userSnap.docs) {
+      try {
+        await setDoc(doc(db, 'users', d.id), {
+          role: 'student',
+          managedStageId: deleteField(),
+          permissions: deleteField(),
+        }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  /** Steps the sitting representative down so the stage never has two. */
+  const replaceSittingRepresentative = async (id: string) => {
+    await revokeStaffRole(id);
+    await logAdminAction('REPLACE_REPRESENTATIVE', `Stepped down representative: ${id}`, id);
+  };
+
   const handleDeleteAdmin = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'allowed_admins', id));
-      
+      await revokeStaffRole(id);
       await logAdminAction('DELETE_ADMIN', `Removed admin role for: ${id}`, id);
-      
-      // Update users collection to revert to student
-      const q = query(collection(db, 'users'), where('email', '==', id));
-      const userSnap = await getDocs(q);
-      if (!userSnap.empty) {
-         try {
-            await setDoc(doc(db, 'users', userSnap.docs[0].id), {
-               role: 'student',
-               permissions: null
-            }, { merge: true });
-         } catch (e) {
-            console.error(e);
-         }
-      }
 
       setDeletingId(null);
       fetchAdmins();
@@ -293,6 +352,16 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
 
             <div className="p-6 overflow-y-auto space-y-8">
               {/* Add Admin Form */}
+              {viewerIsMaster && stagesWithoutRep.length > 0 && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 rounded-xl flex items-start gap-2 text-sm">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    {isRtl ? 'مراحل بلا ممثل: ' : 'Stages with no representative: '}
+                    {stagesWithoutRep.map(st => (isRtl ? st.nameAr : st.nameEn)).join(isRtl ? '، ' : ', ')}
+                  </span>
+                </div>
+              )}
+
               <form onSubmit={handleAddAdmin} className="space-y-4">
                 <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.addAdmin}</h3>
                 {error && (

@@ -92,6 +92,12 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
 
   const overdue = useMemo(() => closableTerm(calendar, today, null), [calendar, today]);
 
+  // Year-end wipe. Two gates before anything is sent: a dry run the admin has to
+  // read, and typing the year label back. The button is unreachable otherwise.
+  const [wipePlan, setWipePlan] = useState<any>(null);
+  const [wipeConfirm, setWipeConfirm] = useState('');
+  const [isWiping, setIsWiping] = useState(false);
+
   const patchTerm = (index: number, patch: Partial<AcademicTerm>) => {
     setDraft(prev => ({
       ...prev,
@@ -162,6 +168,57 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
       setError(err.message || (isRtl ? 'فشل التشغيل' : 'Failed'));
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  /** Read-only. Produces the numbers the confirmation is built from. */
+  const handlePreviewWipe = async () => {
+    setIsWiping(true);
+    setError(null);
+    setNote(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('No auth token');
+      const res = await fetch(apiUrl('/api/admin/wipe-year'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ yearLabel: calendar.yearLabel, dryRun: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'API error');
+      setWipePlan(data.plan);
+    } catch (err: any) {
+      setError(err.message || (isRtl ? 'فشل الفحص' : 'Preview failed'));
+    } finally {
+      setIsWiping(false);
+    }
+  };
+
+  const handleWipeYear = async () => {
+    setIsWiping(true);
+    setError(null);
+    setNote(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('No auth token');
+      const res = await fetch(apiUrl('/api/admin/wipe-year'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ yearLabel: calendar.yearLabel }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'API error');
+
+      setNote(isRtl
+        ? `تم مسح ${calendar.yearLabel}: ${data.documentsDeleted} مستند و ${data.files?.deleted ?? 0} ملف. حُفظت نسخة و ${data.summarised} بطاقة سنة.`
+        : `${calendar.yearLabel} wiped: ${data.documentsDeleted} documents, ${data.files?.deleted ?? 0} files. Exported, ${data.summarised} year cards kept.`);
+      setWipePlan(null);
+      setWipeConfirm('');
+      await logAdminAction('YEAR_WIPE', `Wiped ${calendar.yearLabel}: ${data.documentsDeleted} docs`);
+    } catch (err: any) {
+      setError(err.message || (isRtl ? 'فشل المسح' : 'Wipe failed'));
+    } finally {
+      setIsWiping(false);
     }
   };
 
@@ -411,6 +468,79 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
                   </div>
                 </div>
               )}
+
+              {/* ---- year-end wipe ---- */}
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 rounded-2xl">
+                <div className="flex items-start gap-2 text-red-700 dark:text-red-400">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <div className="text-sm min-w-0 w-full">
+                    <p className="font-bold mb-1">{isRtl ? 'مسح بيانات السنة' : 'Year-end wipe'}</p>
+                    <p className="opacity-90 mb-3">
+                      {isRtl
+                        ? `يحذف محاضرات وتسجيلات وتبليغات وواجبات ${calendar.yearLabel} لكل المراحل، مع ملفاتها. يبقى بنك الأسئلة والدرجات والحسابات.`
+                        : `Deletes ${calendar.yearLabel} lectures, records, announcements and homework for every stage, and their files. The question bank, grades and accounts are kept.`}
+                    </p>
+
+                    {!wipePlan ? (
+                      <button
+                        onClick={handlePreviewWipe}
+                        disabled={isWiping}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-colors"
+                      >
+                        {isWiping ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
+                        {isRtl ? 'فحص ما سيُحذف' : 'Preview what would be deleted'}
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="p-3 bg-white/70 dark:bg-zinc-800/70 rounded-xl text-xs space-y-1">
+                          {Object.entries(wipePlan.counts || {}).map(([k, v]) => (
+                            <div key={k} className="flex justify-between">
+                              <span className="opacity-70">{k}</span>
+                              <span className="font-black tabular-nums" dir="ltr">{String(v)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between border-t border-slate-200 dark:border-zinc-700 pt-1 mt-1">
+                            <span className="opacity-70">{isRtl ? 'محاضرات ستبقى كعناوين فقط' : 'lectures kept as titles only'}</span>
+                            <span className="font-black tabular-nums" dir="ltr">{wipePlan.lectureStubs}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="opacity-70">{isRtl ? 'ملفات ستُحذف نهائياً' : 'files deleted permanently'}</span>
+                            <span className="font-black tabular-nums" dir="ltr">{(wipePlan.files || []).length}</span>
+                          </div>
+                        </div>
+                        <p className="font-bold">
+                          {isRtl
+                            ? `الملفات لا يمكن استرجاعها. اكتب «${calendar.yearLabel}» للتأكيد.`
+                            : `Files cannot be recovered. Type "${calendar.yearLabel}" to confirm.`}
+                        </p>
+                        <input
+                          value={wipeConfirm}
+                          onChange={e => setWipeConfirm(e.target.value)}
+                          dir="ltr"
+                          placeholder={calendar.yearLabel}
+                          className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-red-200 dark:border-red-900/50 rounded-xl text-slate-900 dark:text-stone-100 outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleWipeYear}
+                            disabled={isWiping || wipeConfirm.trim() !== calendar.yearLabel}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-colors"
+                          >
+                            {isWiping ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
+                            {isRtl ? 'مسح السنة نهائياً' : 'Wipe the year'}
+                          </button>
+                          <button
+                            onClick={() => { setWipePlan(null); setWipeConfirm(''); }}
+                            className="px-4 py-2 bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm"
+                          >
+                            {isRtl ? 'إلغاء' : 'Cancel'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               {note && (
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-400 rounded-xl flex items-center gap-2 text-sm font-medium">

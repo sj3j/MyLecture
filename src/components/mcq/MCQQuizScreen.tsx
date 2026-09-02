@@ -200,7 +200,10 @@ ${questionText}`;
           text: announcementText,
           authorName: user?.name || user?.originalName || 'Admin',
           createdAt: serverTimestamp(),
-          date: Date.now()
+          date: Date.now(),
+          // The correction concerns this lecture, so it belongs to the lecture's
+          // stage. Without it the announcement is invisible to every reader.
+          stageId: lecture.stageId ?? null
         });
       } catch (announcementErr) {
         console.error("Failed to post announcement", announcementErr);

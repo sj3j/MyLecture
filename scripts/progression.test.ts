@@ -101,7 +101,18 @@ console.log('\nWho gets asked what:');
 const step = (gate: any, user: any) => nextProgressionStep({ gate, yearLabel: '2026-2027', user });
 check('a fresh student is asked the first question', step('first_round', { role: 'student', stageId: 'stage_3' }) === 'first');
 check('nobody is asked while the gate is closed', step('closed', { role: 'student', stageId: 'stage_3' }) === 'none');
-check('an admin is never asked', step('first_round', { role: 'admin', stageId: 'stage_3' }) === 'none');
+// A representative and their moderators are students who hold extra permissions:
+// they sit the same exams and climb the same ladder, so they ARE asked. Only the
+// master admin is staff rather than a student. Excluding every non-student role
+// used to freeze representatives in their stage for ever.
+check('a representative IS asked, like any student',
+  step('first_round', { role: 'admin', stageId: 'stage_3' }) === 'first');
+check('a moderator IS asked, like any student',
+  step('first_round', { role: 'moderator', stageId: 'stage_3' }) === 'first');
+check('the master admin is never asked',
+  step('first_round', { role: 'admin', stageId: 'stage_3', isMasterAdmin: true }) === 'none');
+check('a master_admin role is never asked',
+  step('first_round', { role: 'master_admin', stageId: 'stage_3' }) === 'none');
 check('a graduated student is never asked',
   step('resit_round', { role: 'student', stageId: 'stage_5', graduated: true }) === 'none');
 check('a student already done this year is not re-asked',
@@ -298,6 +309,83 @@ try {
 check('an unknown stage is rejected rather than read as graduation', ghostRejected);
 check('and that student is not marked graduated',
   (await db.doc('users/u_ghost').get()).data()?.graduated === undefined);
+
+// ---------------------------------------------------------------------------
+// A representative who moves up vacates the seat.
+//
+// The role belongs to the stage, not the person: once they leave stage_3 they
+// are an ordinary stage_4 student and the seat is free for the master admin to
+// fill. Both halves have to be cleared - leaving allowed_admins behind would let
+// syncUserStage hand the role straight back at the next login.
+// ---------------------------------------------------------------------------
+console.log('\nA promoted representative is released:');
+await db.collection('users').doc('u_rep').set({
+  name: 'rep', email: 'rep@x.com', role: 'admin', stageId: 'stage_3',
+  managedStageId: 'stage_3', permissions: { manageLectures: true },
+});
+await db.collection('students').doc('rep@x.com').set({ email: 'rep@x.com', stageId: 'stage_3' });
+await db.collection('allowed_admins').doc('rep@x.com').set({
+  email: 'rep@x.com', role: 'admin', managedStageId: 'stage_3',
+});
+
+const repRes = await submitProgression(db, FieldValue as any, firstOpen, {
+  uid: 'u_rep', round: 'first', answer: 'passed',
+});
+const repDoc = (await db.doc('users/u_rep').get()).data() || {};
+check('the representative is promoted like any student', repRes.stageId === 'stage_4');
+check('their role reverts to student', repDoc.role === 'student');
+check('managedStageId is cleared', repDoc.managedStageId === undefined);
+check('permissions are cleared', repDoc.permissions === undefined);
+check('the allowed_admins entry is deleted, so login cannot restore the role',
+  !(await db.doc('allowed_admins/rep@x.com').get()).exists);
+
+// The master admin is staff, not a student - nothing about them changes.
+console.log('\nA moderator is released on the same rule:');
+await db.collection('users').doc('u_mod').set({
+  name: 'mod', email: 'mod@x.com', role: 'moderator', stageId: 'stage_3',
+  managedStageId: 'stage_3', permissions: { manageLectures: true },
+});
+await db.collection('students').doc('mod@x.com').set({ email: 'mod@x.com', stageId: 'stage_3' });
+await db.collection('allowed_admins').doc('mod@x.com').set({
+  email: 'mod@x.com', role: 'moderator', managedStageId: 'stage_3',
+});
+await submitProgression(db, FieldValue as any, firstOpen, {
+  uid: 'u_mod', round: 'first', answer: 'passed',
+});
+const modDoc = (await db.doc('users/u_mod').get()).data() || {};
+check('the moderator reverts to student', modDoc.role === 'student');
+check('and their allowed_admins entry is gone',
+  !(await db.doc('allowed_admins/mod@x.com').get()).exists);
+
+console.log('\nA graduating representative also vacates the seat:');
+await db.collection('users').doc('u_rep5').set({
+  name: 'rep5', email: 'rep5@x.com', role: 'admin', stageId: 'stage_5',
+  managedStageId: 'stage_5', permissions: { manageLectures: true },
+});
+await db.collection('students').doc('rep5@x.com').set({ email: 'rep5@x.com', stageId: 'stage_5' });
+await db.collection('allowed_admins').doc('rep5@x.com').set({
+  email: 'rep5@x.com', role: 'admin', managedStageId: 'stage_5',
+});
+const grad5 = await submitProgression(db, FieldValue as any, firstOpen, {
+  uid: 'u_rep5', round: 'first', answer: 'passed',
+});
+const rep5Doc = (await db.doc('users/u_rep5').get()).data() || {};
+check('they graduate', grad5.graduated === true);
+check('a graduate keeps no write access', rep5Doc.role === 'student');
+check('and no managed stage', rep5Doc.managedStageId === undefined);
+
+console.log('\nStaying put does NOT cost the seat:');
+await db.collection('users').doc('u_repstay').set({
+  name: 'repstay', email: 'repstay@x.com', role: 'admin', stageId: 'stage_3',
+  managedStageId: 'stage_3', permissions: { manageLectures: true },
+});
+await db.collection('students').doc('repstay@x.com').set({ email: 'repstay@x.com', stageId: 'stage_3' });
+await submitProgression(db, FieldValue as any, firstOpen, {
+  uid: 'u_repstay', round: 'first', answer: 'resit',
+});
+const stayDoc = (await db.doc('users/u_repstay').get()).data() || {};
+check('a representative sitting a resit keeps their role', stayDoc.role === 'admin');
+check('and keeps managing their stage', stayDoc.managedStageId === 'stage_3');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

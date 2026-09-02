@@ -62,6 +62,14 @@ service cloud.firestore {
         : '';
     }
 
+    // The stage this caller is enrolled in, or '' if unset. Server-owned: the
+    // users rules below freeze stageId against self-edits.
+    function userStage() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('stageId', '')
+        : '';
+    }
+
     // The stage this caller represents, or '' if unassigned.
     function myManagedStage() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -92,13 +100,36 @@ service cloud.firestore {
       return isAdmin() || isModerator();
     }
 
-    // Content-write scope for a stage. Master admin writes anywhere. Assigned
-    // staff write only their own stage. Staff with no assignment keep the
-    // pre-multi-stage behaviour of writing anywhere, so existing admins are not
-    // locked out the moment uploads start stamping stageId.
+    // Content-write scope for a stage. Master admin writes anywhere; every other
+    // staff member writes only the stage they are assigned to.
+    //
+    // This deliberately has NO fallback for unassigned staff. It used to treat an
+    // empty managedStageId as "may write anywhere", which meant stage isolation
+    // did nothing at all while no account carried the field. Assign every staff
+    // account with scripts/assignStageRepresentatives.mjs BEFORE deploying this,
+    // or all of them lose write access at once.
     function canWriteStage(stageId) {
       return isMasterAdmin() || (
-        isStaff() && (myManagedStage() == '' || myManagedStage() == stageId)
+        isStaff() && myManagedStage() != '' && myManagedStage() == stageId
+      );
+    }
+
+    // Read scope for stage-owned content. Mirrors canWriteStage on the read side:
+    // staff see the stage they manage, students see the stage they are enrolled in
+    // (plus any subject they carry, via hasStageAccess).
+    //
+    // A null stageId means the document predates the multi-stage migration; those
+    // stay readable by anyone with access, matching the lectures rule, rather than
+    // vanishing from every screen at once.
+    function canReadStage(stageId, subjectId) {
+      return hasAccess() && (
+        stageId == null || stageId == '' ||
+        isMasterAdmin() ||
+        // Assigned staff, representative or moderator. Not isRepresentativeFor():
+        // that excludes moderators, and a moderator's own stageId is often not
+        // the stage they were appointed to moderate.
+        (isStaff() && myManagedStage() == stageId) ||
+        hasStageAccess(stageId, subjectId)
       );
     }
 
@@ -221,6 +252,15 @@ service cloud.firestore {
     // Archived MCQ season results shown on the student's own profile.
     // Written only by the Admin SDK during a season reset.
     match /users/{userId}/mcqHistory/{document=**} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if false;
+    }
+
+    // The year card that survives the year-end wipe: score, MCQs solved, bank
+    // questions answered. All the data behind those numbers is deleted, so this
+    // is the student's only record of the year - client writes are refused so it
+    // cannot be forged after the evidence is gone.
+    match /users/{userId}/yearHistory/{document=**} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       allow write: if false;
     }
@@ -366,8 +406,16 @@ service cloud.firestore {
     }
 
     match /chat_messages/{messageId} {
-      allow read: if hasAccess();
-      allow create: if isAdmin();
+      // Group messages carry stageId and are read per stage. Direct messages and
+      // anything predating the migration have none, and stay readable as before -
+      // narrowing those is a separate change to ChatScreen's own queries.
+      allow read: if canReadStage(resource.data.get('stageId', null), '');
+      // A stamped message must land in the sender's own stage. Unstamped ones
+      // (DMs) keep the previous behaviour, or representatives lose direct chat.
+      allow create: if isAdmin() && (
+        request.resource.data.get('stageId', null) == null ||
+        canWriteStage(request.resource.data.stageId)
+      );
       allow update: if isAdmin() || (
         hasAccess() && 
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'viewers']) &&
@@ -401,23 +449,39 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && request.auth.token.email != null && chatId.matches('.*' + request.auth.token.email + '.*');
     }
 
+    // records / announcements / homeworks all carry stageId and are filtered by
+    // it in the client. Until now the rules did not check it, so the isolation
+    // was a UI convenience: any student could hand-craft a query for another
+    // stage's content, and any staff member could write into another stage.
+    // These three now mirror the lectures rules above.
+
     match /records/{recordId} {
-      allow read: if hasAccess();
-      allow create, update, delete: if isStaff();
+      allow read: if canReadStage(resource.data.get('stageId', null), resource.data.get('subjectId', ''));
+      allow create: if canWriteStage(request.resource.data.get('stageId', ''));
+      allow update, delete: if canWriteStage(resource.data.get('stageId', '')) &&
+        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')));
     }
 
     match /announcements/{postId} {
-      allow read: if hasAccess();
-      allow create, delete: if isStaff();
-      allow update: if isStaff() || (
-        hasAccess() && 
+      allow read: if canReadStage(resource.data.get('stageId', null), '');
+      allow create: if canWriteStage(request.resource.data.get('stageId', ''));
+      allow delete: if canWriteStage(resource.data.get('stageId', ''));
+      // A reader may only ever touch the reactions map, and only on a post they
+      // are allowed to read in the first place.
+      allow update: if (
+        canWriteStage(resource.data.get('stageId', '')) &&
+        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')))
+      ) || (
+        canReadStage(resource.data.get('stageId', null), '') &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
       );
     }
-    
+
     match /homeworks/{homeworkId} {
-      allow read: if hasAccess();
-      allow create, update, delete: if isStaff();
+      allow read: if canReadStage(resource.data.get('stageId', null), '');
+      allow create: if canWriteStage(request.resource.data.get('stageId', ''));
+      allow update, delete: if canWriteStage(resource.data.get('stageId', '')) &&
+        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')));
     }
     
     match /mcqs/{lectureId} {
@@ -434,8 +498,20 @@ service cloud.firestore {
 
     match /userMCQStats/{userId} {
       allow read: if hasAccess();
-      // Regular user or Admin can write stats
-      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdmin();
+      // A user maintains their own stats doc - mcqAnswerService writes it on every
+      // submission - but stageId is not theirs to choose. The rule previously
+      // accepted any field, so a student could write {stageId: 'stage_5'} from the
+      // console and appear on another stage's leaderboard. Pin it to the stage on
+      // their own user doc, which only the Admin SDK can change.
+      //
+      // The scores themselves stay client-written: they are computed in
+      // mcqAnswerService from the answer history, and constraining them here
+      // would mean reimplementing that arithmetic in rules. Forging your own
+      // score remains possible; forging your stage no longer is.
+      allow write: if isAdmin() || (
+        isAuthenticated() && request.auth.uid == userId &&
+        request.resource.data.get('stageId', userStage()) == userStage()
+      );
     }
 
     match /systemNotifications/{notificationId} {

@@ -48,8 +48,14 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
           return;
         }
 
-        // 0. Fetch Bank Questions
-        const bq = await getQuestionsForLecture(lecture.id, lecture.category || '');
+        // 0. Fetch Bank Questions.
+        // subjectId, not category: getQuestionsForLecture matches bank questions
+        // on `scope == 'subject' && subjectId ==`, and bank questions store the
+        // real subject slug. Passing the legacy category meant subject-scoped
+        // questions never surfaced. It matters far more after a year-end wipe,
+        // when subject scope is all most questions have left. `category` stays
+        // as the fallback for content predating the curriculum migration.
+        const bq = await getQuestionsForLecture(lecture.id, lecture.subjectId || lecture.category || '');
         if (active) setBankQuestions(bq);
 
         // 1. Fetch first attempt status

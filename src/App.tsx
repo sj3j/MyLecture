@@ -102,6 +102,7 @@ export default function App() {
         progressionYear: user.progressionYear,
         progressionState: user.progressionState,
         graduated: user.graduated,
+        isMasterAdmin: user.isMasterAdmin,
       },
     });
     // Only ever latches ON here; it is cleared when the student dismisses the
@@ -461,9 +462,10 @@ export default function App() {
         const lastRead = parseInt(localStorage.getItem('lastReadInbox') || '0', 10);
         let latestTime = 0;
 
-        // Check latest homework
-        if (user.role !== 'admin' && user.role !== 'master_admin') {
-           const hwQuery = query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(1));
+        // Check latest homework. Scoped to the reader's stage, or the badge
+        // lights up for homework they will never see in the list.
+        if (user.role !== 'admin' && user.role !== 'master_admin' && effectiveStageId) {
+           const hwQuery = query(collection(db, 'homeworks'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'), limit(1));
            const hwSnap = await getDocs(hwQuery);
            if (!hwSnap.empty) {
              const t = hwSnap.docs[0].data().createdAt?.toMillis?.() || 0;
@@ -502,13 +504,14 @@ export default function App() {
     // Optional polling every 60 seconds
     const interval = setInterval(checkInbox, 60000);
     return () => clearInterval(interval);
-  }, [user?.uid, user?.role]);
+  }, [user?.uid, user?.role, effectiveStageId]);
 
   // Announcements Listener for Notifications
   useEffect(() => {
     if (!user || (!user.group && user.role === 'student')) return;
-    
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(1));
+    if (!effectiveStageId) return;
+
+    const q = query(collection(db, 'announcements'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const latestPost = snapshot.docs[0].data();
@@ -524,7 +527,7 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
     return () => unsubscribe();
-  }, [currentTab, user?.uid, user?.group, user?.role]);
+  }, [currentTab, user?.uid, user?.group, user?.role, effectiveStageId]);
 
   useEffect(() => {
     if (currentTab === 'announcements') {
@@ -547,12 +550,24 @@ export default function App() {
       return;
     }
 
-    let q = query(collection(db, 'lectures'), orderBy('createdAt', 'desc'));
-    if (effectiveStageId) {
-      q = query(collection(db, 'lectures'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
+    // No resolved stage means we cannot say which content this user is entitled
+    // to. Showing every stage's lectures was the old fallback; it leaks the whole
+    // university to anyone whose profile is mid-sync.
+    if (!effectiveStageId) {
+      setLectures([]);
+      setIsLoading(false);
+      return;
     }
+
+    const q = query(collection(db, 'lectures'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Lecture));
+      const docs = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as Lecture))
+        // The year-end wipe leaves each lecture behind as a stub with no PDF, so
+        // that bank questions scoped to it still resolve. Filtered here rather
+        // than in the query: a `where` would need an index and would also drop
+        // every lecture predating the field.
+        .filter(l => !(l as any).archived);
       setLectures(docs);
       setIsLoading(false);
     }, (error) => {

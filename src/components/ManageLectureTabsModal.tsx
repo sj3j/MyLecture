@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Edit2, Check, Save } from 'lucide-react';
 import { collection, query, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { LectureTab, Lecture, Language, TRANSLATIONS } from '../types';
+import { useStageContext } from '../contexts/StageContext';
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function ManageLectureTabsModal({ isOpen, onClose, lang, allLectures }: Props) {
+  const { effectiveStageId } = useStageContext();
   const [tabs, setTabs] = useState<LectureTab[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -35,7 +37,11 @@ export default function ManageLectureTabsModal({ isOpen, onClose, lang, allLectu
       const snap = await getDocs(q);
       const loaded: LectureTab[] = [];
       snap.forEach(d => {
-        loaded.push({ id: d.id, ...d.data() } as LectureTab);
+        const tab = { id: d.id, ...d.data() } as LectureTab;
+        // Tabs are per stage. Filtered here rather than in the query because the
+        // collection is a handful of docs and tabs created before this change
+        // carry no stageId - those stay visible everywhere instead of vanishing.
+        if (!tab.stageId || tab.stageId === effectiveStageId) loaded.push(tab);
       });
       setTabs(loaded);
     } catch (err) {
@@ -50,7 +56,8 @@ export default function ManageLectureTabsModal({ isOpen, onClose, lang, allLectu
     try {
       const docRef = await addDoc(collection(db, 'app_settings', 'lectureTabs', 'tabs'), {
         name: newName,
-        lectureIds: []
+        lectureIds: [],
+        stageId: effectiveStageId
       });
       setTabs([...tabs, { id: docRef.id, name: newName, lectureIds: [] }]);
       startEditing(docRef.id, newName, []);

@@ -135,11 +135,18 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
       handleFirestoreError(error, OperationType.GET, 'settings/announcements');
     });
 
-    let q = query(collection(db, 'announcements'), orderBy('createdAt', 'asc'));
-    if (effectiveStageId) {
-      q = query(collection(db, 'announcements'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'asc'));
+    // An unresolved stage used to fall through to an unfiltered query, showing
+    // every stage's announcements. Show nothing instead. The reactions listener
+    // above is already live, so its teardown still has to run.
+    if (!effectiveStageId) {
+      setPosts([]);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return () => unsubscribeReactions();
     }
-    
+
+    const q = query(collection(db, 'announcements'), where('stageId', '==', effectiveStageId), orderBy('createdAt', 'asc'));
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const newPosts: TelegramPost[] = [];
       snapshot.forEach((doc) => {

@@ -90,6 +90,9 @@ export interface LectureTab {
   id: string;
   name: string;
   lectureIds: string[];
+  /** Owning stage. Absent on tabs created before tabs were split per stage;
+   *  those still render for every stage. */
+  stageId?: string;
 }
 
 export interface Lecture {
@@ -130,6 +133,8 @@ export interface Post {
   fileName?: string;
   linkUrl?: string;
   linkTitle?: string;
+  /** Owning stage. Announcements are stage-filtered in AnnouncementsScreen. */
+  stageId?: string;
 }
 
 export interface RecordItem {
@@ -242,6 +247,9 @@ export interface Homework {
   note?: string;
   createdAt: any;
   dueDate?: any;
+  /** Owning stage. Every write path sets it; a homework without one is
+   *  invisible to the stage-filtered query in WeeklyListScreen. */
+  stageId?: string;
 }
 
 export type Language = 'ar' | 'en';
