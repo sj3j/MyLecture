@@ -1,49 +1,40 @@
-import React, { useState, useRef } from 'react';
-import { auth, db, storage } from '../lib/firebase';
-import { signOut } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { db, storage } from '../lib/firebase';
+import {
+  doc, setDoc, getDoc, getDocs, collection, query, orderBy, limit, where, getCountFromServer,
+} from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { Language, TRANSLATIONS, UserProfile } from '../types';
+import { Language, UserProfile } from '../types';
 import { IS_STORE_BUILD } from '../lib/platform';
 import {
   Shield, Loader2, AlertCircle, Pencil, Camera, Check, X,
-  Bell, Globe, Info, Flame, Crown, CreditCard, Palmtree,
+  Info, Flame, Crown, CreditCard, Palmtree, Settings as SettingsIcon,
 } from 'lucide-react';
 import ProfileStreakCalendar from './ProfileStreakCalendar';
 import SemesterHistoryList from './SemesterHistoryList';
-import { canManageAssistants, canManageStudents, canManageGrades, canManageStreakSystem, canViewAdminLogs } from '../lib/permissions';
 import { useAcademicPhase } from '../hooks/useAcademicPhase';
 import { useStageContext } from '../contexts/StageContext';
-import { STAT_ICONS, ADMIN_ICONS } from '../lib/profileIcons';
-import { StatCard, ProfileGroup, ProfileRow, ProfileToggle } from './profile/ProfilePrimitives';
+import { STAT_ICONS } from '../lib/profileIcons';
+import { StatCard, ProfileGroup, ProfileRow } from './profile/ProfilePrimitives';
 
 /**
- * The profile screen, rebuilt on Varmacy's profile layout: a banner with the
- * avatar breaking its lower edge, an identity block, a grid of stat tiles, then
- * grouped rows instead of a stack of full-width coloured buttons.
+ * The profile screen: a banner with the avatar breaking its lower edge, an
+ * identity block, and a grid of stat tiles that each link somewhere.
  *
- * Every behaviour of the previous version is kept - photo/name/group editing,
- * the streak card and its calendar, season history, the subscription card, all
- * seven toggles, all eight permission-gated admin entries, language and logout.
- *
- * Not carried over: a `handleGoogleLogin` and its `isLoggingIn` flag, plus an
- * unused `showManageDownloads`. Nothing rendered them - this screen is only
- * reachable when a user is already signed in, and login lives in LoginScreen.
+ * Everything that is a *setting* now lives on the settings page (a real tab,
+ * reached from the gear on the banner) rather than being duplicated here. What
+ * is left is the student themselves: who they are, their numbers, and their
+ * subscription.
  */
 
 interface ProfileScreenProps {
   user: UserProfile | null;
   lang: Language;
-  setLang: (lang: Language) => void;
-  setShowAdminManage?: (val: boolean) => void;
-  setShowStudentManage?: (val: boolean) => void;
-  setShowStreakManage?: (val: boolean) => void;
-  setShowAdminGrades?: (val: boolean) => void;
+  /** Opens the official-grades overlay. */
   setShowStudentGrades?: (val: boolean) => void;
-  setShowAdminLogs?: (val: boolean) => void;
-  setShowSubManage?: (val: boolean) => void;
-  setShowCalendarSettings?: (val: boolean) => void;
-  setShowSettings?: (val: boolean) => void;
+  onOpenSettings?: () => void;
+  /** Switches the app tab - used by the stat tiles. */
+  onNavigate?: (tab: string) => void;
   onNavigateToSubscription?: () => void;
 }
 
@@ -52,13 +43,17 @@ const GROUP_OPTIONS = [
   'C1', 'C2', 'C3', 'C4', 'D1', 'D2', 'D3', 'D4',
 ];
 
-export default function ProfileScreen({ user, lang, setLang, setShowAdminManage, setShowStudentManage,
-  setShowStreakManage, setShowAdminGrades, setShowStudentGrades, setShowAdminLogs, setShowSubManage,
-  setShowCalendarSettings, setShowSettings, onNavigateToSubscription }: ProfileScreenProps) {
-  const t = TRANSLATIONS[lang];
+/** A Latin run inside an RTL block reorders unless it carries its own direction. */
+const Ltr = ({ children }: { children: React.ReactNode }) => (
+  <span dir="ltr" className="inline-block">{children}</span>
+);
+
+export default function ProfileScreen({
+  user, lang, setShowStudentGrades, onOpenSettings, onNavigate, onNavigateToSubscription,
+}: ProfileScreenProps) {
   const isRtl = lang === 'ar';
   const { phase } = useAcademicPhase();
-  const { stages } = useStageContext();
+  const { stages, effectiveStageId } = useStageContext();
 
   /** '2027-01-31' -> '2027/1/31'. */
   const formatCalendarDate = (iso: string) => {
@@ -68,6 +63,7 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
 
   const [error, setError] = useState('');
   const [showStreakInfo, setShowStreakInfo] = useState(false);
+  const [showStreakStatus, setShowStreakStatus] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
@@ -77,13 +73,71 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  React.useEffect(() => {
+  const [lastDegree, setLastDegree] = useState<any | null>(null);
+  const [mcqRank, setMcqRank] = useState<number | null>(null);
+
+  const uid = user?.uid;
+
+  useEffect(() => {
     if (user && !isEditing) {
       setEditName(user.name);
       setEditGroup(user.group || '');
       setEditPhotoPreview(user.photoUrl || null);
     }
   }, [user, isEditing]);
+
+  /**
+   * Most recent grade. One document read - `orderBy('createdAt','desc')` on a
+   * subcollection is served by Firestore's automatic single-field index, which
+   * is what the grades screen already relies on in production.
+   */
+  useEffect(() => {
+    if (!uid) return;
+    let alive = true;
+    (async () => {
+      try {
+        const snap = await getDocs(query(
+          collection(db, `degrees/${uid}/exams`),
+          orderBy('createdAt', 'desc'),
+          limit(1),
+        ));
+        if (alive) setLastDegree(snap.empty ? null : snap.docs[0].data());
+      } catch (err) {
+        console.warn('Could not read last degree:', err);
+      }
+    })();
+    return () => { alive = false; };
+  }, [uid]);
+
+  /**
+   * MCQ leaderboard rank, by the same route LeaderboardTab uses for a student
+   * outside the visible top ten: count how many beat their score, add one.
+   *
+   * `mcqRankScore` is absent until a student has answered enough questions, and
+   * is deleted outright at season reset - so "unranked" is a normal state, not
+   * an error, and must not render as #1.
+   */
+  useEffect(() => {
+    if (!uid || !effectiveStageId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const mine = await getDoc(doc(db, 'userMCQStats', uid));
+        const score = mine.exists() ? (mine.data() as any).mcqRankScore : null;
+        if (score == null) { if (alive) setMcqRank(null); return; }
+        const counted = await getCountFromServer(query(
+          collection(db, 'userMCQStats'),
+          where('stageId', '==', effectiveStageId),
+          where('mcqRankScore', '>', score),
+        ));
+        if (alive) setMcqRank(counted.data().count + 1);
+      } catch (err) {
+        console.warn('Could not read MCQ rank:', err);
+        if (alive) setMcqRank(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [uid, effectiveStageId]);
 
   if (!user) return null;
 
@@ -98,9 +152,29 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
   // an empty string, which would render a broken image.
   const avatarSrc = (isEditing ? editPhotoPreview || user.photoUrl : user.photoUrl) || null;
 
-  const handleLogout = async () => {
-    await signOut(auth);
-  };
+  /**
+   * `degree` is not always a number: it can be 'درجة محجوبة' or the ~30-character
+   * 'ما متكوّز أو اسمك مو بالملف', either of which would wreck a text-2xl tile. Both
+   * collapse to a short label.
+   */
+  const degreeTile = (() => {
+    if (!lastDegree) return { value: '—' as React.ReactNode, text: false };
+    const raw = lastDegree.degree;
+    const n = typeof raw === 'number' ? raw : parseFloat(raw);
+    if (Number.isFinite(n)) {
+      const rawMax = lastDegree.maxDegree;
+      const max = typeof rawMax === 'number' ? rawMax : parseFloat(rawMax);
+      const shown = parseFloat(n.toFixed(2));
+      return {
+        value: <Ltr>{Number.isFinite(max) ? `${shown}/${max}` : `${shown}`}</Ltr>,
+        text: false,
+      };
+    }
+    if (typeof raw === 'string' && raw.includes('محجوبة')) {
+      return { value: isRtl ? 'محجوبة' : 'Withheld', text: true };
+    }
+    return { value: '—' as React.ReactNode, text: false };
+  })();
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -175,33 +249,6 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
     setError('');
   };
 
-  const handleToggleNotification = async (type: 'lectures' | 'announcements' | 'chat' | 'records' | 'homeworks') => {
-    const currentPrefs = user.notificationPreferences || { lectures: true, announcements: true, chat: true, records: true, homeworks: true };
-    const newPrefs = { ...currentPrefs, [type]: currentPrefs[type] === undefined ? false : !currentPrefs[type] };
-    try {
-      await setDoc(doc(db, 'users', user.uid), { notificationPreferences: newPrefs }, { merge: true });
-    } catch (error) {
-      console.error('Error updating notification preferences:', error);
-    }
-  };
-
-  const setLeaderboardFlag = async (field: 'hideNameOnLeaderboard' | 'hidePhotoOnLeaderboard', value: boolean) => {
-    try {
-      await setDoc(doc(db, 'users', user.uid), { [field]: value }, { merge: true });
-    } catch (error) {
-      console.error('Error updating leaderboard preference:', error);
-    }
-  };
-
-  const notifPrefs = user.notificationPreferences;
-  const notificationRows: { key: 'lectures' | 'announcements' | 'chat' | 'records' | 'homeworks'; label: string }[] = [
-    { key: 'lectures', label: isRtl ? 'المحاضرات الجديدة' : 'New lectures' },
-    { key: 'announcements', label: isRtl ? 'التبليغات' : 'Announcements' },
-    { key: 'chat', label: isRtl ? 'الشات' : 'Chat' },
-    { key: 'records', label: isRtl ? 'التسجيلات' : 'Records' },
-    { key: 'homeworks', label: isRtl ? 'الواجبات' : 'Homework' },
-  ];
-
   return (
     <div className="max-w-2xl mx-auto pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* ---- banner ----------------------------------------------------
@@ -216,6 +263,18 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             <Flame className="w-56 h-56 text-white" />
           </div>
         </div>
+
+        {/* Settings. Sits at the inline START, which `dir` resolves to the right
+            in Arabic - the opposite corner from the edit controls. */}
+        {onOpenSettings && !isEditing && (
+          <button
+            onClick={onOpenSettings}
+            aria-label={isRtl ? 'الإعدادات' : 'Settings'}
+            className="absolute top-4 start-4 z-20 bg-white/90 dark:bg-zinc-900/90 backdrop-blur rounded-full w-10 h-10 flex justify-center items-center shadow-sm hover:bg-white dark:hover:bg-zinc-900 active:scale-95 transition-all text-slate-500 dark:text-slate-300"
+          >
+            <SettingsIcon className="w-5 h-5" />
+          </button>
+        )}
 
         <div className="absolute top-4 end-4 z-20 flex gap-2">
           {isEditing ? (
@@ -247,8 +306,6 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           )}
         </div>
 
-        {/* The avatar breaks the banner's lower edge. Centred rather than
-            inline-start so it never collides with either corner button. */}
         <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 z-10">
           <div
             onClick={isEditing ? () => fileInputRef.current?.click() : undefined}
@@ -336,27 +393,37 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
           )}
         </div>
 
-        {/* ---- statistics ---------------------------------------------- */}
+        {/* ---- statistics ----------------------------------------------
+            Every tile is a link. The streak opens its own modal; the rest go to
+            the page that owns that number. */}
         <h2 className="text-xl font-black mb-3 text-slate-900 dark:text-stone-100">
           {isRtl ? 'الإحصائيات' : 'Statistics'}
         </h2>
         <div className="grid grid-cols-2 gap-3 mb-8 items-stretch">
-          <StatCard icon={STAT_ICONS.streak} label={isRtl ? 'الستريك الحالي' : 'Current streak'} value={user.streakCount || 0} />
           <StatCard
-            icon={STAT_ICONS.longest}
-            label={isRtl ? 'أطول ستريك' : 'Longest streak'}
-            value={Math.max(user.longestStreak || 0, user.streakCount || 0)}
+            icon={STAT_ICONS.streak}
+            label={isRtl ? 'الستريك الحالي' : 'Current streak'}
+            value={user.streakCount || 0}
+            onClick={() => setShowStreakStatus(true)}
           />
-          {/* "3/3" is a Latin run: it needs its own direction inside RTL. */}
           <StatCard
-            icon={STAT_ICONS.shields}
-            label={isRtl ? 'دروع التجميد' : 'Freeze shields'}
-            value={<span style={{ direction: 'ltr' }} className="inline-block">{Math.min(user.freezeTokens ?? 1, 3)}/3</span>}
+            icon={STAT_ICONS.rank}
+            label={isRtl ? 'ترتيبك بالكوزات' : 'Your quiz rank'}
+            value={mcqRank ? <Ltr>{`#${mcqRank}`}</Ltr> : '—'}
+            onClick={() => onNavigate?.('leaderboard')}
+          />
+          <StatCard
+            icon={STAT_ICONS.degree}
+            label={isRtl ? 'آخر درجة' : 'Last grade'}
+            value={degreeTile.value}
+            text={degreeTile.text}
+            onClick={() => setShowStudentGrades?.(true)}
           />
           <StatCard
             icon={STAT_ICONS.examCode}
             label={isRtl ? 'الكود الامتحاني' : 'Exam code'}
-            value={<span style={{ direction: 'ltr' }} className="inline-block">{user.examCode || '—'}</span>}
+            value={<Ltr>{user.examCode || '—'}</Ltr>}
+            onClick={() => onNavigate?.('announcements')}
           />
           {isEditing ? (
             <div className="col-span-2 bg-white dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 rounded-2xl p-4 shadow-sm">
@@ -373,54 +440,21 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
               </select>
             </div>
           ) : (
-            <StatCard icon={STAT_ICONS.group} label={isRtl ? 'الكروب' : 'Group'} value={user.group || '—'} />
+            <StatCard
+              icon={STAT_ICONS.group}
+              label={isRtl ? 'الكروب' : 'Group'}
+              value={user.group || '—'}
+              onClick={() => onNavigate?.('chat')}
+            />
           )}
-          {/* Spans the row rather than leaving an orphan half-tile, which also
-              gives the longest stage names the width they need. */}
           <StatCard
             className={isEditing ? 'col-span-2' : ''}
             icon={STAT_ICONS.stage}
             label={isRtl ? 'المرحلة' : 'Stage'}
             value={stageName}
             text
+            onClick={() => onNavigate?.('home')}
           />
-        </div>
-
-        {/* ---- streak --------------------------------------------------- */}
-        <div className="bg-orange-50 dark:bg-orange-900/10 border-2 border-orange-100 dark:border-orange-800/30 rounded-2xl p-4 sm:p-5 mb-6 relative overflow-hidden shadow-sm">
-          <div className="flex items-center justify-between mb-4 relative z-10 gap-2">
-            <h3 className="text-base font-black text-orange-800 dark:text-orange-300 flex items-center gap-2 min-w-0">
-              <Flame className="w-5 h-5 text-orange-500 shrink-0" />
-              <span className="truncate">{isRtl ? 'حالة الستريك' : 'Streak status'}</span>
-            </h3>
-            <button
-              onClick={() => setShowStreakInfo(true)}
-              className="px-3 py-1.5 rounded-full text-xs font-bold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-800/30 hover:bg-orange-200 dark:hover:bg-orange-800/50 transition-colors flex items-center gap-1.5 shrink-0"
-            >
-              <Info className="w-3.5 h-3.5" />
-              {isRtl ? 'كيف يعمل؟' : 'How it works'}
-            </button>
-          </div>
-
-          {/* A frozen streak looks like a bug unless the app says why. */}
-          {phase.isPaused && (
-            <div className="relative z-10 mb-4 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 px-4 py-3 rounded-2xl flex items-center gap-3 text-sm font-bold border border-sky-100 dark:border-sky-800">
-              <Palmtree className="w-5 h-5 text-sky-500 shrink-0" />
-              <span>
-                {phase.nextStart
-                  ? (isRtl
-                      ? `الستريك متوقف خلال العطلة، ويستأنف في ${formatCalendarDate(phase.nextStart)}.`
-                      : `Streaks are paused for the break and resume on ${formatCalendarDate(phase.nextStart)}.`)
-                  : (isRtl ? 'الستريك متوقف خلال العطلة.' : 'Streaks are paused for the break.')}
-              </span>
-            </div>
-          )}
-
-          <div className="relative z-10 bg-white/60 dark:bg-zinc-900/60 rounded-2xl p-1 backdrop-blur-sm border border-orange-100/50 dark:border-orange-800/20">
-            <ProfileStreakCalendar userUid={user.uid} isRtl={isRtl} />
-          </div>
-
-          <SemesterHistoryList userUid={user.uid} isRtl={isRtl} />
         </div>
 
         {/* ---- subscription --------------------------------------------- */}
@@ -443,147 +477,86 @@ export default function ProfileScreen({ user, lang, setLang, setShowAdminManage,
             />
           </ProfileGroup>
         )}
-
-        {/* ---- notifications -------------------------------------------- */}
-        <ProfileGroup title={isRtl ? 'الإشعارات' : 'Notifications'}>
-          {notificationRows.map(row => (
-            <ProfileRow
-              key={row.key}
-              isRtl={isRtl}
-              icon={{ Icon: Bell, className: 'text-sky-600 dark:text-sky-400', tile: 'bg-sky-100 dark:bg-sky-900/30' }}
-              label={row.label}
-              trailing={
-                <ProfileToggle
-                  isRtl={isRtl}
-                  label={row.label}
-                  on={notifPrefs?.[row.key] !== false}
-                  onChange={() => handleToggleNotification(row.key)}
-                />
-              }
-            />
-          ))}
-        </ProfileGroup>
-
-        {/* ---- leaderboard privacy --------------------------------------- */}
-        <ProfileGroup title={isRtl ? 'الخصوصية في لوحة الصدارة' : 'Leaderboard privacy'}>
-          <ProfileRow
-            isRtl={isRtl}
-            icon={{ Icon: Shield, className: 'text-violet-600 dark:text-violet-400', tile: 'bg-violet-100 dark:bg-violet-900/30' }}
-            label={isRtl ? 'إخفاء اسمي' : 'Hide my name'}
-            trailing={
-              <ProfileToggle
-                isRtl={isRtl}
-                label={isRtl ? 'إخفاء اسمي' : 'Hide my name'}
-                on={!!user.hideNameOnLeaderboard}
-                onChange={() => setLeaderboardFlag('hideNameOnLeaderboard', !user.hideNameOnLeaderboard)}
-              />
-            }
-          />
-          <ProfileRow
-            isRtl={isRtl}
-            icon={{ Icon: Camera, className: 'text-violet-600 dark:text-violet-400', tile: 'bg-violet-100 dark:bg-violet-900/30' }}
-            label={isRtl ? 'إخفاء صورتي' : 'Hide my photo'}
-            trailing={
-              <ProfileToggle
-                isRtl={isRtl}
-                label={isRtl ? 'إخفاء صورتي' : 'Hide my photo'}
-                on={!!user.hidePhotoOnLeaderboard}
-                onChange={() => setLeaderboardFlag('hidePhotoOnLeaderboard', !user.hidePhotoOnLeaderboard)}
-              />
-            }
-          />
-        </ProfileGroup>
-
-        {/* ---- administration -------------------------------------------
-            These were eight full-width coloured buttons stacked down the page.
-            Same entries, same permission gates, one card. */}
-        {(canManageAssistants(user) || canManageStudents(user) || canManageStreakSystem(user)
-          || canManageGrades(user)) && (
-          <ProfileGroup title={isRtl ? 'الإدارة' : 'Administration'}>
-            {canManageAssistants(user) && setShowAdminManage && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.assistants} label={t.manageAdmins}
-                onClick={() => setShowAdminManage(true)} />
-            )}
-            {canManageAssistants(user) && canViewAdminLogs(user) && setShowAdminLogs && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.logs}
-                label={isRtl ? 'سجل الإدارة' : 'Admin logs'}
-                sublabel={isRtl ? 'المشرف العام فقط' : 'Master admin only'}
-                onClick={() => setShowAdminLogs(true)} />
-            )}
-            {canManageAssistants(user) && isMasterAdminUser && setShowSubManage && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.subscriptions}
-                label={isRtl ? 'إدارة الاشتراكات' : 'Manage subscriptions'}
-                onClick={() => setShowSubManage(true)} />
-            )}
-            {canManageStudents(user) && setShowStudentManage && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.students}
-                label={isRtl ? 'إدارة الطلاب' : 'Manage students'}
-                onClick={() => setShowStudentManage(true)} />
-            )}
-            {canManageStreakSystem(user) && setShowCalendarSettings && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.calendar}
-                label={isRtl ? 'التقويم الدراسي' : 'Academic calendar'}
-                onClick={() => setShowCalendarSettings(true)} />
-            )}
-            {canManageStreakSystem(user) && setShowStreakManage && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.streak}
-                label={isRtl ? 'إدارة الستريك' : 'Streak management'}
-                onClick={() => setShowStreakManage(true)} />
-            )}
-            {canManageGrades(user) && setShowAdminGrades && (
-              <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.grades}
-                label={isRtl ? 'إدارة السعيّات والدرجات' : 'Manage grades'}
-                onClick={() => setShowAdminGrades(true)} />
-            )}
-          </ProfileGroup>
-        )}
-
-        {/* Every student has official grades, so this is deliberately NOT in the
-            Administration card - it was ungated in the previous version too. */}
-        {setShowStudentGrades && (
-          <ProfileGroup title={isRtl ? 'الدراسة' : 'Academic'}>
-            <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.myGrades}
-              label={isRtl ? 'السعيّات والدرجات المعتمدة' : 'Official grades'}
-              onClick={() => setShowStudentGrades(true)} />
-          </ProfileGroup>
-        )}
-
-        {/* ---- account --------------------------------------------------- */}
-        <ProfileGroup title={isRtl ? 'الحساب' : 'Account'}>
-          {setShowSettings && (
-            <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.settings}
-              label={isRtl ? 'الإعدادات' : 'Settings'}
-              onClick={() => setShowSettings(true)} />
-          )}
-          <ProfileRow
-            isRtl={isRtl}
-            icon={{ Icon: Globe, className: 'text-slate-600 dark:text-slate-300', tile: 'bg-slate-100 dark:bg-zinc-800' }}
-            label={isRtl ? 'اللغة' : 'Language'}
-            trailing={
-              <div className="flex bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl">
-                <button
-                  onClick={() => setLang('ar')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${lang === 'ar' ? 'bg-white dark:bg-zinc-800 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                >
-                  العربية
-                </button>
-                <button
-                  onClick={() => setLang('en')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${lang === 'en' ? 'bg-white dark:bg-zinc-800 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                >
-                  English
-                </button>
-              </div>
-            }
-          />
-          <ProfileRow isRtl={isRtl} icon={ADMIN_ICONS.logout} destructive
-            label={isRtl ? 'تسجيل الخروج' : 'Log out'}
-            onClick={handleLogout} />
-        </ProfileGroup>
       </div>
 
+      {/* ---- streak status ---------------------------------------------
+          Behind the tile rather than always on the page: ProfileStreakCalendar
+          fetches /api/streak-history on mount and SemesterHistoryList fires
+          three getDocs, so none of that runs until the tile is tapped. */}
+      {showStreakStatus && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+          <div className="bg-orange-50 dark:bg-zinc-900 w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-5">
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <h3 className="text-base font-black text-orange-800 dark:text-orange-300 flex items-center gap-2 min-w-0">
+                <Flame className="w-5 h-5 text-orange-500 shrink-0" />
+                <span className="truncate">{isRtl ? 'حالة الستريك' : 'Streak status'}</span>
+              </h3>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowStreakInfo(true)}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-800/30 hover:bg-orange-200 dark:hover:bg-orange-800/50 transition-colors flex items-center gap-1.5"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                  {isRtl ? 'كيف يعمل؟' : 'How it works'}
+                </button>
+                <button
+                  onClick={() => setShowStreakStatus(false)}
+                  aria-label={isRtl ? 'إغلاق' : 'Close'}
+                  className="p-2 bg-white/70 hover:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                </button>
+              </div>
+            </div>
+
+            {/* The three live numbers, including the shields that used to have a
+                tile of their own on the grid. */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="bg-white/80 dark:bg-zinc-800/80 p-3 rounded-2xl border border-orange-200/50 dark:border-orange-700/30 text-center">
+                <p className="text-[10px] text-orange-600 dark:text-orange-400 font-bold mb-1">{isRtl ? 'الحالي' : 'Current'}</p>
+                <p className="text-xl font-black text-orange-700 dark:text-orange-300">{user.streakCount || 0}</p>
+              </div>
+              <div className="bg-white/80 dark:bg-zinc-800/80 p-3 rounded-2xl border border-orange-200/50 dark:border-orange-700/30 text-center">
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold mb-1">{isRtl ? 'الأطول' : 'Longest'}</p>
+                <p className="text-xl font-black text-amber-700 dark:text-amber-400">
+                  {Math.max(user.longestStreak || 0, user.streakCount || 0)}
+                </p>
+              </div>
+              <div className="bg-white/80 dark:bg-zinc-800/80 p-3 rounded-2xl border border-orange-200/50 dark:border-orange-700/30 text-center">
+                <p className="text-[10px] text-sky-600 dark:text-sky-400 font-bold mb-1 flex items-center justify-center gap-1">
+                  <Shield className="w-3 h-3" /> {isRtl ? 'الدروع' : 'Shields'}
+                </p>
+                <p className="text-xl font-black text-sky-700 dark:text-sky-400">
+                  <Ltr>{`${Math.min(user.freezeTokens ?? 1, 3)}/3`}</Ltr>
+                </p>
+              </div>
+            </div>
+
+            {/* A frozen streak looks like a bug unless the app says why. */}
+            {phase.isPaused && (
+              <div className="mb-4 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 px-4 py-3 rounded-2xl flex items-center gap-3 text-sm font-bold border border-sky-100 dark:border-sky-800">
+                <Palmtree className="w-5 h-5 text-sky-500 shrink-0" />
+                <span>
+                  {phase.nextStart
+                    ? (isRtl
+                        ? `الستريك متوقف خلال العطلة، ويستأنف في ${formatCalendarDate(phase.nextStart)}.`
+                        : `Streaks are paused for the break and resume on ${formatCalendarDate(phase.nextStart)}.`)
+                    : (isRtl ? 'الستريك متوقف خلال العطلة.' : 'Streaks are paused for the break.')}
+                </span>
+              </div>
+            )}
+
+            <div className="bg-white/60 dark:bg-zinc-800/60 rounded-2xl p-1 border border-orange-100/50 dark:border-orange-800/20">
+              <ProfileStreakCalendar userUid={user.uid} isRtl={isRtl} />
+            </div>
+
+            <SemesterHistoryList userUid={user.uid} isRtl={isRtl} />
+          </div>
+        </div>
+      )}
+
       {showStreakInfo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
           <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-y-auto max-h-[90vh] shadow-2xl relative p-6">
             <button onClick={() => setShowStreakInfo(false)} className="absolute top-4 end-4 p-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors z-10">
               <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />

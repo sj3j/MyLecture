@@ -30,6 +30,11 @@ export default function SettingsRow({
   onClick?: () => void;
   destructive?: boolean;
   isRtl: boolean;
+  /** React consumes `key` and never forwards it, so this is type-only: this repo
+   *  has no @types/react installed (see CLAUDE.md), so JSX's special props are
+   *  unknown to the checker and a keyed <SettingsRow> in a .map() is otherwise
+   *  reported as an unknown prop. */
+  key?: React.Key;
 }) {
   const interactive = !!onClick && !soon;
   const Chevron = isRtl ? ChevronLeft : ChevronRight;

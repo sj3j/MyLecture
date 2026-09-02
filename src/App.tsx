@@ -124,7 +124,6 @@ export default function App() {
   const [showStudentManage, setShowStudentManage] = useState(false);
   const [showStreakManage, setShowStreakManage] = useState(false);
   const [showCalendarSettings, setShowCalendarSettings] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showAdminGrades, setShowAdminGrades] = useState(false);
   const [showAdminBank, setShowAdminBank] = useState(false);
   const [showAntiCheat, setShowAntiCheat] = useState(false);
@@ -766,17 +765,38 @@ export default function App() {
         <ProfileScreen 
           user={user} 
           lang={lang} 
-          setLang={setLang} 
-          setShowAdminManage={setShowAdminManage} 
-          setShowStudentManage={setShowStudentManage} 
-          setShowStreakManage={setShowStreakManage} 
-          setShowCalendarSettings={setShowCalendarSettings} 
-          setShowSettings={setShowSettings} 
-          setShowAdminGrades={setShowAdminGrades} 
           setShowStudentGrades={setShowStudentGrades} 
-          setShowAdminLogs={setShowAdminLogs}
-          setShowSubManage={setShowSubManage}
+          onOpenSettings={() => setCurrentTab('settings')}
+          onNavigate={(tab: string) => setCurrentTab(tab as Tab)}
           onNavigateToSubscription={() => setCurrentTab('subscription')}
+        />
+      )}
+      {/* A real page, not an overlay: the profile unmounts behind it and the nav
+          bars stay usable. Opening an admin tool from here leaves currentTab on
+          'settings', so closing that tool returns to settings rather than
+          dumping the user back on the profile. */}
+      {currentTab === 'settings' && (
+        <SettingsScreen
+          onBack={() => setCurrentTab('profile')}
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          theme={theme}
+          setTheme={setTheme}
+          notificationPermission={permission}
+          onRequestNotifications={requestPermission}
+          onLogout={() => { setCurrentTab('profile'); signOut(auth); }}
+          onOpen={(what) => {
+            if (what === 'adminManage') setShowAdminManage(true);
+            else if (what === 'studentManage') setShowStudentManage(true);
+            else if (what === 'streakManage') setShowStreakManage(true);
+            else if (what === 'adminGrades') setShowAdminGrades(true);
+            else if (what === 'studentGrades') setShowStudentGrades(true);
+            else if (what === 'adminLogs') setShowAdminLogs(true);
+            else if (what === 'subManage') setShowSubManage(true);
+            else if (what === 'calendar') setShowCalendarSettings(true);
+            else if (what === 'subscription') setCurrentTab('subscription');
+          }}
         />
       )}
 
@@ -790,30 +810,6 @@ export default function App() {
       <AdminManagement isOpen={showAdminManage} onClose={() => setShowAdminManage(false)} lang={lang} user={user} />
       <StreakManagement isOpen={showStreakManage} onClose={() => setShowStreakManage(false)} lang={lang} user={user} />
       <AcademicCalendarModal isOpen={showCalendarSettings} onClose={() => setShowCalendarSettings(false)} lang={lang} user={user} />
-      <SettingsScreen
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        theme={theme}
-        setTheme={setTheme}
-        notificationPermission={permission}
-        onRequestNotifications={requestPermission}
-        onLogout={() => { setShowSettings(false); signOut(auth); }}
-        onOpen={(what) => {
-          setShowSettings(false);
-          if (what === 'adminManage') setShowAdminManage(true);
-          else if (what === 'studentManage') setShowStudentManage(true);
-          else if (what === 'streakManage') setShowStreakManage(true);
-          else if (what === 'adminGrades') setShowAdminGrades(true);
-          else if (what === 'studentGrades') setShowStudentGrades(true);
-          else if (what === 'adminLogs') setShowAdminLogs(true);
-          else if (what === 'subManage') setShowSubManage(true);
-          else if (what === 'calendar') setShowCalendarSettings(true);
-          else if (what === 'subscription') setCurrentTab('subscription');
-        }}
-      />
       <StudentManagement isOpen={showStudentManage} onClose={() => setShowStudentManage(false)} lang={lang} user={user} />
       <AdminGradesScreen isOpen={showAdminGrades} onClose={() => setShowAdminGrades(false)} user={user} />
       <AdminQuestionBankScreen isOpen={showAdminBank} onClose={() => setShowAdminBank(false)} lang={lang} />

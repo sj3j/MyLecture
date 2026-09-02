@@ -12,6 +12,7 @@
  */
 import {
   Award,
+  BarChart3,
   CalendarDays,
   Crown,
   FileText,
@@ -22,6 +23,7 @@ import {
   LogOut,
   Settings,
   Shield,
+  Trophy,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -43,6 +45,8 @@ export const STAT_ICONS = {
   streak: { Icon: Flame, className: 'text-orange-600 dark:text-orange-400', tile: 'bg-orange-100 dark:bg-orange-900/30' },
   longest: { Icon: Award, className: 'text-amber-600 dark:text-amber-400', tile: 'bg-amber-100 dark:bg-amber-900/30' },
   shields: { Icon: Shield, className: 'text-sky-600 dark:text-sky-400', tile: 'bg-sky-100 dark:bg-sky-900/30' },
+  rank: { Icon: Trophy, className: 'text-amber-600 dark:text-amber-400', tile: 'bg-amber-100 dark:bg-amber-900/30' },
+  degree: { Icon: BarChart3, className: 'text-rose-600 dark:text-rose-400', tile: 'bg-rose-100 dark:bg-rose-900/30' },
   examCode: { Icon: Hash, className: 'text-indigo-600 dark:text-indigo-400', tile: 'bg-indigo-100 dark:bg-indigo-900/30' },
   group: { Icon: Users, className: 'text-emerald-600 dark:text-emerald-400', tile: 'bg-emerald-100 dark:bg-emerald-900/30' },
   stage: { Icon: GraduationCap, className: 'text-violet-600 dark:text-violet-400', tile: 'bg-violet-100 dark:bg-violet-900/30' },
