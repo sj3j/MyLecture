@@ -76,6 +76,20 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
     email: 'stu@x.com', name: 'Student', isActive: true, stageId: 'stage_3', password: 'HASH',
   });
 
+  // A student who has been through a season reset. seasonReset.ts nulls
+  // lastActiveDate for EVERY user, so this is the shape 345 of 421 production
+  // accounts are actually in - and the shape that used to fail isValidUser and
+  // silently refuse every self-edit.
+  await setDoc(doc(db, 'users/reset_uid'), {
+    role: 'student', email: 'reset@x.com', stageId: 'stage_3',
+    streakCount: 0, longestStreak: 0, freezeTokens: 3,
+    lastActiveDate: null, lastActiveAt: null,
+    notificationPreferences: { lectures: true, announcements: true },
+  });
+  await setDoc(doc(db, 'students/reset@x.com'), {
+    email: 'reset@x.com', name: 'Reset', isActive: true, stageId: 'stage_3', password: 'HASH',
+  });
+
   await setDoc(doc(db, 'stages/stage_3'), { id: 'stage_3', nameEn: 'Third Stage', order: 3 });
   await setDoc(doc(db, 'stages/stage_4'), { id: 'stage_4', nameEn: 'Fourth Stage', order: 4 });
   await setDoc(doc(db, 'lectures/lec1'), { title: 'L1', stageId: 'stage_3', category: 'biochemistry' });
@@ -97,6 +111,7 @@ const ctxFor = (uid, email) =>
   testEnv.authenticatedContext(uid, { email }).firestore();
 
 const rep = ctxFor('rep_uid', 'rep@x.com');
+const resetUser = ctxFor('reset_uid', 'reset@x.com');
 const mod = ctxFor('mod_uid', 'mod@x.com');
 const legacy = ctxFor('legacy_uid', 'legacy@x.com');
 const student = ctxFor('stu_uid', 'stu@x.com');
@@ -344,6 +359,33 @@ await check('a student cannot read the queue (it holds emails and hashes)',
   assertFails(getDoc(doc(student, 'signup_requests/new@x.com'))));
 await check('a representative CAN read it to triage',
   assertSucceeds(getDoc(doc(rep, 'signup_requests/new@x.com'))));
+
+console.log('');
+console.log('A season reset must not lock a student out of their own settings:');
+// Regression guard for the bug that made the notification toggles snap back:
+// lastActiveDate is nulled by the season reset, isValidUser required `is string`,
+// so the self-edit branch was refused and Firestore rolled the write back.
+await check('a post-reset student CAN toggle a notification preference',
+  assertSucceeds(updateDoc(doc(resetUser, 'users/reset_uid'), {
+    notificationPreferences: { lectures: false, announcements: true },
+  })));
+await check('a post-reset student CAN hide their name from the leaderboard',
+  assertSucceeds(updateDoc(doc(resetUser, 'users/reset_uid'), { hideNameOnLeaderboard: true })));
+await check('a post-reset student CAN hide their photo',
+  assertSucceeds(updateDoc(doc(resetUser, 'users/reset_uid'), { hidePhotoOnLeaderboard: true })));
+await check('a post-reset student CAN save a profile edit',
+  assertSucceeds(updateDoc(doc(resetUser, 'users/reset_uid'), { name: 'New Name', group: 'C1' })));
+await check('a post-reset student CAN block someone',
+  assertSucceeds(updateDoc(doc(resetUser, 'users/reset_uid'), { blockedUsers: ['rep_uid'] })));
+// The null arm must widen ONLY the type check - every freeze still holds.
+await check('but still CANNOT change their own stage',
+  assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { stageId: 'stage_5' })));
+await check('and still CANNOT subscribe themselves',
+  assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { isSubscribed: true })));
+await check('and still CANNOT promote themselves',
+  assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { role: 'admin' })));
+await check('a garbage lastActiveDate is still rejected',
+  assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { lastActiveDate: 12345 })));
 
 await testEnv.cleanup();
 

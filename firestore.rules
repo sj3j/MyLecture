@@ -158,8 +158,15 @@ service cloud.firestore {
              (!('streakCount' in data) || data.streakCount is number) &&
              (!('longestStreak' in data) || data.longestStreak is number) &&
              (!('freezeTokens' in data) || data.freezeTokens is number) &&
-             (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
-             (!('lastActiveAt' in data) || data.lastActiveAt is timestamp) &&
+             // Both of these are nulled, not removed, by the season reset
+             // (shared/seasonReset.ts sets lastActiveDate: null for EVERY user).
+             // Without the null arm `null is string` is false, isValidUser fails,
+             // and the whole self-edit branch below is refused - which silently
+             // blocked notification toggles, the leaderboard privacy switches and
+             // saving a profile edit for every user who had been through a reset.
+             // photoUrl and subscriptionEnd already read this way.
+             (!('lastActiveDate' in data) || data.lastActiveDate == null || data.lastActiveDate is string) &&
+             (!('lastActiveAt' in data) || data.lastActiveAt == null || data.lastActiveAt is timestamp) &&
              (!('hasPendingStreakReset' in data) || data.hasPendingStreakReset is bool) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&

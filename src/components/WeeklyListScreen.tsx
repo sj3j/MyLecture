@@ -391,7 +391,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
             }}
           >
             <button 
-              className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+              className="absolute top-4 end-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedImage(null);

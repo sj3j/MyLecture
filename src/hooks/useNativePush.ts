@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile } from '../types';
 
@@ -12,9 +12,19 @@ import { UserProfile } from '../types';
  * notification ever arrives. Native builds have to go through the OS via
  * @capacitor/push-notifications and FCM's Android SDK instead.
  *
- * Both paths end at the same place: an FCM token on `users/{uid}.fcmToken`,
- * which is what /api/cron/streak-warnings and /api/notify already send to. So
- * nothing on the server needed to change.
+ * The token has to land in BOTH places, because two different senders read two
+ * different locations:
+ *
+ *   - `fcm_tokens/{uid}` is what every Cloud Function sender reads
+ *     (functions/index.js getTokensWithPreferences) - lectures, announcements
+ *     and homework all fan out from there. This is also where the web path
+ *     writes (usePushNotifications).
+ *   - `users/{uid}.fcmToken` is what /api/cron/streak-warnings reads.
+ *
+ * This hook used to write only the second one, with a comment claiming it was
+ * "the same field the web path writes". It is not, and the consequence was that
+ * the installed Android app registered a token no content sender ever looked at,
+ * so lecture/announcement/homework notifications never arrived on the APK.
  *
  * The plugin is imported dynamically so the web bundle never pulls it in.
  */
@@ -55,15 +65,27 @@ export function useNativePush(user: UserProfile | null) {
         const onReg = await PushNotifications.addListener('registration', async (t: { value: string }) => {
           if (cancelled) return;
           setToken(t.value);
+          // Written separately, not in a batch: the users doc is subject to the
+          // self-edit rules and can legitimately be refused, and that must not
+          // stop the fcm_tokens write, which is the one content delivery needs.
           try {
-            // Same field the web path writes, so the existing senders just work.
+            await setDoc(doc(db, 'fcm_tokens', user.uid), {
+              token: t.value,
+              platform: 'android',
+              updatedAt: serverTimestamp(),
+            }, { merge: true });
+          } catch (err) {
+            console.error('Failed to save push token to fcm_tokens:', err);
+          }
+
+          try {
             await setDoc(doc(db, 'users', user.uid), {
               fcmToken: t.value,
               fcmPlatform: 'android',
               fcmUpdatedAt: new Date().toISOString(),
             }, { merge: true });
           } catch (err) {
-            console.error('Failed to save push token:', err);
+            console.error('Failed to mirror push token onto the user doc:', err);
           }
         });
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, Loader2, AlertCircle, Check, CalendarDays, Plus, Trash2,
-  BookOpen, GraduationCap, Palmtree, RefreshCw,
+  BookOpen, GraduationCap, Palmtree, RefreshCw, Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../lib/firebase';
@@ -97,6 +97,7 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
   const [wipePlan, setWipePlan] = useState<any>(null);
   const [wipeConfirm, setWipeConfirm] = useState('');
   const [isWiping, setIsWiping] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const patchTerm = (index: number, patch: Partial<AcademicTerm>) => {
     setDraft(prev => ({
@@ -172,6 +173,40 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
   };
 
   /** Read-only. Produces the numbers the confirmation is built from. */
+  /**
+   * Snapshot the year without deleting anything.
+   *
+   * Separate from the wipe on purpose: the wipe archives as step 3 of a
+   * sequence that ends in deletion, and there was no way to take the archive on
+   * its own. This calls the exportOnly branch, which returns before the wipe
+   * path is entered.
+   */
+  const handleExportOnly = async () => {
+    setIsExporting(true);
+    setError(null);
+    setNote(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('No auth token');
+      const res = await fetch(apiUrl('/api/admin/wipe-year'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ yearLabel: calendar.yearLabel, exportOnly: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'API error');
+
+      setNote(isRtl
+        ? `تم حفظ نسخة من ${data.yearLabel}: ${data.documentsExported} مستند. لم يُحذف شيء.`
+        : `${data.yearLabel} exported: ${data.documentsExported} documents. Nothing was deleted.`);
+      await logAdminAction('YEAR_EXPORT', `Exported ${data.yearLabel}: ${data.documentsExported} docs`);
+    } catch (err: any) {
+      setError(err.message || (isRtl ? 'فشل التصدير' : 'Export failed'));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handlePreviewWipe = async () => {
     setIsWiping(true);
     setError(null);
@@ -482,14 +517,24 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
                     </p>
 
                     {!wipePlan ? (
-                      <button
-                        onClick={handlePreviewWipe}
-                        disabled={isWiping}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-colors"
-                      >
-                        {isWiping ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
-                        {isRtl ? 'فحص ما سيُحذف' : 'Preview what would be deleted'}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={handleExportOnly}
+                          disabled={isExporting || isWiping}
+                          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-colors"
+                        >
+                          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                          {isRtl ? 'تصدير بدون حذف' : 'Export without deleting'}
+                        </button>
+                        <button
+                          onClick={handlePreviewWipe}
+                          disabled={isWiping || isExporting}
+                          className="flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-colors"
+                        >
+                          {isWiping ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
+                          {isRtl ? 'فحص ما سيُحذف' : 'Preview what would be deleted'}
+                        </button>
+                      </div>
                     ) : (
                       <div className="space-y-3">
                         <div className="p-3 bg-white/70 dark:bg-zinc-800/70 rounded-xl text-xs space-y-1">

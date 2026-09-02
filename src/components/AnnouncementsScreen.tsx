@@ -644,7 +644,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
                                   initial={{ opacity: 0, scale: 0.9, y: 10 }}
                                   animate={{ opacity: 1, scale: 1, y: 0 }}
                                   exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                                  className="absolute left-0 bottom-full mb-2 bg-white dark:bg-zinc-800 p-2 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-700 flex items-center gap-2 z-10"
+                                  className="absolute start-0 bottom-full mb-2 bg-white dark:bg-zinc-800 p-2 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-700 flex items-center gap-2 z-10"
                                 >
                                   {allowedReactions.map(emoji => (
                                     <button
@@ -683,7 +683,7 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
         <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
           <div className="w-24 h-24 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6 shadow-sm relative">
             <Megaphone className="w-10 h-10 text-slate-400 dark:text-zinc-500" />
-            <div className="absolute top-0 right-0 w-6 h-6 bg-sky-100 dark:bg-sky-900/50 rounded-full flex items-center justify-center">
+            <div className="absolute top-0 end-0 w-6 h-6 bg-sky-100 dark:bg-sky-900/50 rounded-full flex items-center justify-center">
               <div className="w-2 h-2 bg-[#2196F3] rounded-full" />
             </div>
           </div>

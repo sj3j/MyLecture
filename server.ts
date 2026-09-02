@@ -14,7 +14,7 @@ import { submitProgression, ProgressionError } from "./shared/progressionSubmit.
 import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "./shared/googleLogin.js";
 import { createSignupRequest, reviewSignupRequest, SignupError } from "./shared/signupRequest.js";
 import { deleteUserAccount, mergeUserAccounts } from "./shared/adminUsers.js";
-import { planYearWipe, runYearWipe, YearWipeError } from "./shared/yearWipe.js";
+import { planYearWipe, runYearWipe, exportYear, YearWipeError } from "./shared/yearWipe.js";
 import { summariseYear } from "./shared/yearSummary.js";
 import { deleteWipedFiles } from "./shared/yearWipeFiles.js";
 import { OAuth2Client } from "google-auth-library";
@@ -1306,7 +1306,28 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
 
       const db = admin.firestore();
       const calendar = await loadCalendar(db);
-      const { yearLabel, dryRun } = req.body || {};
+      const { yearLabel, dryRun, exportOnly } = req.body || {};
+
+      // Export with no deletion. Deliberately its own branch ABOVE the wipe path,
+      // so a snapshot can never fall through into a delete: it archives the year
+      // into contentArchives and returns, leaving every document in place. This is
+      // what the "export only" button calls, and it is safe to run repeatedly.
+      if (exportOnly) {
+        const label = yearLabel || calendar.yearLabel;
+        const plan = await planYearWipe(db, {
+          yearLabel: label,
+          r2PublicUrl: process.env.R2_PUBLIC_URL || "",
+        });
+        const { documentsExported } = await exportYear(db, admin.firestore.FieldValue as any, {
+          yearLabel: label,
+          performedBy: adminUser.uid,
+          plan,
+        });
+        return res.json({
+          success: true, exportOnly: true, yearLabel: label,
+          documentsExported, counts: plan.counts, files: plan.files.length,
+        });
+      }
 
       // A dry run is what the confirmation dialog is built from - it must never
       // write anything, so it is answered before any of the wipe path is entered.

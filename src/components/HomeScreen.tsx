@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Language, TRANSLATIONS, Lecture } from '../types';
-import { Flame, GraduationCap, Users, BookOpen } from 'lucide-react';
+import { Flame, BookOpen } from 'lucide-react';
 import SubjectBrowser from './SubjectBrowser';
 import WeeklyListScreen from './WeeklyListScreen';
 import RecordsScreen from './RecordsScreen';
@@ -141,35 +141,40 @@ export default function HomeScreen({
           </p>
         </div>
         
-        <div className="flex items-center gap-4">
-          {/* Quick Stat Badges from the prompt */}
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-sm">
-              <Users className="w-4 h-4 text-sky-500" />
-              <span className="text-sm font-bold text-slate-700 dark:text-slate-300">الطلاب</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-sm">
-              <GraduationCap className="w-4 h-4 text-emerald-500" />
-              <span className="text-sm font-bold text-slate-700 dark:text-slate-300">أكاديمي</span>
-            </div>
-            {user && (
-              <>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-sm">
-                  <Flame className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{user.streakCount || 0} أيام</span>
+        {/* Two decorative chips ("الطلاب" / "أكاديمي") used to sit here. They had
+            no onClick and no data behind them - leftover scaffolding - and their
+            labels were hardcoded Arabic, so they stayed Arabic in English. The
+            streak chip below is real and carries a live number. */}
+        {user && (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ps-2 pe-3 py-2 bg-white dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 rounded-2xl shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+                <Flame className="w-4 h-4 text-orange-600 dark:text-orange-400" strokeWidth={2.5} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 leading-none mb-0.5">
+                  {isRtl ? 'الستريك' : 'Streak'}
                 </div>
-                {user.hasPendingStreakReset && pendingDaysLeft !== null && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl shadow-sm cursor-help tooltip-container relative group">
-                    <span className="text-sm font-bold text-rose-600 dark:text-rose-400">ستريك معلق ({pendingDaysLeft} أيام)</span>
-                    <div className="absolute top-full mt-2 w-48 p-2 bg-slate-800 text-white text-xs rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
-                      أمامك {pendingDaysLeft} أيام لاستعادة الستريك المفقود قبل أن يختفي العرض نهائياً.
-                    </div>
-                  </div>
-                )}
-              </>
+                <div className="text-sm font-black text-slate-800 dark:text-stone-100 leading-none">
+                  {user.streakCount || 0} {isRtl ? 'يوم' : 'days'}
+                </div>
+              </div>
+            </div>
+
+            {user.hasPendingStreakReset && pendingDaysLeft !== null && (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 dark:bg-rose-900/30 border-2 border-rose-100 dark:border-rose-900/50 rounded-2xl shadow-sm cursor-help relative group">
+                <span className="text-xs font-black text-rose-600 dark:text-rose-400">
+                  {isRtl ? `ستريك معلق (${pendingDaysLeft})` : `Streak at risk (${pendingDaysLeft})`}
+                </span>
+                <div className="absolute top-full mt-2 w-48 p-2 bg-slate-800 text-white text-xs rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 end-0">
+                  {isRtl
+                    ? `أمامك ${pendingDaysLeft} أيام لاستعادة الستريك المفقود قبل أن يختفي العرض نهائياً.`
+                    : `You have ${pendingDaysLeft} days to restore your lost streak before the offer disappears.`}
+                </div>
+              </div>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Horizontal Scrollable Filter Chips */}
@@ -180,10 +185,10 @@ export default function HomeScreen({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm ${
-                isActive 
-                  ? 'bg-[#2196F3] text-white' 
-                  : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+              className={`whitespace-nowrap px-5 py-2.5 rounded-2xl font-bold text-sm transition-colors border-2 ${
+                isActive
+                  ? 'bg-sky-500 border-sky-500 text-white shadow-sm'
+                  : 'bg-white dark:bg-zinc-800 border-slate-100 dark:border-zinc-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-700/60 shadow-sm'
               }`}
             >
               {tab.label}

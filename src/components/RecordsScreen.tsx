@@ -290,7 +290,7 @@ export default function RecordsScreen({ user, lang, searchQuery, onNavigateToCha
                 className="bg-white dark:bg-zinc-800 rounded-3xl p-5 border border-slate-200 dark:border-zinc-700 shadow-sm flex flex-col relative hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
               >
               {isNew && (
-                 <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full absolute -top-2 left-4 rotate-[-10deg] shadow-sm z-10">
+                 <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full absolute -top-2 start-4 rotate-[-10deg] shadow-sm z-10">
                    {isRtl ? 'جديد!' : 'NEW!'}
                  </span>
               )}
