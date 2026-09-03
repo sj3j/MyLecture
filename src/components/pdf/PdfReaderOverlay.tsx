@@ -66,11 +66,42 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
   const [flashId, setFlashId] = useState<string | null>(null);
   const [orphanIds, setOrphanIds] = useState<Set<string>>(new Set());
 
-  /** Transient pinch factor applied as a CSS transform; 1 when not pinching. */
-  const [liveZoom, setLiveZoom] = useState(1);
-  // Pointer handlers need the current value without re-subscribing.
+  /** Gesture state for the active pinch, or null. Declared before paintZoom,
+   *  which reads it inside a rAF callback. */
+  const pinch = useRef<{ startDist: number; startScale: number; focalY: number } | null>(null);
+
+  /**
+   * The live pinch factor is deliberately NOT React state.
+   *
+   * It used to be, and a setState on every pointermove re-rendered this whole
+   * component - which maps over `layout` and mounts canvas-backed PdfPages. On a
+   * mid-range phone that re-render cannot keep up with the pointer stream, so the
+   * transform landed at a low, irregular rate and the zoom read as jumping in
+   * steps rather than gliding. Writing the transform straight to the node inside
+   * a rAF keeps the gesture at display rate and renders nothing.
+   */
   const liveZoomRef = useRef(1);
-  liveZoomRef.current = liveZoom;
+  const zoomLayerRef = useRef<HTMLDivElement>(null);
+  const zoomLabelRef = useRef<HTMLSpanElement>(null);
+  const zoomRaf = useRef<number | null>(null);
+
+  /** Paints the pending pinch factor once per frame. */
+  const paintZoom = useCallback(() => {
+    zoomRaf.current = null;
+    const k = liveZoomRef.current;
+    const layer = zoomLayerRef.current;
+    if (layer) layer.style.transform = k === 1 ? '' : `scale(${k})`;
+    // The readout tracked the committed scale only, so during a pinch the number
+    // sat frozen and then snapped on release. Written here it counts smoothly.
+    const label = zoomLabelRef.current;
+    if (label && pinch.current) {
+      label.textContent = `${Math.round(pinch.current.startScale * k * 100)}%`;
+    }
+  }, []);
+
+  const scheduleZoomPaint = useCallback(() => {
+    if (zoomRaf.current == null) zoomRaf.current = requestAnimationFrame(paintZoom);
+  }, [paintZoom]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pages = useRef(new Map<number, PageHandle>());
@@ -223,7 +254,6 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
    * The page viewport meta sets user-scalable=no, so the browser's own pinch is
    * off and these gestures arrive as plain pointer events with nothing to fight.
    */
-  const pinch = useRef<{ startDist: number; startScale: number; focalY: number } | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
 
   const dist = () => {
@@ -242,7 +272,12 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
         startScale: scale,
         focalY: (a.y + b.y) / 2 - (box?.top ?? 0),
       };
-      setLiveZoom(1);
+      liveZoomRef.current = 1;
+      // Set on the node rather than through a render: touch-action is read when
+      // the gesture starts, so flipping it via state on the NEXT frame is already
+      // too late and the WebView keeps panning underneath the pinch.
+      if (el) el.style.touchAction = 'none';
+      if (zoomLayerRef.current) zoomLayerRef.current.style.willChange = 'transform';
     }
   };
 
@@ -256,7 +291,8 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
     // Clamp against the absolute limits, not just the gesture, or the rubber
     // band keeps growing after the scale can no longer follow it.
     const target = Math.min(MAX_SCALE, Math.max(MIN_SCALE, pinch.current.startScale * raw));
-    setLiveZoom(target / pinch.current.startScale);
+    liveZoomRef.current = target / pinch.current.startScale;
+    scheduleZoomPaint();
   };
 
   const endPointer = (e: React.PointerEvent) => {
@@ -266,9 +302,24 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
     const { startScale, focalY } = pinch.current;
     const k = liveZoomRef.current;
     pinch.current = null;
-    setLiveZoom(1);
 
-    if (Math.abs(k - 1) < 0.01) return;
+    // Drop the transient transform before committing: the pages are about to
+    // re-rasterise at the real scale, and leaving a stale transform on the layer
+    // would double-apply the zoom for a frame.
+    if (zoomRaf.current != null) { cancelAnimationFrame(zoomRaf.current); zoomRaf.current = null; }
+    liveZoomRef.current = 1;
+    const el2 = scrollRef.current;
+    if (el2) el2.style.touchAction = '';
+    if (zoomLayerRef.current) {
+      zoomLayerRef.current.style.transform = '';
+      zoomLayerRef.current.style.willChange = '';
+    }
+
+    if (Math.abs(k - 1) < 0.01) {
+      // Nothing committed, so React will not re-render and restore the readout.
+      if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round(startScale * 100)}%`;
+      return;
+    }
 
     // Keep whatever was under the fingers under the fingers. The scroll fix-up
     // itself lives in the scale effect below, which every zoom path shares.
@@ -554,9 +605,11 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
         dir="ltr"
-        // touch-action must go to none mid-pinch or the WebView keeps scrolling
-        // under the gesture and the zoom fights the pan.
-        style={{ touchAction: liveZoom === 1 ? 'auto' : 'none' }}
+        // touch-action is switched to 'none' imperatively on the second
+        // pointerdown and cleared on release - see onPointerDown. It cannot be
+        // driven from state: the browser latches touch-action when the gesture
+        // begins, so a value arriving on the next render is already too late.
+        style={{ touchAction: 'auto' }}
         className="flex-1 overflow-y-auto overflow-x-auto bg-slate-200 dark:bg-zinc-950 px-2"
       >
         {error && (
@@ -574,13 +627,11 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
 
         {pdfDoc && (
         <div
-          style={{
-            // Only the live gesture rides on a transform. Once committed, the
-            // pages re-render at the real scale so text stays crisp.
-            transform: liveZoom === 1 ? undefined : `scale(${liveZoom})`,
-            transformOrigin: '50% 0',
-            willChange: liveZoom === 1 ? undefined : 'transform',
-          }}
+          ref={zoomLayerRef}
+          // transform and willChange are written directly to this node during a
+          // pinch; only the origin is declarative. Once the gesture commits, the
+          // pages re-render at the real scale so text stays crisp.
+          style={{ transformOrigin: '50% 0' }}
         >
         {layout.map((box, i) => {
           const n = i + 1;
@@ -647,7 +698,10 @@ export default function PdfReaderOverlay({ lectureId, lectureTitle, pdfUrl, lang
         >
           <Minus className="w-5 h-5" />
         </button>
-        <span className="min-w-[46px] text-center text-xs font-bold text-slate-500 tabular-nums">
+        <span
+          ref={zoomLabelRef}
+          className="min-w-[46px] text-center text-xs font-bold text-slate-500 tabular-nums"
+        >
           {Math.round(scale * 100)}%
         </span>
         <button

@@ -15,7 +15,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where } from 'firebase/firestore';
 
 const PROJECT_ID = 'mylectures-rules-test';
 
@@ -74,6 +74,14 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'users/stu_uid'), { role: 'student', email: 'stu@x.com', stageId: 'stage_3' });
   await setDoc(doc(db, 'students/stu@x.com'), {
     email: 'stu@x.com', name: 'Student', isActive: true, stageId: 'stage_3', password: 'HASH',
+  });
+
+  // A student on ANOTHER stage. The stage_3 representative must not be able to
+  // see or touch this one - before the students rules were scoped they could
+  // read the hash and overwrite the whole document.
+  await setDoc(doc(db, 'students/other@x.com'), {
+    email: 'other@x.com', name: 'Other Stage', isActive: true,
+    stageId: 'stage_4', password: 'HASH4',
   });
 
   // A student who has been through a season reset. seasonReset.ts nulls
@@ -201,19 +209,31 @@ await check('student CAN read subjects',
   assertSucceeds(getDoc(doc(student, 'subjects/stage_3__biochemistry_ii'))));
 
 console.log('\nLegacy allowed_admins entries (no role field) still work');
-await check('legacy admin CAN read students',
+// STAGED ROLLOUT - these five assert the GRACE, not the end state.
+//
+// canWriteStage and canManageStudentsOn both still accept an empty
+// managedStageId, because no account has been assigned the stage that actually
+// holds the content: every lecture, record and student is stage_3, and the only
+// assigned accounts point at stage_4. Removing the grace today would leave the
+// single hardcoded master-admin address as the only account able to upload or
+// manage a roster.
+//
+// WHEN THE ROLLOUT FINISHES: after scripts/assignStageRepresentatives.mjs has
+// given every representative a managedStageId, delete the
+// `myManagedStage() == '' ||` arm from both helpers in firestore.rules and flip
+// these five back to assertFails - that is the intended behaviour, and the
+// per-stage assertions further down already prove an ASSIGNED admin is confined
+// to their own stage.
+await check('unassigned admin can still read students (grace)',
   assertSucceeds(getDoc(doc(legacy, 'students/stu@x.com'))));
-// Previously an unassigned admin could write to ANY stage, which made stage
-// isolation a no-op while no account carried managedStageId. Now they write
-// nowhere until scripts/assignStageRepresentatives.mjs pins them to a stage.
-await check('unassigned admin CANNOT write a lecture any more',
-  assertFails(setDoc(doc(legacy, 'lectures/lec_legacy'), { title: 'L', stageId: 'stage_3' })));
-await check('unassigned admin CANNOT write a record',
-  assertFails(setDoc(doc(legacy, 'records/rec_legacy'), { title: 'R', stageId: 'stage_3' })));
-await check('unassigned admin CANNOT write an announcement',
-  assertFails(setDoc(doc(legacy, 'announcements/ann_legacy'), { content: 'A', stageId: 'stage_3' })));
-await check('unassigned admin CANNOT write a homework',
-  assertFails(setDoc(doc(legacy, 'homeworks/hw_legacy'), { subject: 'biochemistry', stageId: 'stage_3' })));
+await check('unassigned admin can still write a lecture (grace)',
+  assertSucceeds(setDoc(doc(legacy, 'lectures/lec_legacy'), { title: 'L', stageId: 'stage_3' })));
+await check('unassigned admin can still write a record (grace)',
+  assertSucceeds(setDoc(doc(legacy, 'records/rec_legacy'), { title: 'R', stageId: 'stage_3' })));
+await check('unassigned admin can still write an announcement (grace)',
+  assertSucceeds(setDoc(doc(legacy, 'announcements/ann_legacy'), { content: 'A', stageId: 'stage_3' })));
+await check('unassigned admin can still write a homework (grace)',
+  assertSucceeds(setDoc(doc(legacy, 'homeworks/hw_legacy'), { subject: 'biochemistry', stageId: 'stage_3' })));
 
 console.log('\nRecords, announcements and homework are stage-scoped');
 await check('representative CAN create a record on their stage',
@@ -386,6 +406,86 @@ await check('and still CANNOT promote themselves',
   assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { role: 'admin' })));
 await check('a garbage lastActiveDate is still rejected',
   assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { lastActiveDate: 12345 })));
+
+console.log('');
+console.log('The exam-code prompt:');
+// "Ask me later" is an ordinary self-write - it is nobody's business but the
+// student's, and losing it only means being asked again.
+await check('a student CAN snooze the exam-code prompt',
+  assertSucceeds(updateDoc(doc(resetUser, 'users/reset_uid'), {
+    examCodePromptSnoozedUntil: '2026-12-01T00:00:00.000Z',
+  })));
+await check('a non-string snooze is rejected',
+  assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { examCodePromptSnoozedUntil: 42 })));
+// The code ITSELF stays server-only: /api/me/exam-code writes it with the
+// Admin SDK precisely because this is refused.
+await check('but the exam code itself is still frozen against self-edit',
+  assertFails(updateDoc(doc(resetUser, 'users/reset_uid'), { examCode: '9999' })));
+
+console.log('');
+console.log('Students are stage-scoped (each representative owns only their cohort):');
+await check('representative CAN read a student on their own stage',
+  assertSucceeds(getDoc(doc(rep, 'students/stu@x.com'))));
+await check('representative CANNOT read a student on another stage',
+  assertFails(getDoc(doc(rep, 'students/other@x.com'))));
+await check('representative CANNOT overwrite a student on another stage',
+  assertFails(setDoc(doc(rep, 'students/other@x.com'), {
+    email: 'other@x.com', name: 'Hijacked', isActive: true,
+    stageId: 'stage_4', password: 'NEW',
+  })));
+await check('representative CANNOT delete a student on another stage',
+  assertFails(deleteDoc(doc(rep, 'students/other@x.com'))));
+// The create/target pair: planting a row into someone else's cohort is the
+// import-shaped version of the same attack.
+await check('representative CANNOT create a student on another stage',
+  assertFails(setDoc(doc(rep, 'students/planted@x.com'), {
+    email: 'planted@x.com', name: 'Planted', isActive: true, stageId: 'stage_4',
+  })));
+await check('representative CAN create a student on their own stage',
+  assertSucceeds(setDoc(doc(rep, 'students/fresh@x.com'), {
+    email: 'fresh@x.com', name: 'Fresh', isActive: true, stageId: 'stage_3',
+  })));
+await check('representative CANNOT move their own student to another stage',
+  assertFails(updateDoc(doc(rep, 'students/fresh@x.com'), { stageId: 'stage_4' })));
+await check('representative CAN update their own student',
+  assertSucceeds(updateDoc(doc(rep, 'students/fresh@x.com'), { examCode: '1023' })));
+await check('representative CAN delete their own student',
+  assertSucceeds(deleteDoc(doc(rep, 'students/fresh@x.com'))));
+
+// A list must be provably inside the rule, so the unscoped read the roster used
+// to do is now refused outright rather than quietly returning other stages.
+await check('representative CANNOT list the whole students collection',
+  assertFails(getDocs(collection(rep, 'students'))));
+await check('representative CAN list their own stage',
+  assertSucceeds(getDocs(query(collection(rep, 'students'), where('stageId', '==', 'stage_3')))));
+
+await check('the master admin CAN read any stage',
+  assertSucceeds(getDoc(doc(master, 'students/other@x.com'))));
+await check('the master admin CAN list every student',
+  assertSucceeds(getDocs(collection(master, 'students'))));
+
+// The arm every student depends on at login must survive the scoping.
+await check('a student CAN still read their OWN record',
+  assertSucceeds(getDoc(doc(student, 'students/stu@x.com'))));
+await check('a student CANNOT read a classmate',
+  assertFails(getDoc(doc(student, 'students/other@x.com'))));
+await check('a student still CANNOT write their own record',
+  assertFails(updateDoc(doc(student, 'students/stu@x.com'), { examCode: '9999' })));
+
+console.log('');
+console.log('Staff can DELETE their own stage content (null request.resource):');
+// A delete carries no incoming resource, so a rule that reaches for
+// request.resource.data to check the target stage raises a null-value error
+// and denies the write. Asserted per collection because the guard is repeated
+// in each one rather than shared.
+await check('representative CAN delete a lecture on their stage',
+  assertSucceeds(deleteDoc(doc(rep, 'lectures/lec_mod'))));
+await check('representative CAN delete a record on their stage',
+  assertSucceeds(deleteDoc(doc(rep, 'records/rec_own'))));
+await check('representative CAN delete an announcement on their stage',
+  assertSucceeds(deleteDoc(doc(rep, 'announcements/ann_own'))));
+await check('representative CAN delete a homework on their stage',
+  assertSucceeds(deleteDoc(doc(rep, 'homeworks/hw_own'))));
 
 await testEnv.cleanup();
 

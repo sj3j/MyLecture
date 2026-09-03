@@ -103,14 +103,41 @@ service cloud.firestore {
     // Content-write scope for a stage. Master admin writes anywhere; every other
     // staff member writes only the stage they are assigned to.
     //
-    // This deliberately has NO fallback for unassigned staff. It used to treat an
-    // empty managedStageId as "may write anywhere", which meant stage isolation
-    // did nothing at all while no account carried the field. Assign every staff
-    // account with scripts/assignStageRepresentatives.mjs BEFORE deploying this,
-    // or all of them lose write access at once.
+    // STAGED ROLLOUT - the `myManagedStage() == ''` arm is a temporary grace.
+    //
+    // The intended rule is the strict one: assigned staff write only their own
+    // stage, and unassigned staff write nothing. It is not safe to switch on yet
+    // because no account has been given a managedStageId for the stage that
+    // actually holds the content (every lecture, record and student is stage_3,
+    // and the only assigned accounts point at stage_4). Turning it on today
+    // would leave almdrydyl335@ - the one address hardcoded as master admin
+    // above - as the only account able to upload anything.
+    //
+    // TO FINISH THE ROLLOUT: run scripts/assignStageRepresentatives.mjs, confirm
+    // every representative has a managedStageId, then delete the
+    // `myManagedStage() == '' ||` line below and redeploy. scripts/rules.test.mjs
+    // already asserts the strict behaviour, so flip the expectation there too.
     function canWriteStage(stageId) {
       return isMasterAdmin() || (
-        isStaff() && myManagedStage() != '' && myManagedStage() == stageId
+        isStaff() && (myManagedStage() == '' || myManagedStage() == stageId)
+      );
+    }
+
+    // Students, unlike the content collections, are ADMIN-only: isStaff() would
+    // let a moderator in, and src/lib/permissions.ts treats manageStudents as
+    // admin-only precisely because this collection holds password hashes.
+    //
+    // An admin with no managedStageId manages nothing - the same stance
+    // canWriteStage already takes, and the reason it has no unassigned
+    // fallback. Reading every cohort's hashes while being able to write
+    // nowhere would be the odd one out.
+    // Carries the SAME temporary grace as canWriteStage, and is removed at the
+    // same time. Production today lets any isAdmin() write any student; going
+    // straight to the strict form would leave almdrydyl335@ as the only account
+    // able to manage the stage_3 roster, which is every student there is.
+    function canManageStudentsOn(stageId) {
+      return isMasterAdmin() || (
+        isAdmin() && (myManagedStage() == '' || myManagedStage() == stageId)
       );
     }
 
@@ -170,6 +197,10 @@ service cloud.firestore {
              (!('hasPendingStreakReset' in data) || data.hasPendingStreakReset is bool) &&
              (!('examCode' in data) || data.examCode is string) &&
              (!('group' in data) || data.group is string) &&
+             // Set by the student when they tap the exam-code card's
+             // "ask me later". Self-writable on purpose; the exam code itself
+             // is frozen below and only /api/me/exam-code can set it.
+             (!('examCodePromptSnoozedUntil' in data) || data.examCodePromptSnoozedUntil is string) &&
              (!('blockedUsers' in data) || data.blockedUsers is list) &&
              (!('permissions' in data) || data.permissions is map) &&
              (!('isSubscribed' in data) || data.isSubscribed is bool) &&
@@ -290,9 +321,32 @@ service cloud.firestore {
       );
     }
     
+    // The pre-registration whitelist, and the credential store: it holds every
+    // student's password hash, so `isAdmin()` alone was the widest remaining
+    // grant in this file. Any representative could read every other stage's
+    // roster and overwrite or delete its students - which, now that each
+    // representative bulk-imports their own list, is one stale stage picker
+    // away from rewriting a live cohort's passwords.
+    //
+    // Scoped with the same create/update-and-target pair used for lectures,
+    // records, homeworks and announcements below.
+    //
+    // canReadStage() is deliberately not reused: it admits moderators, and it
+    // returns true when stageId is '', which would leave any student document
+    // missing a stage readable by every signed-in user.
     match /students/{email} {
-      allow read: if isAdmin() || (isAuthenticated() && (request.auth.uid == email || (request.auth.token.email != null && request.auth.token.email.lower() == email)));
-      allow write: if isAdmin();
+      allow get, list: if (isAuthenticated() && (request.auth.uid == email
+            || (request.auth.token.email != null && request.auth.token.email.lower() == email)))
+        || canManageStudentsOn(resource.data.get('stageId', ''));
+
+      allow create: if canManageStudentsOn(request.resource.data.get('stageId', ''));
+
+      // `request.resource == null`, not `request.resource.data == null`: on a
+      // delete there is no incoming resource at all, so reaching for .data
+      // raises a null-value error and denies the write outright.
+      allow update, delete: if canManageStudentsOn(resource.data.get('stageId', '')) &&
+        (request.resource == null
+         || canManageStudentsOn(request.resource.data.get('stageId', '')));
     }
 
     match /users/{userId} {
@@ -398,8 +452,11 @@ service cloud.firestore {
       
       allow create: if canWriteStage(request.resource.data.get('stageId', ''));
 
+      // `request.resource == null`, not `request.resource.data == null`: a
+      // delete carries no incoming resource, so reaching for .data raises a
+      // null-value error and denied every delete a representative attempted.
       allow update, delete: if canWriteStage(resource.data.get('stageId', '')) &&
-        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')));
+        (request.resource == null || canWriteStage(request.resource.data.get('stageId', '')));
     }
     
     match /chat_presence/{userId} {
@@ -465,8 +522,11 @@ service cloud.firestore {
     match /records/{recordId} {
       allow read: if canReadStage(resource.data.get('stageId', null), resource.data.get('subjectId', ''));
       allow create: if canWriteStage(request.resource.data.get('stageId', ''));
+      // `request.resource == null`, not `request.resource.data == null`: a
+      // delete carries no incoming resource, so reaching for .data raises a
+      // null-value error and denied every delete a representative attempted.
       allow update, delete: if canWriteStage(resource.data.get('stageId', '')) &&
-        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')));
+        (request.resource == null || canWriteStage(request.resource.data.get('stageId', '')));
     }
 
     match /announcements/{postId} {
@@ -487,8 +547,11 @@ service cloud.firestore {
     match /homeworks/{homeworkId} {
       allow read: if canReadStage(resource.data.get('stageId', null), '');
       allow create: if canWriteStage(request.resource.data.get('stageId', ''));
+      // `request.resource == null`, not `request.resource.data == null`: a
+      // delete carries no incoming resource, so reaching for .data raises a
+      // null-value error and denied every delete a representative attempted.
       allow update, delete: if canWriteStage(resource.data.get('stageId', '')) &&
-        (request.resource.data == null || canWriteStage(request.resource.data.get('stageId', '')));
+        (request.resource == null || canWriteStage(request.resource.data.get('stageId', '')));
     }
     
     match /mcqs/{lectureId} {
