@@ -111,6 +111,12 @@ export interface Lecture {
   number?: number;
   isWeekly?: boolean;
   version?: 'original' | 'translated';
+  /** For a translated lecture, the document id of the original it was translated
+   *  from. Set at upload. Makes the pair share one question bank: see
+   *  bankLectureIdFor() in services/questionBankService.ts. Absent on originals,
+   *  and on translated lectures uploaded before the field existed - those simply
+   *  keep their own separate bank, which is the pre-existing behaviour. */
+  translationOf?: string;
   stageId?: string;
   subjectId?: string;
   subjectName?: string;

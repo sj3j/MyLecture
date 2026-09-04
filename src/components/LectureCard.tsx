@@ -294,6 +294,25 @@ export default React.memo(function LectureCard({ lecture, lang, user, onEdit, on
             </button>
           )}
 
+          {/* Translated lectures get their own entry point rather than sharing the
+              one above. That button's whole label is driven by AI generation
+              status, which is meaningless here - a translated lecture never has
+              AI questions, so it would permanently read "Start MCQ" and generate
+              nothing. This opens the same overlay, which shows the question bank
+              only. Without it a translated lecture has no route to the bank at
+              all, which is the gap that made a pair's shared questions
+              unreachable from the translated half. */}
+          {user && lecture.version === 'translated' && (
+            <button
+              onClick={() => onOpenMCQ && onOpenMCQ(lecture)}
+              className="inline-flex items-center justify-center p-1.5 sm:px-3 sm:py-2.5 bg-white dark:bg-zinc-800 border-2 border-violet-100 dark:border-violet-900/50 rounded-lg sm:rounded-xl hover:bg-violet-50 dark:hover:bg-violet-900/30 text-violet-600 dark:text-violet-400 transition-all gap-1.5"
+              title={isRtl ? 'بنك الأسئلة' : 'Question Bank'}
+            >
+              <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-[10px] sm:text-xs font-bold leading-none">{isRtl ? 'بنك الأسئلة' : 'Question Bank'}</span>
+            </button>
+          )}
+
           {canManage(user, 'manageLectures') && (
             <>
               <button

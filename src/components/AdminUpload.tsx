@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, AlertCircle, Loader2, FileUp, CheckCircle2 } from 'lucide-react';
 import { db, auth, storage, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, Lecture, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -47,6 +47,11 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
   const [description, setDescription] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [version, setVersion] = useState<'original' | 'translated'>('original');
+  // The original this translation came from, so the pair shares one question
+  // bank. Only meaningful when version === 'translated'; '' means unlinked,
+  // which is allowed - the lecture just keeps its own separate bank.
+  const [translationOf, setTranslationOf] = useState<string>('');
+  const [originalCandidates, setOriginalCandidates] = useState<any[]>([]);
   const [isWeekly, setIsWeekly] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [fileConfigs, setFileConfigs] = useState<any[]>([]);
@@ -102,6 +107,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
       setDescription(lectureToEdit.description || '');
       setYoutubeUrl(lectureToEdit.youtubeUrl || '');
       setVersion(lectureToEdit.version || 'original');
+      setTranslationOf(lectureToEdit.translationOf || '');
       setIsWeekly(lectureToEdit.isWeekly || false);
       setFiles([]); // Optional to upload a new file
       setFileConfigs([]);
@@ -110,6 +116,34 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
       resetForm();
     }
   }, [lectureToEdit, isOpen]);
+
+  // Candidate originals for the "translated from" picker. Scoped to the same
+  // stage and subject, because that is the only place a matching original can
+  // be - and it keeps the list short enough to be a usable dropdown.
+  //
+  // Deliberately NOT matched on lecture number: AdminUpload writes
+  // `number: null` whenever the field is left blank, so a number-based auto-pair
+  // silently fails on exactly the lectures that already exist.
+  useEffect(() => {
+    if (!isOpen || version !== 'translated') {
+      setOriginalCandidates([]);
+      return;
+    }
+    let active = true;
+    getDocs(query(collection(db, 'lectures'), where('stageId', '==', effectiveStageId)))
+      .then(snap => {
+        if (!active) return;
+        const rows = snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter(l => l.version !== 'translated')
+          .filter(l => (hasCurriculum ? l.subjectId === subjectId : true))
+          .filter(l => l.id !== lectureToEdit?.id)
+          .sort((a, b) => (a.number ?? 9999) - (b.number ?? 9999));
+        setOriginalCandidates(rows);
+      })
+      .catch(err => console.error('Failed to load original lectures', err));
+    return () => { active = false; };
+  }, [isOpen, version, subjectId, effectiveStageId, hasCurriculum, lectureToEdit]);
 
   const loadConfig = (index: number, configs: any[]) => {
     if (!configs || !configs[index]) return;
@@ -122,6 +156,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     setDescription(c.description);
     setYoutubeUrl(c.youtubeUrl);
     setVersion(c.version);
+    setTranslationOf(c.translationOf || '');
     setIsWeekly(c.isWeekly);
   };
 
@@ -137,6 +172,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
       description,
       youtubeUrl,
       version,
+      translationOf,
       isWeekly
     };
     return newConfigs;
@@ -220,6 +256,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     setDescription('');
     setYoutubeUrl('');
     setVersion('original');
+    setTranslationOf('');
     setIsWeekly(false);
     setFiles([]);
     setFileConfigs([]);
@@ -277,6 +314,10 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
           uploadedBy: lectureToEdit?.uploadedBy || auth.currentUser.uid,
           uploaderName: lectureToEdit?.uploaderName || user?.name || auth.currentUser?.displayName || 'Admin',
           version,
+          // Only meaningful on a translation. Written as null rather than
+          // omitted on originals so re-saving a lecture that was previously
+          // translated actually clears the stale link.
+          translationOf: version === 'translated' && translationOf ? translationOf : null,
           isWeekly,
           // Without this the lecture fails every stage-filtered query and is
           // invisible to everyone, including the admin who uploaded it.
@@ -330,6 +371,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
             uploadedBy: auth.currentUser?.uid,
             uploaderName: user?.name || auth.currentUser?.displayName || 'Admin',
             version: config.version,
+            translationOf: config.version === 'translated' && config.translationOf ? config.translationOf : null,
             isWeekly: config.isWeekly,
             createdAt: serverTimestamp(),
             stageId: effectiveStageId,
@@ -596,7 +638,37 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                         <option value="translated">{t.translated}</option>
                       </select>
                     </div>
-                    
+
+                    {version === 'translated' && (
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
+                          {isRtl ? 'مترجمة عن' : 'Translated from'}
+                        </label>
+                        <select
+                          value={translationOf}
+                          onChange={(e) => setTranslationOf(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                        >
+                          <option value="">{isRtl ? '— بدون ربط —' : '— Not linked —'}</option>
+                          {originalCandidates.map(l => (
+                            <option key={l.id} value={l.id}>
+                              {l.number ? `${l.number}. ` : ''}{l.title}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 ml-1">
+                          {isRtl
+                            ? 'الربط يجعل المحاضرتين تشتركان في نفس بنك الأسئلة.'
+                            : 'Linking makes both lectures share one question bank.'}
+                        </p>
+                        {originalCandidates.length === 0 && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 ml-1">
+                            {isRtl ? 'لا توجد محاضرات أصلية في هذه المادة' : 'No original lectures in this subject'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex items-center mt-6">
                       <label className="flex items-center gap-3 cursor-pointer">
                         <div className="relative">

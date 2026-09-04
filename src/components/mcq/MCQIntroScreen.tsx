@@ -19,6 +19,7 @@ interface Props {
 
 export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions = [], firstAttemptStatus, onStart, onClose, user, userId }: Props) {
   const isRetake = firstAttemptStatus.hasCompleted;
+  const isTranslated = lecture.version === 'translated';
   const [lockedCount, setLockedCount] = useState(0);
 
   useEffect(() => {
@@ -54,7 +55,11 @@ export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions 
           </h1>
         </div>
 
-        {/* AI Section (Existing) */}
+        {/* AI Section (Existing) - hidden entirely for translated lectures, which
+            are raw source material and never get AI questions. They still reach
+            this screen, for the question bank below, which they share with the
+            original they were translated from. */}
+        {!isTranslated && (
         <div className="bg-white dark:bg-zinc-800 rounded-2xl p-5 border border-slate-100 dark:border-zinc-700 shadow-sm mb-6">
           <div className="flex items-center gap-2 mb-4">
             <Bot className="w-5 h-5 text-sky-500" />
@@ -109,6 +114,19 @@ export default function MCQIntroScreen({ lecture, questionsCount, bankQuestions 
             <ArrowLeft className="w-4 h-4" />
           </button>
         </div>
+        )}
+
+        {/* A translated lecture whose original has no bank questions yet would
+            otherwise render a completely empty screen - no AI card, no bank
+            card - which reads as a broken overlay rather than an empty one. */}
+        {isTranslated && bankQuestions.length === 0 && (
+          <div className="bg-white dark:bg-zinc-800 rounded-2xl p-5 border border-slate-100 dark:border-zinc-700 shadow-sm mb-6 text-center">
+            <Library className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              لا توجد أسئلة في بنك الأسئلة لهذه المحاضرة بعد.
+            </p>
+          </div>
+        )}
 
         {/* Bank Section */}
         {bankQuestions.length > 0 && (

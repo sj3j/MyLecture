@@ -4,7 +4,7 @@ import { collection, query, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { X, Save } from 'lucide-react';
 import { BankQuestion, QuestionScope, QuestionTag, QuestionType, StemFormat, Difficulty, BankChoice } from '../../types/questionBank.types';
-import { addBankQuestion, editBankQuestion } from '../../services/questionBankService';
+import { addBankQuestion, editBankQuestion, bankLectureIdFor } from '../../services/questionBankService';
 import { CATEGORIES, TRANSLATIONS } from '../../types';
 
 interface Props {
@@ -156,10 +156,16 @@ export default function AddBankQuestionModal({ isOpen, onClose, onAdded, initial
 
     setSubmitting(true);
     try {
+      // If the admin picked a TRANSLATED lecture, store the question against the
+      // original's id so it is visible from both halves of the pair. Reading
+      // uses the same helper, so the two ends cannot drift apart.
+      const selectedLecture = lectures.find(l => l.id === lectureId);
+      const resolvedLectureId = selectedLecture ? bankLectureIdFor(selectedLecture) : lectureId;
+
       const payload: any = {
         scope,
         subjectId: scope === 'global' ? null : subjectId,
-        lectureId: scope === 'lecture' ? lectureId : null,
+        lectureId: scope === 'lecture' ? resolvedLectureId : null,
         tags: _tags,
         year: _tags.includes('سنين_سابقة') ? year : null,
         type,

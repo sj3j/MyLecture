@@ -5,7 +5,7 @@ import { X, Loader2, ArrowRight } from 'lucide-react';
 import { getExistingMCQsForLecture, generateMCQsForLecture } from '../services/mcqGenerationService';
 import { getFirstAttemptStatus, finalizeFirstAttempt, submitRetakeAttempt } from '../services/mcqAnswerService';
 import { checkMCQBanStatus } from '../services/antiCheatService';
-import { getQuestionsForLecture } from '../services/questionBankService';
+import { getQuestionsForLecture, bankLectureIdFor } from '../services/questionBankService';
 import { BankQuestion } from '../types/questionBank.types';
 
 import MCQIntroScreen from './mcq/MCQIntroScreen';
@@ -55,7 +55,10 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
         // questions never surfaced. It matters far more after a year-end wipe,
         // when subject scope is all most questions have left. `category` stays
         // as the fallback for content predating the curriculum migration.
-        const bq = await getQuestionsForLecture(lecture.id, lecture.subjectId || lecture.category || '');
+        // bankLectureIdFor, not lecture.id: a translated lecture reads the
+        // ORIGINAL's lecture-scoped questions, so "lecture 5 translated" and
+        // "lecture 5 raw" share one bank instead of each keeping a private copy.
+        const bq = await getQuestionsForLecture(bankLectureIdFor(lecture), lecture.subjectId || lecture.category || '');
         if (active) setBankQuestions(bq);
 
         // 1. Fetch first attempt status
@@ -82,6 +85,11 @@ export default function MCQOverlay({ lecture, user, lang, onClose }: MCQOverlayP
   }, [lecture, user.uid]);
 
   const handleStartQuiz = async () => {
+    // A translated lecture is raw source material and never gets AI questions.
+    // The intro screen hides the AI card for them, so this is unreachable
+    // through the UI - it exists so the rule cannot be lost to a later UI edit.
+    if (lecture.version === 'translated') return;
+
     if (questions.length === 0) {
       setRoute('loading');
       setErrorMsg(null);
