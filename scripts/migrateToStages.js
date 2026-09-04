@@ -43,11 +43,20 @@ const LEGACY_CATEGORIES = [
 const CURRICULUM = {
   stage_2: {
     course_1: [
-      ['Medical Microbiology I',            'الأحياء المجهرية الطبية ١'],
-      ['Baathist crimes + Arabic Language', 'جرائم حزب البعث + اللغة العربية'],
-      ['Physical Pharmacy I',               'الصيدلة الفيزيائية ١'],
-      ['Physiology I + Computer Science',   'علم وظائف الأعضاء ١ + الحاسوب'],
-      ['Organic Chemistry II',              'الكيمياء العضوية ٢'],
+      ['Medical Microbiology I', 'الأحياء المجهرية الطبية ١'],
+      // The college timetable prints "Baathist crimes + Arabic Language" and
+      // "Physiology I + Computer Science" on one line each, because the pair
+      // shares a slot. They are four separate subjects with four separate
+      // lecture lists, and seeding them as two documents gave each pair one
+      // card, one folder and one progress bar. See src/lib/subjectSplit.ts;
+      // databases already seeded from the combined form are repaired by
+      // scripts/splitCombinedSubjects.mjs or the split button in المواد.
+      ['Baathist crimes',         'جرائم حزب البعث'],
+      ['Arabic Language',         'اللغة العربية'],
+      ['Physical Pharmacy I',     'الصيدلة الفيزيائية ١'],
+      ['Physiology I',            'علم وظائف الأعضاء ١'],
+      ['Computer Science',        'الحاسوب'],
+      ['Organic Chemistry II',    'الكيمياء العضوية ٢'],
     ],
     course_2: [
       ['Physiology II',           'علم وظائف الأعضاء ٢'],

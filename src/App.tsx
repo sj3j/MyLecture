@@ -3,7 +3,6 @@ import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot, getDocs, where, doc, setDoc, serverTimestamp, getDoc, limit, updateDoc } from 'firebase/firestore';
 import { Lecture, UserProfile, Category, CATEGORIES, Language, TRANSLATIONS, LectureType } from './types';
-import Navbar from './components/Navbar';
 import { useStageContext } from './contexts/StageContext';
 import LectureCard from './components/LectureCard';
 import AdminUpload from './components/AdminUpload';
@@ -164,7 +163,7 @@ export default function App() {
   const [mcqLecture, setMcqLecture] = useState<Lecture | null>(null);
   const [readerLecture, setReaderLecture] = useState<Lecture | null>(null);
   const [isMobileChatOpenApp, setIsMobileChatOpenApp] = useState(false);
-  const { theme, setTheme, cycleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
 
   const { permission, requestPermission, isRequesting } = usePushNotifications(user);
   // Native builds need the OS push channel; the web hook above is a no-op there.
@@ -716,26 +715,21 @@ export default function App() {
   const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || showSubManage || showPaywall || (mcqLecture !== null) || (readerLecture !== null);
 
   return (
-    <div className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-20'} font-sans transition-colors duration-300`} dir={isRtl ? 'rtl' : 'ltr'}>
-      {!isAnyOverlayOpen && (
-        <Navbar
-          user={user}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          onShowUpload={() => setShowUpload(true)}
-          lang={lang}
-          setLang={setLang}
-          currentTab={currentTab}
-          theme={theme}
-          toggleTheme={cycleTheme}
-          onShowNotifications={() => {
-            setShowNotificationsModal(true);
-            setHasUnreadInbox(false);
-            localStorage.setItem('lastReadInbox', Date.now().toString());
-          }}
-          hasUnreadNotifications={hasUnreadInbox}
-        />
-      )}
+    // index.html sets viewport-fit=cover, so the WebView paints beneath the
+    // status bar. The sticky header used to absorb that inset with its own
+    // pt-[env(safe-area-inset-top)]; with the header gone the root carries it,
+    // or every screen's first row sits under the system clock on a notched phone.
+    //
+    // pb-[104px] is the floating nav's real footprint - a 72px bar over BottomNav's
+    // own 16px inset, plus 16px of air. It is the ONLY bottom clearance in the app:
+    // every screen used to add its own pb-24/28/32 on top of the root's pb-20,
+    // which is what left a blank half-screen under the last card. A screen that
+    // needs more room now says so by its own content, not by re-padding.
+    <div
+      className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-[104px]'} font-sans transition-colors duration-300`}
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
 
       {user && permission === 'default' && !hideNotificationBanner && (
         <div className="bg-sky-600 text-white px-4 py-3 sm:px-6 lg:px-8 flex items-start sm:items-center justify-between gap-4">
@@ -777,6 +771,8 @@ export default function App() {
           lang={lang} 
           lectures={lectures} 
           searchQuery={searchQuery} 
+          setSearchQuery={setSearchQuery}
+          onShowUpload={() => setShowUpload(true)}
           isLoading={isLoading} 
           onNavigateToChat={handleNavigateToChat} 
           onEdit={handleEditLecture} 
@@ -803,6 +799,7 @@ export default function App() {
           lang={lang} 
           setShowStudentGrades={setShowStudentGrades} 
           onOpenSettings={() => setCurrentTab('settings')}
+          hasUnreadInbox={hasUnreadInbox}
           onNavigate={(tab: string) => setCurrentTab(tab as Tab)}
           onNavigateToSubscription={() => setCurrentTab('subscription')}
         />
@@ -821,6 +818,12 @@ export default function App() {
           setTheme={setTheme}
           notificationPermission={permission}
           onRequestNotifications={requestPermission}
+          hasUnreadInbox={hasUnreadInbox}
+          onOpenInbox={() => {
+            setShowNotificationsModal(true);
+            setHasUnreadInbox(false);
+            localStorage.setItem('lastReadInbox', Date.now().toString());
+          }}
           onLogout={() => { setCurrentTab('profile'); signOut(auth); }}
           onOpen={(what) => {
             if (what === 'adminManage') setShowAdminManage(true);
@@ -904,7 +907,7 @@ export default function App() {
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
             className="relative z-50"
           >
-            <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} />
+            <BottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} lang={lang} hasUnreadAnnouncements={hasUnreadAnnouncements} hasUnreadInbox={hasUnreadInbox} />
           </motion.div>
         )}
       </AnimatePresence>

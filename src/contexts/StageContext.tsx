@@ -100,7 +100,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const effectiveStageId = useMemo(() => {
     if (!activeUser) return null;
-    // Master admin drives the whole app from the Navbar stage picker.
+    // Master admin drives the whole app from Settings -> Administration ->
+    // Viewing stage (StageSettings).
     if (activeUser.isMasterAdmin) return currentAppStage;
     // A representative, and any moderator they appointed, is locked to the stage
     // they manage. Staff with NO assignment resolve to null and see nothing.

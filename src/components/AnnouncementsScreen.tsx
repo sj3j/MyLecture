@@ -398,24 +398,38 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
   });
 
   return (
-    <div className="max-w-xl mx-auto px-3 sm:px-4 pt-4 pb-20" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="flex justify-between items-center mb-4 sticky top-16 z-30 bg-stone-50/90 dark:bg-zinc-900/90 backdrop-blur pb-2 pt-2">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-stone-100 flex items-center gap-2">
-          <Megaphone className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-          {t.navAnnouncements}
+    // No bottom padding of its own: App's root owns the nav-bar clearance. This
+    // screen used to add its own pb-20 on top of it, and the last date group a
+    // further mb-8, which is the ~190px of dead space that sat between the newest
+    // announcement and the floating nav.
+    <div className="max-w-xl mx-auto px-3 sm:px-4 pt-3" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Was top-16, offset by the app header that no longer exists - which left
+          a 64px gap the feed scrolled through. Sticky offsets are measured from
+          the viewport, not from App's padded root, so the status-bar inset has
+          to be repeated here or the title parks under the system clock. */}
+      <div className="flex justify-between items-center gap-2 mb-4 sticky top-[env(safe-area-inset-top)] z-30 bg-stone-50/90 dark:bg-zinc-900/90 backdrop-blur-md py-2 -mx-3 px-3 sm:-mx-4 sm:px-4">
+        <h1 className="text-xl font-black text-slate-900 dark:text-stone-100 flex items-center gap-2 min-w-0">
+          <span className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0">
+            <Megaphone className="w-5 h-5 text-sky-600 dark:text-sky-400" strokeWidth={2.5} />
+          </span>
+          <span className="truncate">{t.navAnnouncements}</span>
         </h1>
         
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 font-medium mr-4">
-            <span>{isRtl ? 'آخر تحديث:' : 'Last updated:'} {timeString}</span>
-            <button 
-              onClick={handleRefresh}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
-              title={isRtl ? 'تحديث' : 'Refresh'}
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`} />
-            </button>
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="hidden sm:inline text-xs font-bold text-slate-400 dark:text-slate-500">
+            {isRtl ? 'آخر تحديث:' : 'Last updated:'} {timeString}
+          </span>
+          {/* Was hidden below sm, which is every phone - the one control that
+              recovers a stalled feed was invisible to the users most likely to
+              need it. */}
+          <button
+            onClick={handleRefresh}
+            className="p-2 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl transition-colors"
+            title={isRtl ? 'تحديث' : 'Refresh'}
+            aria-label={isRtl ? 'تحديث' : 'Refresh'}
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`} strokeWidth={2.5} />
+          </button>
           
           {isAdminOrModerator && (
             <>
@@ -449,13 +463,20 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
             return (
             <div key={dateKey} className="flex flex-col gap-3">
               {/* Date Header */}
-              <div className="flex justify-center sticky top-4 z-20">
+              {/* Parks just under the screen header rather than at top-4. That
+                  offset only ever worked because the app header covered the
+                  band above it; with the header gone the date pill would stick
+                  inside the title bar and show through its blur. 3.75rem is the
+                  header's own height (py-2 around a 40px row). */}
+              <div className="flex justify-center sticky top-[calc(env(safe-area-inset-top)+3.75rem)] z-20">
                 <span className="bg-slate-200/80 dark:bg-zinc-700/80 backdrop-blur-md text-slate-600 dark:text-zinc-300 px-3 py-1 rounded-full text-xs font-bold leading-none shadow-sm">
                   {dateKey}
                 </span>
               </div>
               
-              <div className="flex flex-col relative w-full mb-8">
+              {/* space-y-8 on the list already separates the groups; the mb-8
+                  this carried doubled that and compounded the padding below. */}
+              <div className="flex flex-col relative w-full">
                 <div className={`absolute top-0 bottom-0 w-0.5 bg-slate-200 dark:bg-zinc-700 ${isRtl ? 'right-4' : 'left-4'}`} />
                 {datePosts.map((post, index) => {
                   const content = post.text || post.content || post.caption || '';
@@ -677,7 +698,10 @@ export default function AnnouncementsScreen({ user, lang, lectures, onNavigateTo
             </div>
             );
           })}
-          <div ref={postsEndRef} className="h-px" />
+          {/* Scroll target, and the small breath under the newest post. The nav
+              bar's own clearance comes from App's root - this only stops the last
+              bubble sitting flush against it. */}
+          <div ref={postsEndRef} className="h-6" />
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-20 px-4 text-center">

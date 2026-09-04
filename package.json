@@ -27,6 +27,7 @@
     "test:google": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/googleLogin.test.ts\"",
     "test:signup": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/signup.test.ts\"",
     "test:anchor": "npx tsx scripts/pdfAnchor.test.ts",
+    "test:subjects": "npx tsx scripts/subjectSplit.test.ts",
     "test:roster": "npx tsx scripts/roster.test.ts",
     "roster:passwords": "npx tsx scripts/generateRosterPasswords.ts",
     "roster:backfill": "npx tsx scripts/backfillNameKeys.ts",

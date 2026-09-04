@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Language, TRANSLATIONS, Lecture } from '../types';
-import { Flame, BookOpen } from 'lucide-react';
+import { Flame, BookOpen, Search, Upload, X } from 'lucide-react';
+import { canManage } from '../lib/permissions';
 import SubjectBrowser from './SubjectBrowser';
 import WeeklyListScreen from './WeeklyListScreen';
 import RecordsScreen from './RecordsScreen';
@@ -57,6 +58,9 @@ interface HomeScreenProps {
   lang: Language;
   lectures: Lecture[];
   searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  /** Opens the lecture uploader. Staff only - see canManage(user, 'manageLectures'). */
+  onShowUpload: () => void;
   isLoading: boolean;
   onNavigateToChat: () => void;
   onEdit: (l: Lecture) => void;
@@ -73,6 +77,8 @@ export default function HomeScreen({
   lang,
   lectures,
   searchQuery,
+  setSearchQuery,
+  onShowUpload,
   isLoading,
   onNavigateToChat,
   onEdit,
@@ -119,6 +125,12 @@ export default function HomeScreen({
     if (hour < 18) return isRtl ? 'مساء الخير' : 'Good afternoon';
     return isRtl ? 'مساء الخير' : 'Good evening';
   };
+
+  // Only the two tabs that actually read searchQuery offer the field. Weekly,
+  // downloads and the leaderboard ignore it, and a search box that silently does
+  // nothing is worse than no search box.
+  const searchable = activeTab === 'lectures' || activeTab === 'records';
+  const canUpload = canManage(user, 'manageLectures') && activeTab === 'lectures';
 
   const tabs: { id: InnerTab; label: string }[] = [
     { id: 'weekly', label: isRtl ? 'واجبات الأسبوع' : 'Weekly Tasks' },
@@ -196,6 +208,49 @@ export default function HomeScreen({
           );
         })}
       </div>
+
+      {/* Search and upload. Both used to sit in the app header, which is gone -
+          the theme, language, inbox and stage controls it also held moved into
+          Settings, but these two act on the list right below them, so they moved
+          onto the screen they act on instead. */}
+      {(searchable || canUpload) && (
+        <div className="flex items-center gap-2 mb-8 -mt-2">
+          {searchable && (
+            <div className="relative flex-1 min-w-0">
+              <div className={`absolute inset-y-0 ${isRtl ? 'right-0 pr-4' : 'left-0 pl-4'} flex items-center pointer-events-none`}>
+                <Search className="h-4 w-4 text-slate-400 dark:text-slate-500" strokeWidth={2.5} />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder={t.searchPlaceholder}
+                className={`w-full ${isRtl ? 'pr-11 pl-10' : 'pl-11 pr-10'} py-3 bg-white dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 rounded-2xl text-sm font-bold text-slate-800 dark:text-stone-100 placeholder:font-medium placeholder-slate-400 dark:placeholder-slate-500 shadow-sm outline-none focus:border-sky-500 dark:focus:border-sky-500 transition-colors`}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  aria-label={isRtl ? 'مسح البحث' : 'Clear search'}
+                  className={`absolute inset-y-0 ${isRtl ? 'left-0 pl-3' : 'right-0 pr-3'} flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors`}
+                >
+                  <X className="h-4 w-4" strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          )}
+
+          {canUpload && (
+            <button
+              onClick={onShowUpload}
+              title={t.upload}
+              className={`flex items-center justify-center gap-2 ${searchable ? 'w-12 sm:w-auto sm:px-5' : 'px-5'} h-12 shrink-0 bg-sky-500 hover:bg-sky-600 text-white rounded-2xl font-bold text-sm shadow-sm transition-colors`}
+            >
+              <Upload className="w-4 h-4" strokeWidth={2.5} />
+              <span translate="no" className={`notranslate ${searchable ? 'hidden sm:inline' : ''}`}>{t.upload}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Content Area */}
       <div className="relative">

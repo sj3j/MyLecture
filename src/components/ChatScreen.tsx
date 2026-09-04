@@ -1749,7 +1749,11 @@ export default function ChatScreen({
       className="flex z-30 max-w-7xl w-full mx-auto px-0"
       dir={isRtl ? "rtl" : "ltr"}
       style={{
-        height: "calc(100dvh - 65px)",
+        // Was `100dvh - 65px`, the height of the app header that used to sit
+        // above it. That header is gone; what is left to subtract is the
+        // status-bar inset App's root pads by, or the chat overflows by exactly
+        // that much and the composer sits below the fold.
+        height: "calc(100dvh - env(safe-area-inset-top))",
         paddingBottom: isMobileChatOpen ? "0px" : "80px",
       }}
     >

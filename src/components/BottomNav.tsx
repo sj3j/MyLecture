@@ -10,9 +10,13 @@ interface BottomNavProps {
   setCurrentTab: (tab: any) => void;
   lang: Language;
   hasUnreadAnnouncements?: boolean;
+  /** Unread admin inbox. The inbox lives under Profile -> Settings now that the
+   *  app header that used to carry its badge is gone, so the badge has to travel
+   *  with it or a new message is three taps deep and completely silent. */
+  hasUnreadInbox?: boolean;
 }
 
-export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAnnouncements }: BottomNavProps) {
+export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAnnouncements, hasUnreadInbox }: BottomNavProps) {
   const isRtl = lang === 'ar';
 
   const tabs = [
@@ -57,6 +61,9 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
               <div className="relative mb-1">
                 <Icon className={`w-6 h-6 transition-all ${isActive ? 'fill-current stroke-[1.5px]' : 'stroke-2'}`} />
                 {tab.id === 'announcements' && hasUnreadAnnouncements && (
+                  <span className="absolute -top-1 -right-0.5 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-[#1A1A2E] rounded-full"></span>
+                )}
+                {tab.id === 'profile' && hasUnreadInbox && (
                   <span className="absolute -top-1 -right-0.5 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-[#1A1A2E] rounded-full"></span>
                 )}
               </div>

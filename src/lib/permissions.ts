@@ -7,7 +7,8 @@ import { UserProfile } from '../types';
  * pattern that was duplicated across a dozen components and drifted between them.
  *
  * Roles:
- *   master admin -> everything, on any stage (picks stage via the Navbar).
+ *   master admin -> everything, on any stage (picks stage in Settings ->
+ *                   Administration -> Viewing stage).
  *   admin        -> the stage representative. Everything for their own stage.
  *   moderator    -> an assistant appointed by a representative. Content only,
  *                   and only what the representative ticked.

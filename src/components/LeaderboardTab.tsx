@@ -355,7 +355,7 @@ export default function LeaderboardTab({ user, lang }: LeaderboardTabProps) {
   const accent = activeTab === 'streak' ? 'orange' : 'sky';
 
   return (
-    <div className="pb-24 max-w-2xl mx-auto relative" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="max-w-2xl mx-auto relative" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex items-center gap-2 mb-4 mx-2">
         <div className="flex bg-slate-200 dark:bg-zinc-800 p-1 rounded-xl flex-1">
           <button

@@ -9,7 +9,7 @@
 import {
   Bell, Palette, Languages, ShieldCheck, User, Flame, Trophy, CreditCard,
   GraduationCap, CalendarDays, Users, FileText, HardDrive, Crown, LogOut,
-  Ban, Info, Shield, BookOpen, type LucideIcon,
+  Ban, Info, Shield, BookOpen, Inbox, Layers, type LucideIcon,
 } from 'lucide-react';
 
 export interface SettingsIcon {
@@ -26,6 +26,7 @@ export const SETTINGS_ICONS: Record<string, SettingsIcon> = {
   appearance:    { Icon: Palette,       className: 'text-violet-500',  tile: 'bg-violet-100 dark:bg-violet-900/30' },
   language:      { Icon: Languages,     className: 'text-cyan-500',    tile: 'bg-cyan-100 dark:bg-cyan-900/30' },
   notifications: { Icon: Bell,          className: 'text-amber-500',   tile: 'bg-amber-100 dark:bg-amber-900/30' },
+  inbox:         { Icon: Inbox,         className: 'text-sky-500',     tile: 'bg-sky-100 dark:bg-sky-900/30' },
   privacy:       { Icon: ShieldCheck,   className: 'text-indigo-500',  tile: 'bg-indigo-100 dark:bg-indigo-900/30' },
   blocked:       { Icon: Ban,           className: 'text-rose-500',    tile: 'bg-rose-100 dark:bg-rose-900/30' },
   streak:        { Icon: Flame,         className: 'text-orange-500',  tile: 'bg-orange-100 dark:bg-orange-900/30' },
@@ -44,4 +45,5 @@ export const SETTINGS_ICONS: Record<string, SettingsIcon> = {
   subsAdmin:     { Icon: Crown,         className: 'text-amber-500',   tile: 'bg-amber-100 dark:bg-amber-900/30' },
   progression:   { Icon: GraduationCap, className: 'text-violet-500',  tile: 'bg-violet-100 dark:bg-violet-900/30' },
   subjects:      { Icon: BookOpen,      className: 'text-teal-500',    tile: 'bg-teal-100 dark:bg-teal-900/30' },
+  stage:         { Icon: Layers,        className: 'text-sky-500',     tile: 'bg-sky-100 dark:bg-sky-900/30' },
 };

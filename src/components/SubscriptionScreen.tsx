@@ -123,7 +123,7 @@ export default function SubscriptionScreen({ user, lang }: SubscriptionScreenPro
   };
 
   return (
-    <div className="max-w-lg mx-auto px-4 pb-32 pt-4" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="max-w-lg mx-auto px-4 pt-4" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Active Subscription Banner */}
       {activeSubscription && (
         <motion.div

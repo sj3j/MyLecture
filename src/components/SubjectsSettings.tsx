@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, query, where, setDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Loader2, Plus, Trash2, ChevronUp, ChevronDown, AlertCircle, ArrowLeftRight, Check, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, ChevronUp, ChevronDown, AlertCircle, ArrowLeftRight, Check, X, Split } from 'lucide-react';
 import {
   Language, Subject, CourseId, COURSE_IDS, COURSE_LABELS,
 } from '../types';
 import { useStageContext } from '../contexts/StageContext';
+import { isCombinedSubject } from '../lib/subjectSplit';
+import SplitSubjectDialog from './SplitSubjectDialog';
 
 interface SubjectsSettingsProps {
   lang: Language;
@@ -38,6 +40,16 @@ export default function SubjectsSettings({ lang }: SubjectsSettingsProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNameEn, setEditNameEn] = useState('');
   const [editNameAr, setEditNameAr] = useState('');
+
+  const [splitting, setSplitting] = useState<Subject | null>(null);
+
+  /**
+   * Subjects that are really two subjects sharing one document - see
+   * src/lib/subjectSplit.ts. Only the visible ones: a combined subject already
+   * retired by a split is hidden, and re-flagging it would ask the admin to
+   * split the same thing twice.
+   */
+  const combined = subjects.filter(s => s.isActive !== false && isCombinedSubject(s));
 
   const load = async () => {
     if (!effectiveStageId) { setSubjects([]); setIsLoading(false); return; }
@@ -149,6 +161,26 @@ export default function SubjectsSettings({ lang }: SubjectsSettingsProps) {
         </div>
       )}
 
+      {combined.length > 0 && (
+        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-100 dark:border-amber-900/40 rounded-2xl space-y-2">
+          <div className="flex items-start gap-2">
+            <Split className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" strokeWidth={2.5} />
+            <div className="space-y-1">
+              <p className="text-sm font-black text-amber-800 dark:text-amber-300">
+                {isRtl
+                  ? `${combined.length} مادة تجمع أكثر من مادة في بطاقة واحدة`
+                  : `${combined.length} subject${combined.length > 1 ? 's' : ''} hold more than one subject`}
+              </p>
+              <p className="text-xs font-bold text-amber-700/80 dark:text-amber-400/70 leading-relaxed">
+                {isRtl
+                  ? 'هذه المواد نُسخت من جدول الكلية كما هي، فصارت محاضراتها وتقدّمها مشتركة. اضغط زر التقسيم بجانب المادة لفصلها.'
+                  : 'These were transcribed from the college timetable as one line, so they share one lecture list and one progress bar. Use the split button on the row to separate them.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {COURSE_IDS.map(courseId => {
         const list = subjects.filter(s => s.courseId === courseId);
         return (
@@ -241,6 +273,15 @@ export default function SubjectsSettings({ lang }: SubjectsSettingsProps) {
                       <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
                     ) : (
                       <div className="flex items-center gap-1 shrink-0">
+                        {s.isActive !== false && isCombinedSubject(s) && (
+                          <button
+                            title={isRtl ? 'تقسيم إلى مواد منفصلة' : 'Split into separate subjects'}
+                            onClick={() => setSplitting(s)}
+                            className="p-1.5 text-amber-500 hover:text-amber-600 dark:hover:text-amber-400 rounded-lg bg-amber-50 dark:bg-amber-900/20 transition-colors"
+                          >
+                            <Split className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           title={isRtl ? 'نقل إلى الكورس الآخر' : 'Move to other course'}
                           onClick={() => patch(s, {
@@ -304,6 +345,16 @@ export default function SubjectsSettings({ lang }: SubjectsSettingsProps) {
           </button>
         </div>
       </form>
+
+      {splitting && (
+        <SplitSubjectDialog
+          subject={splitting}
+          siblingIds={subjects.filter(s => s.id !== splitting.id).map(s => s.id)}
+          lang={lang}
+          onClose={() => setSplitting(null)}
+          onSplit={() => { setSplitting(null); load(); }}
+        />
+      )}
     </div>
   );
 }

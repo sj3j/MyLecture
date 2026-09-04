@@ -99,6 +99,46 @@ RTL, and an inherited RTL direction changes bidi run splitting inside pdf.js's
 absolutely-positioned spans, shifting `getClientRects()` and putting every
 highlight in the wrong place.
 
+## Subjects: the curriculum is not the timetable
+
+`scripts/migrateToStages.js` seeds the `subjects` collection from the college
+curriculum. The college's own timetable prints two subjects on one line when they
+share a slot - `Physiology I + Computer Science`, `Baathist crimes + Arabic
+Language` - and the first seed transcribed those lines verbatim. Each pair then
+had one card, one lecture folder and one progress bar, so a physiology lecture and
+a computer-science lecture landed in the same place and neither subject could be
+tracked alone.
+
+The seed is fixed. Databases already seeded from it are repaired either from
+المواد (the split button on a flagged row -> `SplitSubjectDialog`) or in bulk with
+`node scripts/splitCombinedSubjects.mjs --apply`.
+
+**Only `+` splits a name.** `and` / `و` do not: `Pharmaceutical and Cosmetic
+Preparations` (المستحضرات الصيدلانية والتجميلية) is one subject whose name happens
+to read as a conjunction, and splitting it would invent a subject the college does
+not teach and move real lectures into it. The rule lives in `src/lib/subjectSplit.ts`
+and is pinned by `npm run test:subjects`; the .mjs script duplicates it deliberately
+(admin SDK, no TS) - keep the two in step.
+
+A split **hides** the combined document (`isActive: false`) rather than deleting
+it. Content the splitter could not see would otherwise be left with a `subjectId`
+pointing at nothing, which is invisible rather than merely misfiled.
+
+## No app header
+
+There is no `Navbar`. Search and the staff upload button live on the Study screen
+they act on; theme, language, the notification inbox and the master admin's stage
+picker live in Settings. Two consequences worth knowing before you add a screen:
+
+* `App.tsx`'s root carries `paddingTop: env(safe-area-inset-top)` - the header
+  used to absorb that inset. **Sticky offsets are measured from the viewport, not
+  from that padded root**, so a `sticky top-0` header inside a screen has to say
+  `top-[env(safe-area-inset-top)]` or it parks under the system clock.
+* That root is also the **only** bottom clearance (`pb-[104px]`, the floating
+  nav's real footprint). Screens used to add their own `pb-24`/`pb-28`/`pb-32` on
+  top of it, which is what left a blank half-screen under the last card. Do not
+  re-add one.
+
 ## Branding and app icons
 
 Every launcher icon, notification icon, splash and web icon is **generated**, never

@@ -118,7 +118,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
     }
 
     return (
-      <div className="pb-24">
+      <div>
         <div className="flex items-center justify-between mb-4 px-4 sm:px-0">
           <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
             {lectures.length} {t.navLectures}
@@ -185,7 +185,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
     };
     
     return (
-      <div className="flex flex-col gap-4 pb-24">
+      <div className="flex flex-col gap-4">
         {!isSubjectsLoading && subjects.length > 0 && (
           <CourseTabs lang={lang} counts={courseCounts} />
         )}
@@ -327,7 +327,7 @@ export default function SubjectBrowser({ lectures, lang, user, onEdit, onOpenMCQ
   filteredLectures.sort((a, b) => (a.number || 0) - (b.number || 0));
 
   return (
-    <div className="flex flex-col pb-24">
+    <div className="flex flex-col">
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={() => setSelectedCategory('all')}

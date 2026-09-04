@@ -313,7 +313,7 @@ export default function WeeklyListScreen({ lang, user }: WeeklyListScreenProps) 
   const incompleteHomeworks = homeworks.filter(hw => !user?.completedWeeklyTasks?.includes(hw.id));
 
   return (
-    <div className="max-w-3xl mx-auto px-4 pt-6 pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="max-w-3xl mx-auto px-4 pt-6" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-sky-100 dark:bg-sky-900/30 rounded-2xl text-sky-600 dark:text-sky-400">

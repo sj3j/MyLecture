@@ -10,6 +10,8 @@ import SettingsToggle from './SettingsToggle';
 import AppearanceSettings from './AppearanceSettings';
 import BlockedUsersSettings from './BlockedUsersSettings';
 import AccountSecuritySettings from './AccountSecuritySettings';
+import StageSettings from './StageSettings';
+import { useStageContext } from '../../contexts/StageContext';
 import { ThemeChoice } from '../../hooks/useTheme';
 import { useBackDismiss } from '../../hooks/useBackDismiss';
 import {
@@ -17,7 +19,7 @@ import {
   canManageStreakSystem, canViewAdminLogs, isMasterAdmin,
 } from '../../lib/permissions';
 
-type Page = 'root' | 'appearance' | 'blocked' | 'security';
+type Page = 'root' | 'appearance' | 'blocked' | 'security' | 'stage';
 
 export interface SettingsScreenProps {
   /** Returns to the profile. This is a real page now, not an overlay. */
@@ -29,6 +31,9 @@ export interface SettingsScreenProps {
   setTheme: (t: ThemeChoice) => void;
   notificationPermission?: NotificationPermission | string;
   onRequestNotifications?: () => void;
+  /** The admin inbox, which used to hang off the app header. */
+  onOpenInbox?: () => void;
+  hasUnreadInbox?: boolean;
   onOpen: (what:
     | 'adminManage' | 'studentManage' | 'streakManage' | 'adminGrades'
     | 'studentGrades' | 'adminLogs' | 'subManage' | 'calendar' | 'subscription') => void;
@@ -51,9 +56,11 @@ export default function SettingsScreen(props: SettingsScreenProps) {
   const {
     onBack, user, lang, setLang, theme, setTheme,
     notificationPermission, onRequestNotifications, onOpen, onLogout,
+    onOpenInbox, hasUnreadInbox,
   } = props;
   const isRtl = lang === 'ar';
   const [page, setPage] = useState<Page>('root');
+  const { stages, currentAppStage } = useStageContext();
 
   const Back = isRtl ? ChevronRight : ChevronLeft;
   const goBack = () => (page === 'root' ? onBack() : setPage('root'));
@@ -67,6 +74,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     appearance: { ar: 'المظهر',               en: 'Appearance' },
     blocked:    { ar: 'المستخدمون المحظورون', en: 'Blocked users' },
     security:   { ar: 'الحساب وكلمة المرور',  en: 'Account & password' },
+    stage:      { ar: 'المرحلة المعروضة',     en: 'Viewing stage' },
   };
 
   const notifLabel = notificationPermission === 'granted'
@@ -108,7 +116,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
   ];
 
   return (
-    <div className="max-w-2xl w-full mx-auto px-4 pt-4 pb-28" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="max-w-2xl w-full mx-auto px-4 pt-4" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* header */}
       <div className="flex items-center gap-3 mb-6">
         <button
@@ -134,6 +142,10 @@ export default function SettingsScreen(props: SettingsScreenProps) {
 
         {page === 'security' && (
           <AccountSecuritySettings lang={lang} />
+        )}
+
+        {page === 'stage' && (
+          <StageSettings lang={lang} />
         )}
 
         {page === 'root' && (
@@ -168,6 +180,21 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                 permission; these are the per-type preferences. */}
             {user && (
               <SettingsGroup title={isRtl ? 'الإشعارات' : 'Notifications'}>
+                {/* The inbox itself, above the per-type preferences that decide
+                    what lands in it. It used to be an icon in the app header. */}
+                {onOpenInbox && (
+                  <SettingsRow
+                    isRtl={isRtl} icon={SETTINGS_ICONS.inbox}
+                    label={isRtl ? 'صندوق الوارد' : 'Inbox'}
+                    sublabel={hasUnreadInbox
+                      ? (isRtl ? 'لديك رسائل جديدة' : 'You have new messages')
+                      : (isRtl ? 'رسائل الإدارة والردود' : 'Messages and replies from staff')}
+                    trailing={hasUnreadInbox
+                      ? <span className="w-2.5 h-2.5 rounded-full bg-red-500 block" />
+                      : undefined}
+                    onClick={onOpenInbox}
+                  />
+                )}
                 {NOTIFICATION_ROWS.map(row => (
                   <SettingsRow
                     key={row.key}
@@ -247,8 +274,22 @@ export default function SettingsScreen(props: SettingsScreenProps) {
             </SettingsGroup>
 
             {(canManageAssistants(user) || canManageStudents(user) || canManageGrades(user)
-              || canManageStreakSystem(user) || canViewAdminLogs(user)) && (
+              || canManageStreakSystem(user) || canViewAdminLogs(user) || isMasterAdmin(user)) && (
               <SettingsGroup title={isRtl ? 'الإدارة' : 'Administration'}>
+                {/* Which stage the whole app is showing. Master admin only, and
+                    first in the group because every row under it is scoped by it.
+                    It used to be a <select> in the app header. */}
+                {isMasterAdmin(user) && (
+                  <SettingsRow
+                    isRtl={isRtl} icon={SETTINGS_ICONS.stage}
+                    label={isRtl ? 'المرحلة المعروضة' : 'Viewing stage'}
+                    sublabel={(() => {
+                      const active = stages.find(st => st.id === (currentAppStage || stages[0]?.id));
+                      return active ? (isRtl ? active.nameAr : active.nameEn) : '—';
+                    })()}
+                    onClick={() => setPage('stage')}
+                  />
+                )}
                 {/* Master admin only, stated directly rather than borrowing
                     canManageStreakSystem - this screen holds the year-end wipe
                     and the content export, and the two permissions coinciding

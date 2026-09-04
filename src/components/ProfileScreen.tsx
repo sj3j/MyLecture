@@ -34,6 +34,8 @@ interface ProfileScreenProps {
   /** Opens the official-grades overlay. */
   setShowStudentGrades?: (val: boolean) => void;
   onOpenSettings?: () => void;
+  /** Unread admin inbox, which now lives inside Settings. */
+  hasUnreadInbox?: boolean;
   /** Switches the app tab - used by the stat tiles. */
   onNavigate?: (tab: string) => void;
   onNavigateToSubscription?: () => void;
@@ -50,7 +52,7 @@ const Ltr = ({ children }: { children: React.ReactNode }) => (
 );
 
 export default function ProfileScreen({
-  user, lang, setShowStudentGrades, onOpenSettings, onNavigate, onNavigateToSubscription,
+  user, lang, setShowStudentGrades, onOpenSettings, hasUnreadInbox, onNavigate, onNavigateToSubscription,
 }: ProfileScreenProps) {
   const isRtl = lang === 'ar';
   const { phase } = useAcademicPhase();
@@ -254,7 +256,7 @@ export default function ProfileScreen({
   };
 
   return (
-    <div className="max-w-2xl mx-auto pb-24" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="max-w-2xl mx-auto" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* ---- banner ----------------------------------------------------
           Two nested elements on purpose: the gradient needs `overflow-hidden`
           so its rounded corners clip the watermark, but the avatar hangs below
@@ -277,6 +279,9 @@ export default function ProfileScreen({
             className="absolute top-4 start-4 z-20 bg-white/90 dark:bg-zinc-900/90 backdrop-blur rounded-full w-10 h-10 flex justify-center items-center shadow-sm hover:bg-white dark:hover:bg-zinc-900 active:scale-95 transition-all text-slate-500 dark:text-slate-300"
           >
             <SettingsIcon className="w-5 h-5" />
+            {hasUnreadInbox && (
+              <span className="absolute top-0 end-0 w-3 h-3 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full" />
+            )}
           </button>
         )}
 
