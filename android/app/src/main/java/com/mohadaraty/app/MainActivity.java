@@ -1,4 +1,4 @@
-package com.mylecture.app;
+package com.mohadaraty.app;
 
 import com.getcapacitor.BridgeActivity;
 

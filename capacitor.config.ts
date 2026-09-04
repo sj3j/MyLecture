@@ -15,7 +15,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * hashing) and navigator.clipboard both refuse to run without.
  */
 const config: CapacitorConfig = {
-  appId: 'com.mylecture.app',
+  appId: 'com.mohadaraty.app',
   appName: 'محاضراتي',
   webDir: 'dist',
 

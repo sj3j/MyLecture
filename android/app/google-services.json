@@ -7,6 +7,94 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:449403914422:android:26e239bba52447e8dd7e17",
+        "android_client_info": {
+          "package_name": "com.example.my_lecture_v2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "449403914422-ovuklp2n86alvi09ihmrlh4ab78o8n2h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.my_lecture_v2",
+            "certificate_hash": "762a1545ec9c7cc28b06cbf12dfacfdb13c3911c"
+          }
+        },
+        {
+          "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgwJ7zAG1a4ibbty_8NsvEHez_iJg3FpU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "449403914422-t0r3el0q4fssjajcs0rob9gs7fiunk7r.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myLectureV2"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:449403914422:android:921bae0b5d68a980dd7e17",
+        "android_client_info": {
+          "package_name": "com.mohadaraty.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "449403914422-th7nuq5k9b9fi22137uhm08hhpf13260.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mohadaraty.app",
+            "certificate_hash": "69752853c73668e46ee313489c1a2d776ad46710"
+          }
+        },
+        {
+          "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgwJ7zAG1a4ibbty_8NsvEHez_iJg3FpU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "449403914422-t0r3el0q4fssjajcs0rob9gs7fiunk7r.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myLectureV2"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:449403914422:android:f1d07c462e945b75dd7e17",
         "android_client_info": {
           "package_name": "com.mylecture.app"
@@ -37,6 +125,13 @@
             {
               "client_id": "449403914422-jhmo0djasbes2584jg3ue8dcv48cd62i.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "449403914422-t0r3el0q4fssjajcs0rob9gs7fiunk7r.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myLectureV2"
+              }
             }
           ]
         }
