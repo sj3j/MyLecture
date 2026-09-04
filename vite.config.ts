@@ -136,7 +136,7 @@ export default defineConfig(({mode}) => {
           prefer_related_applications: false,
           iarc_rating_id: 'e84b072d-71b3-4d3e-86ae-31a8ce4e53b7',
           scope_extensions: [
-            { origin: 'https://my-lecture.vercel.app' }
+            { origin: 'https://mohadaraty.vercel.app' }
           ]
         }
       })
