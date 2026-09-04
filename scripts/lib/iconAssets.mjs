@@ -76,18 +76,25 @@ export async function extractMark(logoPath) {
 
   const box = { left: x0, top: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
 
-  // Two pipelines, deliberately. removeAlpha before joinChannel because
-  // joinChannel APPENDS -- handing it RGBA yields a 5-channel image rather than
-  // the replaced alpha we want. And the extract has to run on a fresh pipeline:
-  // chained onto the raw+joinChannel one it shifts the pixels but leaves the
-  // canvas at its original size, so every size downstream gets computed against
-  // 2048px of mostly-empty canvas instead of against the mark.
-  const masked = await sharp(data, { raw: { width: w, height: h, channels: c } })
-    .removeAlpha()
-    .joinChannel(alpha, { raw: { width: w, height: h, channels: 1 } })
+  // Interleave the computed mask into `data`'s own alpha band directly, rather
+  // than routing through sharp's removeAlpha()+joinChannel(): in sharp 0.35.4
+  // that pipeline silently collapses to a 3-channel image (joinChannel's raw
+  // 1-channel input is not recognised as alpha), so the mask was being dropped
+  // on the floor and every "transparent" mark shipped fully opaque. Doing the
+  // replacement in plain JS has no such ambiguity.
+  const rgba = Buffer.alloc(w * h * 4);
+  for (let p = 0; p < w * h; p++) {
+    const s = p * c;
+    const d = p * 4;
+    rgba[d] = data[s];
+    rgba[d + 1] = data[s + 1];
+    rgba[d + 2] = data[s + 2];
+    rgba[d + 3] = alpha[p];
+  }
+  const buf = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
+    .extract(box)
     .png()
     .toBuffer();
-  const buf = await sharp(masked).extract(box).png().toBuffer();
 
   const check = await sharp(buf).metadata();
   if (check.width !== box.width || check.height !== box.height) {
