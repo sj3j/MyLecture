@@ -14,7 +14,7 @@ import { IS_STORE_BUILD } from './platform';
  */
 const CONFIGURED = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
 
-export const API_BASE: string = CONFIGURED || (IS_STORE_BUILD ? 'https://my-lecture.vercel.app' : '');
+export const API_BASE: string = CONFIGURED || (IS_STORE_BUILD ? 'https://mohadaraty.vercel.app' : '');
 
 /** `apiUrl('/api/login')` -> relative on web, absolute on device. */
 export function apiUrl(path: string): string {

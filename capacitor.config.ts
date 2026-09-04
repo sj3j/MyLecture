@@ -5,7 +5,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 /**
  * Capacitor wrapping for the Android build.
  *
- * Deliberately NO `server.url`. Pointing the WebView at my-lecture.vercel.app
+ * Deliberately NO `server.url`. Pointing the WebView at mohadaraty.vercel.app
  * would make this a remote-URL wrapper, which Apple rejects under Guideline 4.2
  * and which breaks completely whenever the phone is offline. The web build is
  * bundled into the APK instead; only /api/* calls go out to the server.
