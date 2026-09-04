@@ -6,6 +6,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { CATEGORIES, Category, LectureType, Language, TRANSLATIONS, Lecture, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { logAdminAction } from '../services/adminLogService';
+import { generateMCQsForLecture } from '../services/mcqGenerationService';
 import { useStageContext } from '../contexts/StageContext';
 import { useStageSubjects } from '../hooks/useStageSubjects';
 import { COURSE_IDS, COURSE_LABELS, CourseId } from '../types';
@@ -38,7 +39,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
     if (!sub) return {};
     return { subjectId: sub.id, courseId: sub.courseId, subjectName: sub.nameEn };
   };
-  
+
   const [title, setTitle] = useState('');
   const [lectureNumber, setLectureNumber] = useState('');
   const [category, setCategory] = useState<Category>('pharmacology');
@@ -53,9 +54,44 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  // How many uploads are still generating MCQs in this tab. Drives the "don't
+  // close the tab" banner, since generation is browser-side and dies with it.
+  const [pendingMCQCount, setPendingMCQCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Kick off MCQ generation for a lecture that was just created.
+   *
+   * Deliberately NOT awaited into the submit path: generation takes 10-30s, and
+   * the upload has already succeeded by this point - blocking on it would make a
+   * successful upload look like a hang. Previously the first student to open the
+   * lecture paid that wait instead (MCQOverlay), so this only moves the cost off
+   * a student and onto the machine that is already sitting there.
+   *
+   * Failure is not fatal and is deliberately not surfaced as an upload error:
+   * the 90s staleness fall-through in mcqGenerationService regenerates on the
+   * next student open, so this self-heals if the admin closes the tab.
+   */
+  const kickOffMCQGeneration = (lectureId: string, data: any) => {
+    // Translated lectures never get AI MCQs - they are raw source material.
+    if (data.version === 'translated') return;
+    if (!data.pdfUrl) return;
+
+    // subjectId, NOT category. The mcqs doc keys on subjectId, and passing a
+    // category slug writes a wrong value into it - which is the bug still live
+    // at MCQOverlay.tsx:89. The correct form is the one at MCQOverlay.tsx:58.
+    // Named `resolved-` to avoid shadowing the component's own subjectId state.
+    const resolvedSubjectId = data.subjectId || data.category || '';
+
+    setPendingMCQCount(n => n + 1);
+    generateMCQsForLecture(lectureId, resolvedSubjectId, data.pdfUrl)
+      .catch(err => {
+        console.warn('[AdminUpload] MCQ generation failed for', lectureId, err);
+      })
+      .finally(() => setPendingMCQCount(n => Math.max(0, n - 1)));
+  };
 
   useEffect(() => {
     if (lectureToEdit) {
@@ -257,6 +293,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
           lectureData.createdAt = serverTimestamp();
           const docRef = await addDoc(collection(db, 'lectures'), lectureData);
           await logAdminAction('CREATE_LECTURE', `Created lecture: ${lectureData.title}`, docRef.id);
+          kickOffMCQGeneration(docRef.id, lectureData);
         }
       } else {
         // Multiple files creation mode
@@ -306,6 +343,7 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
 
           const docRef = await addDoc(collection(db, 'lectures'), lectureData);
           await logAdminAction('CREATE_LECTURE_BATCH', `Batch created lecture: ${lectureData.title}`, docRef.id);
+          kickOffMCQGeneration(docRef.id, lectureData);
         }
       }
 
@@ -389,6 +427,17 @@ export default function AdminUpload({ isOpen, onClose, lang, lectureToEdit, user
                     </h3>
                     <p className="text-slate-500 dark:text-slate-400">{t.lectureTitle}: <span className="font-bold text-slate-700 dark:text-slate-300">{title}</span></p>
                   </div>
+
+                  {pendingMCQCount > 0 && (
+                    <div className="w-full flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/50 rounded-2xl text-start">
+                      <Loader2 className="w-5 h-5 text-blue-500 shrink-0 animate-spin mt-0.5" />
+                      <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
+                        {isRtl
+                          ? `جاري توليد أسئلة MCQ لـ ${pendingMCQCount} محاضرة. لا تغلق هذه الصفحة حتى ينتهي التوليد.`
+                          : `Generating MCQs for ${pendingMCQCount} lecture(s). Keep this page open until it finishes.`}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex flex-col w-full gap-3 pt-4">
                     {!lectureToEdit && (
                       <button
