@@ -16,6 +16,7 @@ import { useAcademicPhase } from '../hooks/useAcademicPhase';
 import { useStageContext } from '../contexts/StageContext';
 import { STAT_ICONS } from '../lib/profileIcons';
 import { StatCard, ProfileGroup, ProfileRow } from './profile/ProfilePrimitives';
+import ExamCodePrompt from './ExamCodePrompt';
 
 /**
  * The profile screen: a banner with the avatar breaking its lower edge, an
@@ -64,6 +65,9 @@ export default function ProfileScreen({
   const [error, setError] = useState('');
   const [showStreakInfo, setShowStreakInfo] = useState(false);
   const [showStreakStatus, setShowStreakStatus] = useState(false);
+  // The way back for a student who tapped "ask me later" on the home banner and
+  // then got their number - otherwise that choice costs them a week.
+  const [askExamCode, setAskExamCode] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
@@ -419,11 +423,19 @@ export default function ProfileScreen({
             text={degreeTile.text}
             onClick={() => setShowStudentGrades?.(true)}
           />
+          {/* /api/me/exam-code writes the users doc too, and that IS a live
+              snapshot - so the tile fills in on its own once saved. */}
           <StatCard
             icon={STAT_ICONS.examCode}
             label={isRtl ? 'الكود الامتحاني' : 'Exam code'}
-            value={<Ltr>{user.examCode || '—'}</Ltr>}
-            onClick={() => onNavigate?.('announcements')}
+            value={user.examCode
+              ? <Ltr>{user.examCode}</Ltr>
+              : (user.role === 'student' ? (isRtl ? 'أضف الآن' : 'Add it') : '—')}
+            onClick={
+              user.examCode || user.role !== 'student'
+                ? () => onNavigate?.('announcements')
+                : () => setAskExamCode(true)
+            }
           />
           {isEditing ? (
             <div className="col-span-2 bg-white dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 rounded-2xl p-4 shadow-sm">
@@ -478,6 +490,15 @@ export default function ProfileScreen({
           </ProfileGroup>
         )}
       </div>
+
+      {askExamCode && (
+        <ExamCodePrompt
+          user={user}
+          lang={lang}
+          variant="dialog"
+          onResolved={() => setAskExamCode(false)}
+        />
+      )}
 
       {/* ---- streak status ---------------------------------------------
           Behind the tile rather than always on the page: ProfileStreakCalendar

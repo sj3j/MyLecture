@@ -82,7 +82,8 @@ export function usePushNotifications(user: UserProfile | null) {
             const title = payload.notification?.title || 'New Notification';
             const options = {
               body: payload.notification?.body || '',
-              icon: '/icon-192.png',
+              icon: '/icons/icon-192.png',
+              badge: '/icons/badge-72.png',
               data: payload.data,
             };
             

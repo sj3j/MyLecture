@@ -217,6 +217,19 @@ export interface UserProfile {
   graduated?: boolean;
   /** Users this person has blocked. Applied on read; never hides their writes. */
   blockedUsers?: string[];
+  /**
+   * ISO date; while it is in the future the exam-code card stays hidden. The
+   * only one of these three actually stored on the users document - a student
+   * can write it themselves, which is the point.
+   */
+  examCodePromptSnoozedUntil?: string;
+  /**
+   * Merged in from students/{id} by App.tsx, not stored here. The students doc
+   * is admin/server-write-only, which is what stops a student clearing their
+   * own forced password change or inventing a linked Google address.
+   */
+  googleEmail?: string;
+  mustChangePassword?: boolean;
 }
 
 export interface Student {
@@ -237,6 +250,30 @@ export interface Student {
   subgroup?: string;
   /** Set by every write path; the whitelist copy that syncUserStage reads on login. */
   stageId?: string;
+  /**
+   * normalizeName(name) - what name login queries. Written by every path that
+   * writes `name`; a student without it can only sign in by email or code.
+   */
+  nameKey?: string;
+  /** Short typeable alternative to a long Arabic name, e.g. "D4-01234". */
+  loginCode?: string;
+  /** loginCode uppercased - the field the login equality query actually hits. */
+  loginCodeKey?: string;
+  /**
+   * True when `email` (and therefore the document id) is synthetic. The id is
+   * still load-bearing - it is the auth uid - it is just not a mailbox, so the
+   * UI shows the login code instead of showing it to anyone.
+   */
+  placeholderEmail?: boolean;
+  /** Set on an imported generated password; cleared by POST /api/me/password. */
+  mustChangePassword?: boolean;
+  /**
+   * A real Gmail the student linked from settings, proved by a verified Google
+   * token. Google login falls back to querying this when the address is not
+   * itself a document id. Never renames the document - see shared/rosterIdentity.
+   */
+  googleEmail?: string;
+  googleLinkedAt?: any;
 }
 
 export interface Homework {
@@ -254,8 +291,15 @@ export interface Homework {
 
 export type Language = 'ar' | 'en';
 
+// Real-money strings live in their own module so the native build can drop
+// them - see src/i18n/payments.ts. vite.config.ts aliases it to an empty stub
+// for mode === 'native', which is what keeps the store bundle free of a
+// purchase surface.
+import { PAYMENT_STRINGS } from './i18n/payments';
+
 export const TRANSLATIONS = {
   ar: {
+    ...PAYMENT_STRINGS.ar,
     appName: 'محاضراتي',
     university: 'جامعة الصفوة',
     department: 'قسم الصيدلة',
@@ -371,18 +415,9 @@ export const TRANSLATIONS = {
     monthly: 'شهري',
     seasonal: 'فصلي',
     semiAnnual: 'نصف سنوي',
-    pricePerMonth: 'دينار/شهر',
     days: 'يوم',
     bestValue: 'الأفضل قيمة',
     popular: 'الأكثر شيوعاً',
-    choosePayment: 'اختر طريقة الدفع',
-    zaincash: 'زين كاش',
-    superkey: 'سوبر كي',
-    payWithZaincash: 'ادفع عبر زين كاش',
-    payWithSuperkey: 'ادفع عبر سوبر كي',
-    superkeyInstructions: 'أرسل المبلغ إلى رقم سوبر كي التالي:',
-    enterTransactionId: 'أدخل رقم العملية',
-    submitPayment: 'تأكيد الدفع',
     pendingApproval: 'بانتظار الموافقة',
     subscriptionActive: 'الاشتراك فعال',
     subscriptionExpired: 'الاشتراك منتهي',
@@ -399,9 +434,7 @@ export const TRANSLATIONS = {
     totalSubscribers: 'إجمالي المشتركين',
     activeSubscribers: 'المشتركون الفعالون',
     pendingPayments: 'مدفوعات معلقة',
-    totalRevenue: 'إجمالي الإيرادات',
     subscriberBreakdown: 'توزيع المشتركين',
-    paymentMethodStats: 'إحصائيات طرق الدفع',
     approve: 'موافقة',
     reject: 'رفض',
     extend: 'تمديد',
@@ -409,12 +442,10 @@ export const TRANSLATIONS = {
     grantSubscription: 'منح اشتراك',
     extendDays: 'عدد أيام التمديد',
     adminGrant: 'منحة إدارية',
-    iqd: 'د.ع',
-    paymentSuccessful: 'تم الدفع بنجاح!',
-    paymentFailed: 'فشل الدفع',
     subscriptionActivated: 'تم تفعيل الاشتراك!',
   },
   en: {
+    ...PAYMENT_STRINGS.en,
     appName: 'محاضراتي',
     university: 'ALSAFWA UNIVERSITY',
     department: 'Pharmacy Department',
@@ -530,18 +561,9 @@ export const TRANSLATIONS = {
     monthly: 'Monthly',
     seasonal: 'Seasonal',
     semiAnnual: 'Semi-Annual',
-    pricePerMonth: 'IQD/mo',
     days: 'days',
     bestValue: 'Best Value',
     popular: 'Popular',
-    choosePayment: 'Choose Payment Method',
-    zaincash: 'ZainCash',
-    superkey: 'SuperKey',
-    payWithZaincash: 'Pay with ZainCash',
-    payWithSuperkey: 'Pay with SuperKey',
-    superkeyInstructions: 'Send the amount to the following SuperKey number:',
-    enterTransactionId: 'Enter Transaction ID',
-    submitPayment: 'Confirm Payment',
     pendingApproval: 'Pending Approval',
     subscriptionActive: 'Subscription Active',
     subscriptionExpired: 'Subscription Expired',
@@ -558,9 +580,7 @@ export const TRANSLATIONS = {
     totalSubscribers: 'Total Subscribers',
     activeSubscribers: 'Active Subscribers',
     pendingPayments: 'Pending Payments',
-    totalRevenue: 'Total Revenue',
     subscriberBreakdown: 'Subscriber Breakdown',
-    paymentMethodStats: 'Payment Method Stats',
     approve: 'Approve',
     reject: 'Reject',
     extend: 'Extend',
@@ -568,9 +588,6 @@ export const TRANSLATIONS = {
     grantSubscription: 'Grant Subscription',
     extendDays: 'Extension Days',
     adminGrant: 'Admin Grant',
-    iqd: 'IQD',
-    paymentSuccessful: 'Payment Successful!',
-    paymentFailed: 'Payment Failed',
     subscriptionActivated: 'Subscription Activated!',
   }
 };

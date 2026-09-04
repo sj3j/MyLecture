@@ -487,6 +487,39 @@ await check('representative CAN delete an announcement on their stage',
 await check('representative CAN delete a homework on their stage',
   assertSucceeds(deleteDoc(doc(rep, 'homeworks/hw_own'))));
 
+console.log('');
+console.log('Account deletion requests:');
+// Create is the only client write. Everything after it - approving, purging an
+// Auth user, cancelling - runs through the Admin SDK, so the row must be
+// immutable from the client or a student could mark their own request approved.
+await check('a student CAN request their own deletion',
+  assertSucceeds(setDoc(doc(student, 'deletion_requests/stu_uid'), {
+    uid: 'stu_uid', studentId: 'stu@x.com', name: 'Student',
+    stageId: 'stage_3', reason: '', status: 'pending',
+  })));
+await check('a student CANNOT request deletion for someone else',
+  assertFails(setDoc(doc(student, 'deletion_requests/reset_uid'), {
+    uid: 'reset_uid', studentId: 'reset@x.com', name: 'X',
+    stageId: 'stage_3', reason: '', status: 'pending',
+  })));
+await check('a request cannot be created already approved',
+  assertFails(setDoc(doc(resetUser, 'deletion_requests/reset_uid'), {
+    uid: 'reset_uid', studentId: 'reset@x.com', name: 'X',
+    stageId: 'stage_3', reason: '', status: 'approved',
+  })));
+await check('a student CANNOT approve their own request',
+  assertFails(updateDoc(doc(student, 'deletion_requests/stu_uid'), { status: 'approved' })));
+await check('a student CANNOT delete the row to withdraw it',
+  assertFails(deleteDoc(doc(student, 'deletion_requests/stu_uid'))));
+await check('a student CAN read their own request',
+  assertSucceeds(getDoc(doc(student, 'deletion_requests/stu_uid'))));
+await check('a student CANNOT read another student request',
+  assertFails(getDoc(doc(resetUser, 'deletion_requests/stu_uid'))));
+await check('a representative CAN read the queue',
+  assertSucceeds(getDoc(doc(rep, 'deletion_requests/stu_uid'))));
+await check('not even an admin can approve from the client',
+  assertFails(updateDoc(doc(rep, 'deletion_requests/stu_uid'), { status: 'approved' })));
+
 await testEnv.cleanup();
 
 console.log(`\n${passed} passed, ${failed} failed`);

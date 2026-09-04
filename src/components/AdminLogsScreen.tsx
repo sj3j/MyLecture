@@ -45,7 +45,8 @@ export default function AdminLogsScreen({ isOpen, onClose, lang }: AdminLogsScre
         log.adminName.toLowerCase().includes(lower) || 
         log.adminEmail.toLowerCase().includes(lower) || 
         log.action.toLowerCase().includes(lower) || 
-        log.details.toLowerCase().includes(lower)
+        log.details.toLowerCase().includes(lower) ||
+        (log.stageId || '').toLowerCase().includes(lower)
       ));
     }
   }, [searchTerm, logs]);
@@ -53,7 +54,7 @@ export default function AdminLogsScreen({ isOpen, onClose, lang }: AdminLogsScre
   const handleExportCsv = () => {
     if (logs.length === 0) return;
     
-    const headers = ['Date', 'Admin Name', 'Admin Email', 'Action', 'Details', 'Target ID'];
+    const headers = ['Date', 'Admin Name', 'Admin Email', 'Stage', 'Action', 'Details', 'Target ID'];
     const csvContent = [
       headers.join(','),
       ...logs.map(log => {
@@ -62,6 +63,7 @@ export default function AdminLogsScreen({ isOpen, onClose, lang }: AdminLogsScre
           `"${date}"`,
           `"${log.adminName}"`,
           `"${log.adminEmail}"`,
+          `"${log.stageId || ''}"`,
           `"${log.action}"`,
           `"${log.details.replace(/"/g, '""')}"`,
           `"${log.targetId || ''}"`
@@ -194,6 +196,14 @@ export default function AdminLogsScreen({ isOpen, onClose, lang }: AdminLogsScre
                        <span className={`px-3 py-1 text-xs font-bold rounded-lg border ${getActionColor(log.action)}`}>
                          {log.action.replace(/_/g, ' ')}
                        </span>
+                       {/* Which cohort the action landed in. Stored all along,
+                           but never shown - so a log line could not answer the
+                           one question worth asking of a bulk import. */}
+                       {log.stageId && (
+                         <span className="px-2 py-1 text-[11px] font-bold rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 font-mono">
+                           {log.stageId}
+                         </span>
+                       )}
                     </div>
 
                     <div className="text-sm text-slate-700 dark:text-slate-300 mt-2 sm:mt-0 flex-1 break-words line-clamp-2">

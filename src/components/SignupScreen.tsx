@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Loader2, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft, GraduationCap } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Language } from '../types';
 import { apiUrl } from '../lib/apiBase';
 import { subgroupOptions, FALLBACK_GROUP_CONFIG, GroupConfigLike } from '../../shared/groups';
@@ -152,7 +152,8 @@ export default function SignupScreen({ lang, onBackToLogin, prefill }: SignupScr
 
         <div className="text-center mb-7">
           <div className="w-16 h-16 rounded-2xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center mx-auto mb-4">
-            <GraduationCap className="w-8 h-8 text-sky-600 dark:text-sky-400" />
+            {/* Same brand mark as LoginScreen; this was a stand-in GraduationCap. */}
+            <img src="/icons/logo-mark.png" alt="" className="w-10 h-10 object-contain" />
           </div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white">
             {isRtl ? 'إنشاء حساب' : 'Create an account'}

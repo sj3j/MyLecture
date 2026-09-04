@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, GitMerge, User, Mail, Calendar, Flame, BookOpen, Settings } from 'lucide-react';
+import { X, UserPlus, Trash2, Users, Loader2, AlertCircle, CheckCircle2, XCircle, Upload, Download, GitMerge, User, Mail, Calendar, Flame, BookOpen, Settings, KeyRound, Copy } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Language, TRANSLATIONS, Student, UserProfile } from '../types';
@@ -9,8 +9,11 @@ import { logAdminAction } from '../services/adminLogService';
 import { useStageContext } from '../contexts/StageContext';
 import StageSettingsModal from './StageSettingsModal';
 import SignupRequestsQueue from './SignupRequestsQueue';
+import DeletionRequestsQueue from './DeletionRequestsQueue';
 import { canManageGroups } from '../lib/permissions';
 import { apiUrl } from '../lib/apiBase';
+import RosterImport from './RosterImport';
+import { nameKeyFor, normalizeName } from '../../shared/rosterIdentity';
 
 interface StudentManagementProps {
   isOpen: boolean;
@@ -72,6 +75,21 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const [examCodesCsvName, setExamCodesCsvName] = useState<string>('');
   const [sortUnmatchedFirst, setSortUnmatchedFirst] = useState(false);
   const [mergingBaseId, setMergingBaseId] = useState<string | null>(null);
+  // A re-issued password, held until dismissed. It exists nowhere else: the
+  // stored copy is a bcrypt hash, so closing this without reading it means
+  // generating another one.
+  const [resetResult, setResetResult] = useState<{ name: string; loginCode: string; password: string } | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  /**
+   * Which panel is on screen.
+   *
+   * Everything used to be stacked in one 20rem column beside the roster: the
+   * add form, the signup queue, the roster importer and the exam-code
+   * importer, all at once. On a phone that column comes FIRST, so reaching the
+   * student list meant scrolling past four tools, and the importer - the one
+   * that needs room for a preview table - had the least of it.
+   */
+  const [panel, setPanel] = useState<'roster' | 'add' | 'import' | 'requests' | 'codes'>('roster');
   const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
   const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   
@@ -290,6 +308,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
             email: data.email,
             examCode: data.examCode || '',
             subgroup: data.subgroup || '',
+            loginCode: data.loginCode || '',
+            placeholderEmail: data.placeholderEmail === true,
+            googleEmail: data.googleEmail || '',
             isActive: data.isActive ?? true,
             createdAt: data.createdAt,
             userUid: undefined,
@@ -308,6 +329,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
               email: data.email,
               examCode: data.examCode || '',
               subgroup: data.subgroup || '',
+              loginCode: data.loginCode || '',
+              placeholderEmail: data.placeholderEmail === true,
+              googleEmail: data.googleEmail || '',
               isActive: data.isActive ?? true,
               createdAt: profile.createdAt || data.createdAt,
               userUid: profile.userUid,
@@ -382,6 +406,22 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
   }, [selectedGroupFilter, selectedSubgroupFilter]);
 
+  /**
+   * Turns a rules rejection into something actionable.
+   *
+   * `students` is scoped to the stage a representative manages, so the usual
+   * cause of permission-denied here is not a bug but an address that belongs
+   * to another cohort - which the raw Firebase message does not say.
+   */
+  const stageAwareMessage = (err: any, fallback: string) => {
+    if (err?.code === 'permission-denied' || /permission/i.test(err?.message || '')) {
+      return isRtl
+        ? 'هذا البريد يخص طالباً في مرحلة أخرى، أو ليس لديك صلاحية على هذه المرحلة.'
+        : 'That address belongs to a student on another stage, or you have no authority over this stage.';
+    }
+    return err?.message || fallback;
+  };
+
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -390,9 +430,12 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
     try {
       const emailLower = email.toLowerCase();
-      const studentDoc = await getDoc(doc(db, 'students', emailLower));
-      
-      if (studentDoc.exists()) {
+
+      // Checked against the loaded roster rather than with a getDoc. The
+      // students rules are stage-scoped now, and a get on a document that does
+      // not exist has no stageId to match, so the probe would come back
+      // permission-denied for every genuinely new address.
+      if (students.some(s => (s.baseStudentId || s.id).toLowerCase() === emailLower)) {
         throw new Error(isRtl ? 'الطالب موجود بالفعل' : 'Student already exists');
       }
 
@@ -400,6 +443,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
 
       await setDoc(doc(db, 'students', emailLower), {
         name,
+        // Every path that writes `name` must write nameKey too - /api/login
+        // queries it, so a student without one can only sign in by email.
+        nameKey: nameKeyFor(name),
         email: emailLower,
         password: hashedPassword,
         examCode,
@@ -419,9 +465,131 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       fetchStudents();
     } catch (err: any) {
       console.error('Error adding student:', err);
-      setError(err.message || (isRtl ? 'فشل إضافة الطالب' : 'Failed to add student'));
+      setError(stageAwareMessage(err, isRtl ? 'فشل إضافة الطالب' : 'Failed to add student'));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * The per-row actions, shared by the desktop table and the mobile cards.
+   *
+   * Extracted rather than duplicated: it carries the inline delete
+   * confirmation, so two copies would drift on the one interaction where that
+   * matters most.
+   */
+  const renderStudentActions = (student: Student) => (
+                  deletingId === student.id ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => handleDeleteStudent(student.id)}
+                        className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
+                      >
+                        {isRtl ? 'تأكيد' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={() => setDeletingId(null)}
+                        className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-lg transition-colors"
+                      >
+                        {isRtl ? 'إلغاء' : 'Cancel'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1">
+                      {student.userUid && (
+                        <button
+                          onClick={() => handleViewProfile(student.userUid!)}
+                          className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                          title={isRtl ? 'عرض الملف الشخصي' : 'View Profile'}
+                        >
+                          <User className="w-4 h-4" />
+                        </button>
+                      )}
+                      {student.hasMultiple && (
+                        <button
+                          onClick={() => setMergingBaseId(student.baseStudentId || student.id)}
+                          className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
+                          title={isRtl ? 'دمج الحسابات' : 'Merge Accounts'}
+                        >
+                          <GitMerge className="w-4 h-4" />
+                        </button>
+                      )}
+                      {!student.isAuthAccountOnly && (
+                        <button
+                          onClick={() => handleResetPassword(student)}
+                          disabled={resettingId === student.id}
+                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors disabled:opacity-50"
+                          title={isRtl ? 'إصدار كلمة مرور جديدة' : 'Issue a new password'}
+                        >
+                          {resettingId === student.id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <KeyRound className="w-4 h-4" />}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setPanel('add');
+                          setEditingStudent(student);
+                          setEditName(student.name);
+                          setEditEmail(student.email);
+                          setEditPassword('');
+                          setEditExamCode(student.examCode || '');
+                          setEditSubgroup(student.subgroup || '');
+                        }}
+                        className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => setDeletingId(student.id)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )
+  );
+
+  /**
+   * Issues a replacement password for one student.
+   *
+   * Routed through the API rather than the SDK on purpose: the server picks the
+   * password, bcrypts it, and refuses a target outside the caller's own stage -
+   * none of which a client-side write could enforce.
+   */
+  const handleResetPassword = async (student: Student) => {
+    const targetId = student.baseStudentId || student.id;
+    const ok = window.confirm(isRtl
+      ? `إصدار كلمة مرور جديدة لـ "${student.name}"؟ كلمته الحالية لن تعمل بعدها.`
+      : `Issue a new password for "${student.name}"? Their current one will stop working.`);
+    if (!ok) return;
+
+    setResettingId(student.id);
+    setError(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch(apiUrl(`/api/admin/students/${encodeURIComponent(targetId)}/reset-password`), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+
+      setResetResult({
+        name: data.name || student.name,
+        loginCode: data.loginCode || student.loginCode || '',
+        password: data.password,
+      });
+      await logAdminAction('RESET_STUDENT_PASSWORD',
+        `stage=${effectiveStageId} student=${targetId}`);
+      fetchStudents();
+    } catch (err: any) {
+      console.error('Error resetting password:', err);
+      setError(err.message || (isRtl ? 'فشل إصدار كلمة المرور' : 'Failed to reset password'));
+    } finally {
+      setResettingId(null);
     }
   };
 
@@ -553,6 +721,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       
       const updateData: any = {
         name: editName,
+        // Kept in step with `name`, or name login stops finding them.
+        nameKey: nameKeyFor(editName),
         examCode: editExamCode,
         subgroup: editSubgroup,
       };
@@ -562,11 +732,21 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       }
 
       if (newEmailLower !== oldEmail) {
-        const newDoc = await getDoc(doc(db, 'students', newEmailLower));
-        if (newDoc.exists()) {
+        // Same reason as handleAddStudent: the existence check reads the loaded
+        // roster, because a scoped get on a missing document is refused.
+        if (students.some(s => (s.baseStudentId || s.id).toLowerCase() === newEmailLower)) {
           throw new Error(isRtl ? 'البريد الإلكتروني الجديد موجود بالفعل' : 'New email already exists');
         }
-
+        // Changing the address rewrites the document id, and for a roster
+        // student that id is also their auth uid, their users doc key and the
+        // email claim in their token - so a rename would strand the account
+        // they are already signed in to. They attach a real address by linking
+        // Google from settings, which adds a field instead of moving the doc.
+        if (editingStudent.placeholderEmail) {
+          throw new Error(isRtl
+            ? 'لا يمكن تغيير بريد طالب مستورد بدون بريد. اطلب منه ربط حساب Google من الإعدادات.'
+            : 'Cannot change the address of an imported student. Ask them to link Google from settings.');
+        }
         const oldDoc = await getDoc(doc(db, 'students', oldEmail));
         const oldData = oldDoc.data() || { createdAt: serverTimestamp() };
 
@@ -586,69 +766,9 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
       fetchStudents();
     } catch (err: any) {
       console.error('Error editing student:', err);
-      setError(err.message || (isRtl ? 'فشل تحديث بيانات الطالب' : 'Failed to update student'));
+      setError(stageAwareMessage(err, isRtl ? 'فشل تحديث بيانات الطالب' : 'Failed to update student'));
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-        setIsLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const text = await file.text();
-      const rows = text.split('\n').filter(row => row.trim() !== '');
-      
-      if (rows.length === 0) {
-        throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
-      }
-
-      // Skip header row if it exists
-      const startIndex = rows[0].toLowerCase().includes('name') ? 1 : 0;
-      
-      if (rows.length <= startIndex) {
-        throw new Error(isRtl ? 'ملف CSV فارغ' : 'CSV file is empty');
-      }
-
-      const batch = writeBatch(db);
-      let count = 0;
-
-      for (let i = startIndex; i < rows.length; i++) {
-        const [csvName, csvEmail, csvPassword, ...rest] = rows[i].split(',').map(s => s?.trim() || '');
-        const csvExamCode = rest.length > 0 ? rest.join(',').trim() : ''; // handle optional and commas
-        if (csvName && csvEmail && csvPassword) {
-          const emailLower = csvEmail.toLowerCase();
-          const hashedPassword = await hashPassword(csvPassword);
-          
-          const studentRef = doc(db, 'students', emailLower);
-          batch.set(studentRef, {
-            name: csvName,
-            email: emailLower,
-            password: hashedPassword,
-            examCode: csvExamCode,
-            isActive: true,
-            stageId: effectiveStageId,
-            createdAt: serverTimestamp()
-          });
-          count++;
-        }
-      }
-
-      await batch.commit();
-      await logAdminAction('IMPORT_STUDENTS_CSV', `Imported ${count} students via CSV`);
-      setSuccess(isRtl ? `تم استيراد ${count} طالب بنجاح` : `Successfully imported ${count} students`);
-      fetchStudents();
-    } catch (err: any) {
-      console.error('Error uploading CSV:', err);
-      setError(err.message || (isRtl ? 'فشل استيراد ملف CSV' : 'Failed to import CSV'));
-    } finally {
-      setIsLoading(false);
-      if (e.target) e.target.value = '';
     }
   };
 
@@ -704,17 +824,10 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
         }
 
         if (csvName && csvExamCode) {
-          // Normalize string to help exact matching
-          const normalize = (str: string) => {
-            if (!str) return '';
-            return str.replace(/[\u064B-\u065F\u0670\u200C\u200D]/g, '')
-                      .replace(/[أإآء]/g, 'ا')
-                      .replace(/ة/g, 'ه')
-                      .replace(/ى/g, 'ي')
-                      .replace(/ي/g, 'ي') // just to be safe
-                      .replace(/\s+/g, ' ')
-                      .trim().toLowerCase();
-          };
+          // Shared with /api/login, which queries students.nameKey with the
+          // same folding. Two copies would drift and lock out exactly the
+          // students whose names are spelled inconsistently.
+          const normalize = normalizeName;
           const normalizedCsvName = normalize(csvName);
           
           let matchedStudentId = null;
@@ -812,8 +925,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
     }
 
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
-      + (isRtl ? "الاسم,البريد الإلكتروني,الكود,الحالة\n" : "Name,Email,Code,Status\n")
-      + neverSignedIn.map(s => `"${s.name}","${s.email}","${s.examCode || ''}","${s.isActive ? (isRtl ? 'مفعل' : 'Active') : (isRtl ? 'معطل' : 'Inactive')}"`).join('\n');
+      + (isRtl ? "الاسم,البريد الإلكتروني,رمز الدخول,الكود,الحالة\n" : "Name,Email,Login code,Exam code,Status\n")
+      + neverSignedIn.map(s => `"${s.name}","${s.placeholderEmail ? '' : s.email}","${s.loginCode || ''}","${s.examCode || ''}","${s.isActive ? (isRtl ? 'مفعل' : 'Active') : (isRtl ? 'معطل' : 'Inactive')}"`).join('\n');
     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -827,6 +940,8 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
   const filteredStudents = students.filter(student => {
     const matchesSearch = student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (student.loginCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (student.googleEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (student.examCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (student.subgroup || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (student.currentName && student.currentName.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -1008,10 +1123,43 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                 </div>
               </div>
             ) : (
-            <div className="p-6 overflow-hidden flex-1 flex flex-col lg:flex-row gap-8">
-              {/* Add/Edit Student Form */}
-              <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto pr-2 space-y-6">
-                {editingStudent ? (
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Tabs. Horizontally scrollable so five of them still fit on a
+                  narrow phone without wrapping into two rows. */}
+              <div className="px-4 sm:px-6 pt-3 shrink-0 border-b border-slate-100 dark:border-zinc-800">
+                <div className="flex gap-1.5 overflow-x-auto pb-2.5 -mx-1 px-1 scrollbar-thin">
+                  {([
+                    ['roster',   Users,     isRtl ? 'الطلاب' : 'Students', students.length],
+                    ['add',      UserPlus,  isRtl ? 'إضافة' : 'Add', null],
+                    ['import',   Upload,    isRtl ? 'استيراد' : 'Import', null],
+                    ['requests', Mail,      isRtl ? 'الطلبات' : 'Requests', null],
+                    ['codes',    BookOpen,  isRtl ? 'الأكواد' : 'Codes', null],
+                  ] as const).map(([id, Icon, label, count]) => (
+                    <button
+                      key={id}
+                      onClick={() => { setPanel(id); if (id !== 'add') setEditingStudent(null); }}
+                      className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold transition-colors ${
+                        panel === id
+                          ? 'bg-sky-600 text-white'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      {label}
+                      {count != null && (
+                        <span className={`text-[11px] font-black tabular-nums ${panel === id ? 'opacity-80' : 'text-slate-400'}`} dir="ltr">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {panel !== 'roster' && (
+              <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+              <div className="w-full max-w-2xl mx-auto space-y-6">
+                {panel === 'add' && (editingStudent ? (
                   <form onSubmit={handleEditStudent} className="space-y-4 bg-sky-50 dark:bg-sky-900/10 p-4 rounded-2xl border border-sky-100 dark:border-sky-900/30">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-sm font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
@@ -1166,36 +1314,31 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                     </button>
                   </div>
                 </form>
+                ))}
+
+                {panel === 'requests' && (
+                  <div className="space-y-6">
+                    <SignupRequestsQueue user={user} lang={lang} />
+                    {/* Both queues live on the same tab: they are the two ways
+                        a roster changes without the representative typing. */}
+                    <div className="pt-6 border-t border-slate-200 dark:border-zinc-800">
+                      <DeletionRequestsQueue lang={lang} />
+                    </div>
+                  </div>
                 )}
 
-                <div className="pt-6 border-t border-slate-200 dark:border-zinc-800">
-                  <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                    {isRtl ? 'طلبات إنشاء الحسابات' : 'Signup requests'}
-                  </h3>
-                  <SignupRequestsQueue user={user} lang={lang} />
-                </div>
+                {panel === 'import' && (
+                  <RosterImport
+                    lang={lang}
+                    students={students}
+                    effectiveStageId={effectiveStageId}
+                    groupConfig={groupConfig}
+                    onImported={fetchStudents}
+                  />
+                )}
 
-                <div className="pt-6 border-t border-slate-200 dark:border-zinc-800 space-y-4">
+                {panel === 'codes' && (
                   <div>
-                    <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                      {isRtl ? 'استيراد من CSV' : 'Import from CSV'}
-                    </h3>
-                    <label className="w-full py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-zinc-700">
-                      <Upload className="w-5 h-5" />
-                      {isRtl ? 'اختر ملف CSV للطلاب' : 'Choose Students CSV File'}
-                      <input
-                        type="file"
-                        accept=".csv"
-                        className="hidden"
-                        onChange={handleCsvUpload}
-                      />
-                    </label>
-                    <p className="text-xs text-slate-500 mt-2 text-center">
-                      {isRtl ? 'الأعمدة: name, email, password, examCode (اختياري)' : 'Columns: name, email, password, examCode (optional)'}
-                    </p>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-200/50 dark:border-zinc-800/50">
                     <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
                       {isRtl ? 'استيراد أكواد الامتحانات (بواسطة الاسم)' : 'Import Exam Codes (By Name)'}
                     </h3>
@@ -1213,17 +1356,19 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       {isRtl ? 'الأعمدة: name, examCode' : 'Columns: name, examCode'}
                     </p>
                   </div>
-                </div>
+                )}
               </div>
+              </div>
+              )}
 
-              {/* Student List */}
-              <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
-                  <div className="flex items-center gap-4 flex-1">
-                    <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
+              {panel === 'roster' && (
+              <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden px-4 sm:px-6 pt-4 pb-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <h3 className="hidden sm:block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
                       {isRtl ? 'قائمة الطلاب' : 'Student List'} ({students.length})
                     </h3>
-                    <div className="relative flex-1 max-w-sm flex items-center gap-2">
+                    <div className="relative flex-1 sm:max-w-sm flex items-center gap-2 min-w-0">
                       <input
                         type="text"
                         placeholder={isRtl ? 'البحث بالاسم، الإيميل، أو الكود...' : 'Search by name, email, or code...'}
@@ -1347,7 +1492,69 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                       <p>{isRtl ? 'لا توجد نتائج' : 'No results found'}</p>
                     </div>
                   ) : (
-                    <table className="w-full text-left border-collapse">
+                    <>
+                    {/* Phones get cards. The table has eight columns and only
+                        sideways scrolling to fit them, which on a phone hides
+                        the login code - the one value a representative is most
+                        often reading out to a student. */}
+                    <div className="md:hidden divide-y divide-slate-200 dark:divide-zinc-700">
+                      {filteredStudents.map((student, idx) => (
+                        <div
+                          key={`card-${student.id}-${idx}`}
+                          className={`p-3 ${student.isAuthAccountOnly ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm text-slate-900 dark:text-stone-100 flex items-center gap-1.5 flex-wrap">
+                                <span className="truncate">{student.name}</span>
+                                {student.isAuthAccountOnly && (
+                                  <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                                    {isRtl ? 'حساب إضافي' : 'Duplicate'}
+                                  </span>
+                                )}
+                                {student.role && student.role !== 'student' && (
+                                  <span className="text-[9px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-1.5 py-0.5 rounded-full capitalize">
+                                    {student.role.replace('_', ' ')}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] font-bold">
+                                <span className="px-1.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400">
+                                  {student.subgroup || '—'}
+                                </span>
+                                <span className="font-mono text-slate-500 dark:text-slate-400" dir="ltr">
+                                  {student.placeholderEmail
+                                    ? (student.loginCode || '—')
+                                    : student.email}
+                                </span>
+                                {student.examCode && (
+                                  <span className="font-mono text-slate-400" dir="ltr">#{student.examCode}</span>
+                                )}
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-2 text-[11px] font-bold">
+                                <span className={student.userUid
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-slate-400'}>
+                                  {student.userUid
+                                    ? (isRtl ? 'سجّل الدخول' : 'Signed in')
+                                    : (isRtl ? 'لم يسجّل بعد' : 'Never signed in')}
+                                </span>
+                                <span className={student.isActive
+                                  ? 'text-slate-400'
+                                  : 'text-rose-600 dark:text-rose-400'}>
+                                  {student.isActive ? (isRtl ? 'مفعل' : 'Active') : (isRtl ? 'معطل' : 'Disabled')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex justify-end">
+                            {renderStudentActions(student)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <table className="hidden md:table w-full text-left border-collapse">
                       <thead className="bg-slate-100 dark:bg-zinc-800 sticky top-0 z-10">
                         <tr>
                           <th className="p-3 text-sm font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'الاسم' : 'Name'}</th>
@@ -1386,7 +1593,21 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                               )}
                             </td>
                             <td className="p-3 text-sm text-slate-500 dark:text-slate-400">
-                              {student.email}
+                              {/* A roster student's id is synthetic - showing it
+                                  would read as an address that does not exist.
+                                  Their login code is what they actually type. */}
+                              {student.placeholderEmail ? (
+                                <span className="font-mono text-xs" dir="ltr">
+                                  {student.loginCode || '—'}
+                                </span>
+                              ) : (
+                                <span dir="ltr">{student.email}</span>
+                              )}
+                              {student.googleEmail && (
+                                <div className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-0.5 break-all" dir="ltr">
+                                  Google: {student.googleEmail}
+                                </div>
+                              )}
                               {student.userUid && (
                                 <div className="text-[9px] text-slate-400 mt-0.5 break-all">ID: {student.userUid}</div>
                               )}
@@ -1424,76 +1645,70 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
                               </button>
                             </td>
                             <td className="p-3 text-center">
-                              {deletingId === student.id ? (
-                                <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => handleDeleteStudent(student.id)}
-                                    className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
-                                  >
-                                    {isRtl ? 'تأكيد' : 'Confirm'}
-                                  </button>
-                                  <button
-                                    onClick={() => setDeletingId(null)}
-                                    className="px-2 py-1 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-700 dark:text-slate-300 rounded-lg transition-colors"
-                                  >
-                                    {isRtl ? 'إلغاء' : 'Cancel'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-center gap-1">
-                                  {student.userUid && (
-                                    <button
-                                      onClick={() => handleViewProfile(student.userUid!)}
-                                      className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                                      title={isRtl ? 'عرض الملف الشخصي' : 'View Profile'}
-                                    >
-                                      <User className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                  {student.hasMultiple && (
-                                    <button
-                                      onClick={() => setMergingBaseId(student.baseStudentId || student.id)}
-                                      className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
-                                      title={isRtl ? 'دمج الحسابات' : 'Merge Accounts'}
-                                    >
-                                      <GitMerge className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      setEditingStudent(student);
-                                      setEditName(student.name);
-                                      setEditEmail(student.email);
-                                      setEditPassword('');
-                                      setEditExamCode(student.examCode || '');
-                                      setEditSubgroup(student.subgroup || '');
-                                    }}
-                                    className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                    </svg>
-                                  </button>
-                                  <button
-                                    onClick={() => setDeletingId(student.id)}
-                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              )}
+                              {renderStudentActions(student)}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    </>
                   )}
                 </div>
               </div>
-                </div>
               )}
             </div>
+            )}
+            </div>
           </motion.div>
+        </div>
+      )}
+
+      {/* The re-issued password. Same contract as the import panel: shown
+          once, never recoverable, and it does not close itself. */}
+      {resetResult && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"
+          dir={isRtl ? 'rtl' : 'ltr'}
+        >
+          <div className="w-full max-w-sm bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-2xl">
+            <div className="w-14 h-14 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <KeyRound className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+            </div>
+            <h3 className="text-base font-black text-center text-slate-900 dark:text-stone-100">
+              {resetResult.name}
+            </h3>
+            {resetResult.loginCode && (
+              <p className="text-center text-xs font-mono font-bold text-slate-400 mt-1" dir="ltr">
+                {resetResult.loginCode}
+              </p>
+            )}
+
+            <div className="my-5 py-4 bg-slate-50 dark:bg-zinc-950 rounded-2xl text-center">
+              <div className="font-mono font-black text-2xl text-slate-900 dark:text-stone-100 tracking-wider" dir="ltr">
+                {resetResult.password}
+              </div>
+            </div>
+
+            <p className="text-center text-[11px] font-bold text-amber-700 dark:text-amber-500 mb-4 leading-relaxed">
+              {isRtl
+                ? 'تظهر مرة واحدة فقط. سيُطلب من الطالب تغييرها عند أول دخول.'
+                : 'Shown once only. The student will be asked to change it at first sign-in.'}
+            </p>
+
+            <button
+              onClick={() => navigator.clipboard.writeText(resetResult.password).catch(console.error)}
+              className="w-full py-2.5 mb-2 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              {isRtl ? 'نسخ' : 'Copy'}
+            </button>
+            <button
+              onClick={() => setResetResult(null)}
+              className="w-full py-3 bg-sky-600 text-white rounded-xl font-black text-sm hover:bg-sky-700"
+            >
+              {isRtl ? 'حفظتها — إغلاق' : 'I have saved it — close'}
+            </button>
+          </div>
         </div>
       )}
 

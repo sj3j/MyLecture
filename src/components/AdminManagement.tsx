@@ -6,6 +6,7 @@ import { Language, TRANSLATIONS, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { logAdminAction } from '../services/adminLogService';
 import { useStageContext } from '../contexts/StageContext';
+import StudentPicker, { StudentCandidate } from './StudentPicker';
 import { MODERATOR_CAPABILITIES, isMasterAdmin as isMaster } from '../lib/permissions';
 
 interface AdminManagementProps {
@@ -68,6 +69,9 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
   const [newStageId, setNewStageId] = useState<string>('');
 
   const [email, setEmail] = useState('');
+  // Chosen from the stage roster rather than typed: an imported student's
+  // document id is a synthetic string nobody could reproduce from memory.
+  const [picked, setPicked] = useState<StudentCandidate | null>(null);
   const [permissions, setPermissions] = useState({
     manageLectures: true,
     manageAnnouncements: true,
@@ -152,8 +156,8 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
     setError(null);
 
     try {
-      if (!email.includes('@')) {
-        setError(isRtl ? 'بريد إلكتروني غير صالح' : 'Invalid email');
+      if (!picked || !email) {
+        setError(isRtl ? 'اختر طالباً من القائمة أولاً' : 'Pick a student from the list first');
         setIsSubmitting(false);
         return;
       }
@@ -177,8 +181,8 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
       );
       if (existingUser.empty) {
         setError(isRtl
-          ? 'لا يوجد حساب بهذا البريد. يجب أن يسجّل الدخول مرة واحدة أولاً.'
-          : 'No account with that email. They must sign in once first.');
+          ? 'هذا الطالب لم يسجّل الدخول بعد. يجب أن يدخل التطبيق مرة واحدة أولاً.'
+          : 'That student has never signed in. They must open the app once first.');
         setIsSubmitting(false);
         return;
       }
@@ -228,6 +232,7 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
       }
 
       setEmail('');
+      setPicked(null);
       fetchAdmins();
     } catch (err) {
       console.error('Error adding admin:', err);
@@ -371,13 +376,11 @@ export default function AdminManagement({ isOpen, onClose, lang, user }: AdminMa
                   </div>
                 )}
                 <div className="space-y-3">
-                  <input
-                    required
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-stone-100 rounded-xl focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-500 outline-none transition-all"
+                  <StudentPicker
+                    stageId={viewerIsMaster ? newStageId : (effectiveStageId || '')}
+                    lang={lang}
+                    selected={picked}
+                    onSelect={(c) => { setPicked(c); setEmail(c?.id || ''); }}
                   />
 
                   {viewerIsMaster && (

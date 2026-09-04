@@ -1,6 +1,7 @@
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from './firebase';
+import { signInWithPopup, GoogleAuthProvider, getAuth, signOut } from 'firebase/auth';
+import { initializeApp, deleteApp } from 'firebase/app';
 import { apiUrl } from './apiBase';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 /**
  * Google sign-in for both web and the installed app.
@@ -35,14 +36,28 @@ async function isNative(): Promise<boolean> {
   }
 }
 
+export interface GoogleProfile {
+  name: string | null;
+  email: string | null;
+  photoUrl: string | null;
+}
+
 export interface GoogleSignInResult {
   token: string;
+  /** The students/ document id the server resolved to. */
+  studentId: string;
   /** From the Google account, for seeding a brand-new users document. */
-  profile: { name: string | null; email: string | null; photoUrl: string | null };
+  profile: GoogleProfile;
+}
+
+export interface GoogleTokenResult {
+  /** Exactly one key, and which one it is decides how the server verifies it. */
+  body: { idToken: string } | { googleIdToken: string };
+  profile: GoogleProfile;
 }
 
 /** Exchanges a token for our custom token. Throws NoAccountError for signup. */
-async function exchange(body: Record<string, string>): Promise<string> {
+async function exchange(body: Record<string, string>): Promise<{ token: string; studentId: string }> {
   const res = await fetch(apiUrl('/api/google-login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -56,7 +71,56 @@ async function exchange(body: Record<string, string>): Promise<string> {
     }
     throw new Error(data?.error || 'Authentication failed');
   }
-  return data.token;
+  return { token: data.token, studentId: (data.studentId || '').toLowerCase() };
+}
+
+/**
+ * Obtains a Google-issued token WITHOUT touching the current session.
+ *
+ * Signing in is not the only reason to prove you own a mailbox - linking one
+ * from settings needs the same proof while the student stays signed in. The
+ * login path cannot be reused as-is, because on web it runs signInWithPopup
+ * against the app's own auth instance and then signs out of it, which would
+ * log the student out mid-link.
+ *
+ * So the popup runs on a SECOND, throwaway Firebase app. Its token is valid
+ * for the same project (same aud), so admin.auth().verifyIdToken accepts it,
+ * and the primary session is never written to at all.
+ */
+export async function getGoogleToken(): Promise<GoogleTokenResult> {
+  if (await isNative()) {
+    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+    const result = await FirebaseAuthentication.signInWithGoogle();
+    const googleIdToken = result.credential?.idToken;
+    if (!googleIdToken) throw new Error('Google sign-in returned no token');
+
+    const profile: GoogleProfile = {
+      name: result.user?.displayName ?? null,
+      email: result.user?.email ?? null,
+      photoUrl: result.user?.photoUrl ?? null,
+    };
+
+    // The plugin creates a native Firebase session as a side effect; drop it so
+    // nothing but our own custom-token session is ever in play.
+    await FirebaseAuthentication.signOut().catch(() => {});
+    return { body: { googleIdToken }, profile };
+  }
+
+  const scratchApp = initializeApp(firebaseConfig, `google-link-${Date.now()}`);
+  try {
+    const scratchAuth = getAuth(scratchApp);
+    const popupResult = await signInWithPopup(scratchAuth, new GoogleAuthProvider());
+    const idToken = await popupResult.user.getIdToken();
+    const profile: GoogleProfile = {
+      name: popupResult.user.displayName,
+      email: popupResult.user.email,
+      photoUrl: popupResult.user.photoURL,
+    };
+    await signOut(scratchAuth).catch(() => {});
+    return { body: { idToken }, profile };
+  } finally {
+    await deleteApp(scratchApp).catch(() => {});
+  }
 }
 
 /**
@@ -67,32 +131,7 @@ async function exchange(body: Record<string, string>): Promise<string> {
  * error, since the person has just proved they own that mailbox.
  */
 export async function getGoogleCustomToken(): Promise<GoogleSignInResult> {
-  if (await isNative()) {
-    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-    const result = await FirebaseAuthentication.signInWithGoogle();
-    const googleIdToken = result.credential?.idToken;
-    if (!googleIdToken) throw new Error('Google sign-in returned no token');
-
-    const profile = {
-      name: result.user?.displayName ?? null,
-      email: result.user?.email ?? null,
-      photoUrl: result.user?.photoUrl ?? null,
-    };
-
-    // The plugin also creates a native Firebase session as a side effect; drop
-    // it so the custom-token session below is the only identity in play.
-    await FirebaseAuthentication.signOut().catch(() => {});
-
-    return { token: await exchange({ googleIdToken }), profile };
-  }
-
-  const popupResult = await signInWithPopup(auth, new GoogleAuthProvider());
-  const idToken = await popupResult.user.getIdToken();
-  const profile = {
-    name: popupResult.user.displayName,
-    email: popupResult.user.email,
-    photoUrl: popupResult.user.photoURL,
-  };
-  await auth.signOut();
-  return { token: await exchange({ idToken }), profile };
+  const { body, profile } = await getGoogleToken();
+  const { token, studentId } = await exchange(body as Record<string, string>);
+  return { token, studentId, profile };
 }

@@ -7,6 +7,7 @@
  * collection is only a queue.
  */
 import { GroupConfigLike, FALLBACK_GROUP_CONFIG, isValidSubgroup, normalizeSubgroup } from './groups.js';
+import { nameKeyFor } from './rosterIdentity.js';
 
 export type SignupStatus = 'pending' | 'approved' | 'rejected';
 
@@ -191,6 +192,9 @@ export async function reviewSignupRequest(
   if (opts.approve) {
     await db.collection('students').doc(email).set({
       name: data.fullName,
+      // Every path that writes `name` must write nameKey too - /api/login
+      // queries it, and a student without one can only sign in by email.
+      nameKey: nameKeyFor(data.fullName),
       email,
       password: data.passwordHash,
       examCode: data.examCode || '',

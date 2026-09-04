@@ -7,6 +7,7 @@
     "dev": "tsx server.ts",
     "build": "node scripts/copyPdfjsAssets.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build:native": "node scripts/copyPdfjsAssets.mjs && vite build --mode native && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "icons": "node scripts/generate-app-icons.mjs",
     "check:payment-surface": "node scripts/assert-no-payment-surface.mjs android/app/src/main/assets/public",
     "check:indexes": "node scripts/checkIndexDrift.mjs --verbose",
     "android:sync": "npm run build:native && node scripts/pruneNativeWebDir.mjs dist && npx cap sync android",
@@ -26,6 +27,10 @@
     "test:google": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/googleLogin.test.ts\"",
     "test:signup": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/signup.test.ts\"",
     "test:anchor": "npx tsx scripts/pdfAnchor.test.ts",
+    "test:roster": "npx tsx scripts/roster.test.ts",
+    "roster:passwords": "npx tsx scripts/generateRosterPasswords.ts",
+    "roster:backfill": "npx tsx scripts/backfillNameKeys.ts",
+    "test:account": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/account.test.ts\"",
     "test:wipe": "npx -y firebase-tools@13 emulators:exec --only firestore --project mylectures-rules-test \"npx tsx scripts/wipe.test.ts\""
   },
   "dependencies": {
@@ -43,6 +48,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "bcryptjs": "^3.0.3",
     "canvas-confetti": "^1.9.4",
+    "client-zip": "^2.5.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",

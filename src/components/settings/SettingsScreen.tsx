@@ -9,6 +9,7 @@ import SettingsRow from './SettingsRow';
 import SettingsToggle from './SettingsToggle';
 import AppearanceSettings from './AppearanceSettings';
 import BlockedUsersSettings from './BlockedUsersSettings';
+import AccountSecuritySettings from './AccountSecuritySettings';
 import { ThemeChoice } from '../../hooks/useTheme';
 import { useBackDismiss } from '../../hooks/useBackDismiss';
 import {
@@ -16,7 +17,7 @@ import {
   canManageStreakSystem, canViewAdminLogs, isMasterAdmin,
 } from '../../lib/permissions';
 
-type Page = 'root' | 'appearance' | 'blocked';
+type Page = 'root' | 'appearance' | 'blocked' | 'security';
 
 export interface SettingsScreenProps {
   /** Returns to the profile. This is a real page now, not an overlay. */
@@ -65,6 +66,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     root:       { ar: 'الإعدادات',            en: 'Settings' },
     appearance: { ar: 'المظهر',               en: 'Appearance' },
     blocked:    { ar: 'المستخدمون المحظورون', en: 'Blocked users' },
+    security:   { ar: 'الحساب وكلمة المرور',  en: 'Account & password' },
   };
 
   const notifLabel = notificationPermission === 'granted'
@@ -130,6 +132,10 @@ export default function SettingsScreen(props: SettingsScreenProps) {
           <BlockedUsersSettings user={user} lang={lang} />
         )}
 
+        {page === 'security' && (
+          <AccountSecuritySettings lang={lang} />
+        )}
+
         {page === 'root' && (
           <>
             <SettingsGroup title={isRtl ? 'التطبيق' : 'App'}>
@@ -179,6 +185,16 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                 ))}
               </SettingsGroup>
             )}
+
+            <SettingsGroup title={isRtl ? 'الحساب' : 'Account'}>
+              <SettingsRow
+                isRtl={isRtl} icon={SETTINGS_ICONS.account}
+                label={isRtl ? 'الحساب وكلمة المرور' : 'Account & password'}
+                sublabel={user?.googleEmail
+                  || (isRtl ? 'كلمة المرور وربط حساب Google' : 'Password and Google linking')}
+                onClick={() => setPage('security')}
+              />
+            </SettingsGroup>
 
             <SettingsGroup title={isRtl ? 'الخصوصية' : 'Privacy'}>
               {user && (
@@ -233,7 +249,11 @@ export default function SettingsScreen(props: SettingsScreenProps) {
             {(canManageAssistants(user) || canManageStudents(user) || canManageGrades(user)
               || canManageStreakSystem(user) || canViewAdminLogs(user)) && (
               <SettingsGroup title={isRtl ? 'الإدارة' : 'Administration'}>
-                {canManageStreakSystem(user) && (
+                {/* Master admin only, stated directly rather than borrowing
+                    canManageStreakSystem - this screen holds the year-end wipe
+                    and the content export, and the two permissions coinciding
+                    today is a coincidence, not a rule. */}
+                {isMasterAdmin(user) && (
                   <SettingsRow
                     isRtl={isRtl} icon={SETTINGS_ICONS.calendar}
                     label={isRtl ? 'التقويم الدراسي' : 'Academic calendar'}

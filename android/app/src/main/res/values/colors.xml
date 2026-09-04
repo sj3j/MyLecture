@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="splashBackground">#FFFFFF</color>
+
+    <!--
+      The tint Android applies to @drawable/ic_notification. The mark's own blue
+      averages #7FB2D6, which is too pale to read against the white notification
+      shade, so this is the same hue darkened until it does. Kept in step with
+      NOTIFICATION_ACCENT in scripts/generate-app-icons.mjs.
+    -->
+    <color name="notificationAccent">#3E86B5</color>
 </resources>

@@ -3,7 +3,7 @@ import { auth, db } from '../lib/firebase';
 import { signInWithCustomToken, UserCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { Language, TRANSLATIONS } from '../types';
-import { Loader2, GraduationCap, Mail, Lock, LogIn } from 'lucide-react';
+import { Loader2, UserRound, Lock, LogIn } from 'lucide-react';
 import { apiUrl } from '../lib/apiBase';
 import { getGoogleCustomToken, NoAccountError } from '../lib/googleSignIn';
 import SignupScreen from './SignupScreen';
@@ -18,11 +18,13 @@ const errorMessages: Record<string, string> = {
   'auth/wrong-password':
     'كلمة المرور غير صحيحة',
   'auth/user-not-found':
-    'البريد الإلكتروني غير مسجل',
+    'لا يوجد حساب بهذه البيانات',
   'auth/invalid-email':
     'صيغة البريد الإلكتروني غير صحيحة',
   'auth/invalid-credential':
-    'البريد الإلكتروني أو كلمة المرور غير صحيحة',
+    'بيانات الدخول غير صحيحة. تحقق من الاسم أو البريد وكلمة المرور.',
+  'AMBIGUOUS_IDENTIFIER':
+    'يوجد أكثر من طالب بهذا الاسم. سجّل الدخول برمز الدخول أو تواصل مع الإدارة.',
   'auth/user-disabled':
     'تم تعطيل هذا الحساب، تواصل مع الإدارة',
   'auth/network-request-failed':
@@ -39,19 +41,31 @@ const errorMessages: Record<string, string> = {
     'لا يوجد اتصال بالإنترنت',
 };
 
+interface SignInOutcome {
+  credential: UserCredential;
+  /**
+   * The students/ document id the server resolved the identifier to. The
+   * caller must use THIS for its whitelist lookups, not what was typed: with
+   * name and code login the typed string is usually not a document id at all.
+   */
+  studentId: string;
+}
+
 const signInWithRetry = async (
-  email: string,
+  identifier: string,
   password: string,
   retries = 1
-): Promise<UserCredential> => {
+): Promise<SignInOutcome> => {
   try {
-    const emailLower = email.trim().toLowerCase();
-    
-    // Check our custom backend first to get a custom token securely
+    // Sent verbatim - no lowercasing. It may be an Arabic name, and the server
+    // is what decides whether this is an email, a login code or a name.
+    // `email` is sent alongside for installed builds still on the old field.
+    const typed = identifier.trim();
+
     const response = await fetch(apiUrl('/api/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailLower, password: password.trim() })
+      body: JSON.stringify({ identifier: typed, email: typed, password: password.trim() })
     });
 
     if (!response.ok) {
@@ -59,7 +73,9 @@ const signInWithRetry = async (
       const errorMsg = data.error || 'Invalid credentials';
       
       const err = new Error(errorMsg);
-      if (response.status === 401 || response.status === 404) {
+      if (data.code === 'AMBIGUOUS_IDENTIFIER') {
+        (err as any).code = 'AMBIGUOUS_IDENTIFIER';
+      } else if (response.status === 401 || response.status === 404) {
         (err as any).code = 'auth/invalid-credential';
       } else if (response.status === 403) {
         (err as any).code = 'auth/user-disabled';
@@ -69,15 +85,16 @@ const signInWithRetry = async (
       throw err;
     }
 
-    const { token } = await response.json();
-    return await signInWithCustomToken(auth, token);
+    const { token, studentId } = await response.json();
+    const credential = await signInWithCustomToken(auth, token);
+    return { credential, studentId: (studentId || typed).toLowerCase() };
   } catch (error: any) {
     if (
       retries > 0 &&
       (error.code === 'auth/network-request-failed' || error.message.includes('network-request-failed') || error.message.includes('Failed to fetch'))
     ) {
       await new Promise(r => setTimeout(r, 1500));
-      return signInWithRetry(email, password, retries - 1);
+      return signInWithRetry(identifier, password, retries - 1);
     }
     if (error.message.includes('Failed to fetch')) {
       error.code = 'auth/network-request-failed';
@@ -107,7 +124,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isPrivateMode, setIsPrivateMode] = useState(false);
@@ -138,7 +155,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       // Native uses the OS account picker and sends a raw Google token; web
       // keeps the popup and sends a Firebase token. Both come back as our own
       // custom token, so everything below is unchanged.
-      const { token, profile } = await getGoogleCustomToken();
+      const { token, studentId, profile } = await getGoogleCustomToken();
       
       // We must remove the flag before signing in with custom token 
       // so that App's onAuthStateChanged listener picks it up.
@@ -150,8 +167,13 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       let whitelistStageId: string | null = null;
       let whitelistManagedStageId: string | null = null;
 
-      if (result.user.email || profile.email) {
-        const emailLower = (result.user.email || profile.email || '').toLowerCase();
+      // The id the SERVER resolved, not the address Google asserted: a roster
+      // student who linked a Gmail is keyed by a synthetic id, so looking them
+      // up by the Gmail would find nothing and drop their role and stage.
+      const resolvedId = studentId || (result.user.email || profile.email || '').toLowerCase();
+
+      if (resolvedId) {
+        const emailLower = resolvedId;
         
         const adminEmails = ["almdrydyl335@gmail.com"];
         const isMasterAdmin = adminEmails.includes(emailLower);
@@ -188,7 +210,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
         await setDoc(userRef, {
           name: initialName,
           originalName: initialName,
-          email: result.user.email || profile.email,
+          // The resolved student id, not the Google address: every lookup that
+          // reconciles a session to a profile queries users.email against the
+          // students/ document id, so storing anything else here forks the
+          // account into two documents on the next sign-in.
+          email: resolvedId,
           role: userRole,
           photoUrl: profile.photoUrl,
           // Seed the stage at creation time; rules only allow a student to
@@ -252,7 +278,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     if (onClearError) onClearError();
 
     try {
-      const result = await signInWithRetry(email, password);
+      const { credential: result, studentId } = await signInWithRetry(identifier, password);
 
       // Check if user exists in users collection
       const userRef = doc(db, 'users', result.user.uid);
@@ -260,7 +286,9 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       
       let userRole = 'student';
       let studentData: any = {};
-      const emailLower = email.trim().toLowerCase();
+      // The id the SERVER resolved, never the typed string: a name or a login
+      // code is not a document id, and a roster student's id is synthetic.
+      const emailLower = studentId;
       
       const allowedDoc = await getDoc(doc(db, 'allowed_admins', emailLower));
       
@@ -297,6 +325,11 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           role: userRole,
           examCode: studentData.examCode || '',
           ...(studentData.stageId ? { stageId: studentData.stageId } : {}),
+          // shared/groups.ts: anything that assigns a group has to write both
+          // students.subgroup and users.group. The importer can only write the
+          // first - the users doc does not exist yet - so it is carried across
+          // here, which also lets an imported student skip the group step.
+          ...(studentData.subgroup ? { group: studentData.subgroup } : {}),
           createdAt: serverTimestamp(),
           favorites: [],
           studied: [],
@@ -337,7 +370,9 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-zinc-950 p-4" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-8 shadow-xl border border-slate-200 dark:border-zinc-800 text-center">
         <div className="w-20 h-20 bg-sky-100 dark:bg-sky-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-          <GraduationCap className="w-10 h-10 text-sky-600 dark:text-sky-400" />
+          {/* The real brand mark. This was a lucide GraduationCap standing in
+              for a logo the app did not have a local copy of. */}
+          <img src="/icons/logo-mark.png" alt={t.appName} className="w-12 h-12 object-contain" />
         </div>
         
         <h1 className="text-3xl font-black text-slate-900 dark:text-stone-100 mb-2">
@@ -366,25 +401,30 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
         <form onSubmit={handleLogin} className="mb-6 space-y-4 text-left">
           <div>
             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 px-1">
-              {isRtl ? 'البريد الإلكتروني' : 'Email'}
+              {isRtl ? 'البريد الإلكتروني أو الاسم أو رمز الدخول' : 'Email, name or login code'}
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-slate-400" />
+                <UserRound className="h-5 w-5 text-slate-400" />
               </div>
               <input
-                type="email"
+                // Not type="email": students imported from a roster have no
+                // address and sign in with their name or a "D4-01234" code,
+                // both of which the browser would reject as malformed.
+                type="text"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onBlur={(e) => setEmail(e.target.value.trim())}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                onBlur={(e) => setIdentifier(e.target.value.trim())}
                 autoCorrect="off"
                 autoCapitalize="none"
                 spellCheck={false}
-                inputMode="email"
+                autoComplete="username"
+                inputMode={identifier.includes('@') ? 'email' : 'text'}
                 className="block w-full pl-10 pr-3 py-3 border border-slate-200 dark:border-zinc-700 rounded-xl leading-5 bg-slate-50 dark:bg-zinc-800 placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 sm:text-sm transition-colors text-slate-900 dark:text-stone-100"
-                placeholder="student@example.com"
-                dir="ltr"
+                placeholder={isRtl ? 'أحمد علي حسين' : 'name, email or code'}
+                // An Arabic name must render RTL; an address or a code must not.
+                dir={/[؀-ۿ]/.test(identifier) ? 'auto' : 'ltr'}
               />
             </div>
           </div>
@@ -415,7 +455,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
 
           <button
             type="submit"
-            disabled={isLoading || !email || !password}
+            disabled={isLoading || !identifier || !password}
             style={{ opacity: isLoading ? 0.7 : 1 }}
             className="w-full flex items-center justify-center gap-2 bg-sky-600 text-white px-6 py-3.5 rounded-xl font-bold hover:bg-sky-700 transition-all disabled:opacity-50 mt-2"
           >

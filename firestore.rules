@@ -626,6 +626,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     
+    // A student's request to have their account deleted, awaiting review.
+    //
+    // Create is the ONLY client write: the approval purges an Auth user and a
+    // dozen documents, which no client credential can do, so the review runs
+    // through the Admin SDK and this collection is read-only to everyone after
+    // the request lands. Cancelling goes through the API too, so a request
+    // cannot be quietly withdrawn by editing the row.
+    match /deletion_requests/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId)
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.uid == userId;
+      allow update, delete: if false;
+    }
+
     match /fcm_tokens/{userId} {
       allow read, write: if isOwner(userId);
     }

@@ -25,7 +25,13 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification?.title || 'New Notification';
   const notificationOptions = {
     body: payload.notification?.body || '',
-    icon: 'https://i.imgur.com/uZ5tK40.png', // We will assume the user puts their icon here or we will create a placeholder
+    // Precached local assets, not a remote URL: this runs in a service worker
+    // that fires while the app is closed and possibly offline, where an external
+    // fetch just yields a notification with no icon.
+    icon: '/icons/icon-192.png',
+    // Chrome renders the badge as the monochrome status-bar glyph on Android and
+    // masks it down to its alpha, so it is the stencil, not the coloured mark.
+    badge: '/icons/badge-72.png',
     data: payload.data,
   };
 

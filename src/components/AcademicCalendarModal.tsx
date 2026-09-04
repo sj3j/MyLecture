@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, Loader2, AlertCircle, Check, CalendarDays, Plus, Trash2,
-  BookOpen, GraduationCap, Palmtree, RefreshCw, Download,
+  BookOpen, GraduationCap, Palmtree, RefreshCw, Download, Archive, FolderDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../lib/firebase';
@@ -14,6 +14,7 @@ import {
   closableTerm, resolvePhase, validateCalendar, termLiveEnd,
 } from '../../shared/academicCalendar';
 import { apiUrl } from '../lib/apiBase';
+import ContentExportPanel from './ContentExportPanel';
 
 interface AcademicCalendarModalProps {
   isOpen: boolean;
@@ -98,6 +99,7 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
   const [wipeConfirm, setWipeConfirm] = useState('');
   const [isWiping, setIsWiping] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showContentExport, setShowContentExport] = useState(false);
 
   const patchTerm = (index: number, patch: Partial<AcademicTerm>) => {
     setDraft(prev => ({
@@ -516,15 +518,37 @@ export default function AcademicCalendarModal({ isOpen, onClose, lang }: Academi
                         : `Deletes ${calendar.yearLabel} lectures, records, announcements and homework for every stage, and their files. The question bank, grades and accounts are kept.`}
                     </p>
 
+                    {showContentExport && (
+                      <div className="mb-3">
+                        <ContentExportPanel
+                          lang={lang}
+                          stageId={null}
+                          onClose={() => setShowContentExport(false)}
+                        />
+                      </div>
+                    )}
+
                     {!wipePlan ? (
                       <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={handleExportOnly}
+                          onClick={() => setShowContentExport(true)}
                           disabled={isExporting || isWiping}
                           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-colors"
                         >
-                          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                          {isRtl ? 'تصدير بدون حذف' : 'Export without deleting'}
+                          <FolderDown className="w-4 h-4" />
+                          {isRtl ? 'تنزيل الملفات (ZIP)' : 'Download files (ZIP)'}
+                        </button>
+                        {/* The document snapshot, kept as its own action. It is
+                            NOT a prerequisite for the wipe - runYearWipe calls
+                            exportYear itself - but it is the cheap way to keep
+                            the metadata without downloading gigabytes. */}
+                        <button
+                          onClick={handleExportOnly}
+                          disabled={isExporting || isWiping}
+                          className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 disabled:opacity-50 rounded-xl font-bold text-sm transition-colors"
+                        >
+                          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                          {isRtl ? 'أرشفة المستندات فقط' : 'Archive documents only'}
                         </button>
                         <button
                           onClick={handlePreviewWipe}

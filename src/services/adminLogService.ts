@@ -9,6 +9,8 @@ export interface AdminLogEntry {
   action: string;
   details: string;
   targetId?: string;
+  /** The stage the acting representative manages; null for a master admin. */
+  stageId?: string | null;
   timestamp: any;
 }
 

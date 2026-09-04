@@ -26,10 +26,10 @@
         <item name="android:background">@drawable/splash</item>
         <item name="windowSplashScreenBackground">@color/splashBackground</item>
         <!--
-          The COMPOSED icon, not the foreground layer. The foreground is now a
-          bare white glyph (its card is keyed off for the adaptive layers), so on
-          a white splash it would be invisible. ic_launcher carries the blue
-          plate and reads cleanly.
+          The COMPOSED icon, not the foreground layer. Both now carry the same
+          blue mark, but ic_launcher bakes in the white plate and its rounded
+          corners, so it matches what the launcher shows rather than floating a
+          bare cut-out on the splash.
         -->
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>

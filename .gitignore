@@ -39,3 +39,19 @@ build-output/
 
 # Generated at build time by scripts/copyPdfjsAssets.mjs (regenerable)
 public/pdfjs/
+
+# Class rosters and the password sheets generated from them.
+#
+# THIS REPO IS PUBLIC. A roster file is a list of real students' full names, and
+# scripts/generateRosterPasswords.ts emits their one-time passwords beside it.
+# Neither may ever reach a commit.
+/*.csv
+/*.xlsx
+*.import.csv
+*.passwords.csv
+
+# Ad-hoc QA scripts that hardcode a working password for a live account in the
+# production project (claude.qa@mylecture.test). Useful locally, a credential
+# leak in a public repo.
+scripts/qaAccount.mjs
+scripts/qaPassword.mjs

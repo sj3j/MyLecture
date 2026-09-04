@@ -99,6 +99,40 @@ RTL, and an inherited RTL direction changes bidi run splitting inside pdf.js's
 absolutely-positioned spans, shifting `getClientRects()` and putting every
 highlight in the wrong place.
 
+## Branding and app icons
+
+Every launcher icon, notification icon, splash and web icon is **generated**, never
+hand-edited. Two source files, both in `assets/`:
+
+| Source | Used for | Keyed by |
+| --- | --- | --- |
+| `Normallogo.png` (2048², opaque white ground) | everything coloured | `extractMark()` |
+| `TransparentBGlogo.png` (2048², alpha) | notification/badge stencils only | `trimToMark()` + `silhouette()` |
+
+    npm run icons        # scripts/generate-app-icons.mjs
+
+The two sources are not interchangeable, which is the thing to know before touching
+this. `Normallogo.png` carries the book's inner outlines as **white ink**;
+`TransparentBGlogo.png` had them removed along with the background, so they are
+**holes**. Coloured icons need the ink (holes would show the plate through the
+book). Stencils need the holes (Android discards colour and keeps only alpha, so
+white ink flattens the mark into a featureless blob). Feeding either file to the
+other path produces something that looks plausible at 512px and wrong at 24dp.
+
+**The plate is `#FFFFFF`.** The mark is a light blue, so any blue plate has no
+contrast — and `extractMark` leaves a faint pale fringe on the mark's anti-aliased
+edge that composites back to the original artwork on white and reads as a halo on
+anything darker. `@color/ic_launcher_background`, `@color/splashBackground` and
+`capacitor.config.ts`'s SplashScreen background all agree on white; keep them that
+way together.
+
+For in-app UI use `/icons/logo-mark.png` (transparent). The `/icons/icon-*.png` set
+bakes in the white launcher plate and reads as a white box inside the tinted
+containers in `Navbar.tsx`, `LoginScreen.tsx` and `SignupScreen.tsx`.
+
+`index.html` deliberately has **no** `<link rel="manifest">` — vite-plugin-pwa
+injects one, and a browser honours the first it finds.
+
 ## Known gap: React has no types here
 
 `@types/react` and `@types/react-dom` are **not installed**, and React 19 ships

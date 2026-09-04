@@ -13,7 +13,18 @@ export default defineConfig(({mode}) => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
-          manualChunks: undefined
+          // The legal pages get their own chunk, named so that
+          // scripts/assert-no-payment-surface.mjs recognises it.
+          //
+          // That check exempts /^assets\/legal-/ because a privacy policy has
+          // to name the payment processor truthfully - the stores penalise a
+          // purchase FLOW in the binary, not an accurate disclosure about one
+          // on the website. Pinning the pages into a dedicated chunk is what
+          // keeps the exemption honest: nothing else can hide behind it.
+          manualChunks(id) {
+            if (id.includes('/src/components/legal/')) return 'legal-pages';
+            return undefined;
+          },
         }
       }
     },
@@ -105,22 +116,11 @@ export default defineConfig(({mode}) => {
               purpose: 'any maskable'
             }
           ],
-          screenshots: [
-            {
-              src: '/screenshot-mobile.png',
-              sizes: '390x844',
-              type: 'image/png',
-              form_factor: 'narrow',
-              label: 'Home screen'
-            },
-            {
-              src: '/screenshot-desktop.png',
-              sizes: '1280x800',
-              type: 'image/png',
-              form_factor: 'wide',
-              label: 'Desktop view'
-            }
-          ],
+          // No `screenshots` key. It used to advertise /screenshot-mobile.png and
+          // /screenshot-desktop.png, both of which were committed CORRUPT -- their
+          // leading PNG signature byte had been replaced by a UTF-8 replacement
+          // sequence, so no decoder would touch them. Real captures belong here
+          // eventually; a broken reference is worse than none.
           shortcuts: [
             { name: 'محاضرات', url: '/lectures', icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] },
             { name: 'واجبات', url: '/homeworks', icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] },
@@ -146,9 +146,47 @@ export default defineConfig(({mode}) => {
       '__NATIVE_BUILD__': JSON.stringify(mode === 'native'),
     },
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
+      // Array form so the native entries can match on a REGEX. Vite resolves
+      // aliases against the import SPECIFIER, not the file it resolves to, and
+      // App.tsx imports './components/SubscriptionScreen' - so an absolute-path
+      // key never matches and the alias silently does nothing.
+      // Anchored to consume the ENTIRE specifier. A regex matching only the
+      // tail leaves the leading "./" in place, because String.replace swaps
+      // just the matched span - the resolved path comes out as ".C:/..." and
+      // the build fails inside the PWA plugin with no useful message.
+      alias: [
+        { find: '@', replacement: path.resolve(__dirname, '.') },
+
+        // Compile-time removal of the real-money purchase surface.
+        //
+        // Both stores enforce their payments policy by scanning the uploaded
+        // artefact. IS_STORE_BUILD only ever hid the UI at runtime, so the
+        // native bundle still carried "ZainCash", "Pay with ZainCash" and
+        // "IQD" - scripts/assert-no-payment-surface.mjs failed on exactly
+        // that, with 21 hits.
+        //
+        // src/services/subscriptionService.ts is deliberately not listed:
+        // these two components are its only importers, so replacing them
+        // drops the service from the graph on its own.
+        ...(mode === 'native' ? [
+          {
+            find: /^.*\/components\/SubscriptionScreen$/,
+            replacement: path.resolve(__dirname, 'src/native-stubs/SubscriptionScreen.tsx'),
+          },
+          {
+            find: /^.*\/components\/SubscriptionManagement$/,
+            replacement: path.resolve(__dirname, 'src/native-stubs/SubscriptionManagement.tsx'),
+          },
+          {
+            find: /^.*\/components\/SubscriptionPaywall$/,
+            replacement: path.resolve(__dirname, 'src/native-stubs/SubscriptionPaywall.tsx'),
+          },
+          {
+            find: /^.*\/i18n\/payments$/,
+            replacement: path.resolve(__dirname, 'src/native-stubs/payments.ts'),
+          },
+        ] : []),
+      ],
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

@@ -12,6 +12,29 @@ import { startNewSeason } from "./shared/seasonReset.js";
 import { runSeasonRollover, resolveCurrentPhase, syncPhaseMirror, loadCalendar } from "./shared/seasonRollover.js";
 import { submitProgression, ProgressionError } from "./shared/progressionSubmit.js";
 import { verifyGoogleIdentity, resolveGoogleLogin, GoogleLoginError } from "./shared/googleLogin.js";
+import {
+  resolveStudentLogin,
+  resolveSessionUid,
+  studentForToken,
+  passwordMatches,
+  LoginError,
+} from "./shared/studentLookup.js";
+import { nameKeyFor } from "./shared/rosterIdentity.js";
+import { resetStudentPassword, StudentAdminError } from "./shared/studentAdmin.js";
+import {
+  requestAccountDeletion,
+  cancelAccountDeletion,
+  reviewDeletionRequest,
+  DeletionError,
+} from "./shared/accountDeletion.js";
+import {
+  changeOwnPassword,
+  setOwnExamCode,
+  linkGoogleAccount,
+  unlinkGoogleAccount,
+  accountSummary,
+  SelfServiceError,
+} from "./shared/accountSelfService.js";
 import { createSignupRequest, reviewSignupRequest, SignupError } from "./shared/signupRequest.js";
 import { deleteUserAccount, mergeUserAccounts } from "./shared/adminUsers.js";
 import { planYearWipe, runYearWipe, exportYear, YearWipeError } from "./shared/yearWipe.js";
@@ -310,6 +333,10 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
         action,
         details,
         targetId: targetId || null,
+        // Which stage the acting representative manages, so the master admin
+        // can tell whose action a log line records. Production already stored
+        // this; the dev server dropped it, so the two disagreed on shape.
+        stageId: callerStage(req).managedStageId,
         timestamp: admin.firestore.FieldValue.serverTimestamp()
       });
 
@@ -494,77 +521,44 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
   };
 
   // Student Login
+  //
+  // Accepts an email, a login code ("D4-01234") or a name. Resolution lives in
+  // shared/studentLookup.ts so this route and its api/index.ts twin cannot
+  // drift again - they already had, on the uid this very route mints under.
+  //
+  // `identifier` is the field; `email` is still read because installed builds
+  // in the field send that name and update on their own schedule.
   app.post("/api/login", async (req, res) => {
     if (!admin.apps.length) {
       return res.status(500).json({ error: "Firebase Admin is not configured." });
     }
-
     try {
-      const { email, password } = req.body;
-      
-      if (!email || !password) {
+      const identifier = req.body?.identifier ?? req.body?.email;
+      const password = req.body?.password;
+
+      if (!identifier || !password) {
         return res.status(400).json({ error: "Email and password are required." });
       }
 
-      console.log(`Login attempt for email: ${email}`);
-
       const db = admin.firestore();
-      const studentDoc = await db.collection('students').doc(email.toLowerCase()).get();
+      const student = await resolveStudentLogin(db, identifier, password);
 
-      if (!studentDoc.exists) {
-        console.log(`Student document not found for email: ${email}`);
-        return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
+      // The uid is the resolved student - never the typed string. Minting under
+      // what the user typed is what created the duplicate-account mess the
+      // admin merge tool exists to clean up, and with name login it would key
+      // an identity by a raw Arabic name.
+      const { uid, emailClaim } = await resolveSessionUid(
+        db, student, (u, source) => syncUserStage(db, u, source),
+      );
+
+      const customToken = await admin.auth().createCustomToken(uid, { email: emailClaim });
+
+      console.log(`Login OK for ${student.id} (uid ${uid})`);
+      res.json({ token: customToken, studentId: student.id });
+    } catch (error: any) {
+      if (error instanceof LoginError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
       }
-
-      const studentData = studentDoc.data();
-
-      if (!studentData?.isActive) {
-        console.log(`Student account is disabled for email: ${email}`);
-        return res.status(403).json({ error: "تم تعطيل حسابك" });
-      }
-
-      const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
-      let isMatch = hashedPassword === studentData?.password;
-      
-      if (!isMatch) {
-        try {
-          isMatch = await bcrypt.compare(password, studentData?.password || '');
-          if (isMatch) {
-            console.log(`Password matched using bcrypt for email: ${email}`);
-          }
-        } catch (e) {
-          // Ignore bcrypt errors if it's not a valid bcrypt hash
-        }
-      } else {
-        console.log(`Password matched using SHA-256 for email: ${email}`);
-      }
-
-      // Fallback for plain text password (just in case)
-      if (!isMatch && password === studentData?.password) {
-        isMatch = true;
-        console.log(`Password matched using plain text for email: ${email}`);
-      }
-      
-      if (!isMatch) {
-        console.log(`Password mismatch for email: ${email}`);
-        return res.status(401).json({ error: "الباسورد أو الإيميل خطأ" });
-      }
-
-      let targetUid = email.toLowerCase();
-      const usersQuery = await db.collection('users').where('email', '==', email.toLowerCase()).limit(1).get();
-      if (!usersQuery.empty) {
-        targetUid = usersQuery.docs[0].id;
-        await syncUserStage(db, targetUid, { stageId: studentData?.stageId });
-      }
-
-      // Create custom token with email claim
-      const customToken = await admin.auth().createCustomToken(targetUid, {
-        email: email.toLowerCase()
-      });
-      
-      console.log(`Custom token generated successfully for email: ${email}`);
-      res.json({ token: customToken });
-    } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -671,13 +665,220 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
         syncUserStage: (uid, source) => syncUserStage(db, uid, source),
       });
 
-      res.json({ token: result.customToken });
+      // studentId is the students/ document id the server resolved to - which
+      // for a roster account that linked a Gmail is NOT the address Google
+      // asserted. The client needs it for its own whitelist lookups.
+      res.json({ token: result.customToken, studentId: result.email });
     } catch (error: any) {
       if (error instanceof GoogleLoginError) {
         return res.status(error.status).json({ error: error.message, code: error.code });
       }
       console.error("Google login error:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // --- Account deletion -------------------------------------------------------
+  //
+  // Google Play requires an app with accounts to offer deletion in-app AND from
+  // a public web page. This is the request half; shared/accountDeletion.ts
+  // explains what a purge actually removes and what the institution keeps.
+
+  app.post("/api/me/deletion-request", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const token = (req as any).user;
+      const student = await studentForToken(db, token);
+
+      const result = await requestAccountDeletion(db, admin.firestore.FieldValue, {
+        uid: token.uid,
+        studentId: student.id,
+        name: student.data.name || '',
+        stageId: student.data.stageId || null,
+        reason: (req.body || {}).reason,
+      });
+
+      res.json({ ok: true, uid: result.uid, status: 'pending' });
+    } catch (error: any) {
+      if (error instanceof DeletionError || error instanceof LoginError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      console.error("Deletion request error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/me/deletion-request", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const snap = await db.collection('deletion_requests').doc((req as any).user.uid).get();
+      res.json(snap.exists ? { status: snap.data()?.status || null } : { status: null });
+    } catch (error: any) {
+      console.error("Deletion request read error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/me/deletion-request", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      await cancelAccountDeletion(db, (req as any).user.uid);
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error instanceof DeletionError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      console.error("Deletion cancel error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // The review queue. Scoped to the caller's stage, like every other roster
+  // surface - a representative reviews only their own cohort.
+  app.get("/api/admin/deletion-requests", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const staff = callerStage(req);
+      let query = db.collection('deletion_requests').where('status', '==', 'pending');
+      if (!staff.isMasterAdmin) {
+        if (!staff.managedStageId) return res.json({ requests: [] });
+        query = query.where('stageId', '==', staff.managedStageId);
+      }
+      const snap = await query.get();
+      res.json({
+        requests: snap.docs.map((d: any) => ({ id: d.id, ...d.data(), reason: d.data().reason || '' })),
+      });
+    } catch (error: any) {
+      console.error("Deletion queue error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/deletion-requests/:uid/:action", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const { uid, action } = req.params;
+      if (action !== 'approve' && action !== 'reject') {
+        return res.status(400).json({ error: "Unknown action." });
+      }
+
+      const db = admin.firestore();
+      const result = await reviewDeletionRequest(db, admin.auth(), admin.firestore.FieldValue, {
+        uid,
+        approve: action === 'approve',
+        reviewerUid: (req as any).user.uid,
+        staff: callerStage(req),
+        reason: (req.body || {}).reason,
+      });
+
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      if (error instanceof DeletionError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      console.error("Deletion review error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // --- Account self-service --------------------------------------------------
+  //
+  // A student changing their own password, exam code, or linked Google account.
+  // All three write `students/{id}`, which firestore.rules makes admin-only, so
+  // none of it is reachable from the client SDK - which is the point.
+  //
+  // Every handler resolves the target document from the VERIFIED token and
+  // never from a body field, so one student can never reach another's record.
+  // The logic itself lives in shared/accountSelfService.ts so the two API
+  // surfaces cannot drift.
+
+  /** Turns a SelfServiceError / LoginError into its response, else a 500. */
+  const sendSelfServiceError = (res: any, error: any, label: string) => {
+    if (error instanceof SelfServiceError || error instanceof LoginError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error(`${label} error:`, error);
+    return res.status(500).json({ error: "Internal server error" });
+  };
+
+  // What the settings page renders: login code, linked address, whether the
+  // password is still the generated one. Never includes the hash.
+  app.get("/api/me/account", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const student = await studentForToken(db, (req as any).user);
+      res.json(accountSummary(student));
+    } catch (error: any) {
+      sendSelfServiceError(res, error, "Account summary");
+    }
+  });
+
+  app.post("/api/me/password", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const result = await changeOwnPassword(db, (req as any).user, req.body || {});
+      res.json({ ok: true, studentId: result.studentId });
+    } catch (error: any) {
+      sendSelfServiceError(res, error, "Change password");
+    }
+  });
+
+  app.post("/api/me/exam-code", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const result = await setOwnExamCode(db, (req as any).user, req.body || {});
+      res.json({ ok: true, examCode: result.examCode });
+    } catch (error: any) {
+      sendSelfServiceError(res, error, "Set exam code");
+    }
+  });
+
+  // Linking is gated on verifyGoogleIdentity, which refuses a token whose email
+  // is not verified. That check is the entire guard: without it a student could
+  // claim a classmate's address and Google login would then hand them the
+  // classmate's account.
+  app.post("/api/me/link-google", verifyAuth, async (req, res) => {
+    try {
+      const { idToken, googleIdToken } = req.body || {};
+      const db = admin.firestore();
+
+      const identity = await verifyGoogleIdentity({
+        adminAuth: admin.auth(),
+        oauthClient: googleOAuthClient,
+        audience: GOOGLE_WEB_CLIENT_ID,
+        idToken,
+        googleIdToken,
+      });
+
+      const result = await linkGoogleAccount(
+        db, (req as any).user, identity, admin.firestore.FieldValue,
+      );
+
+      // A fresh token for the SAME session. On native the Google plugin signs out
+      // of the Firebase layer as a side effect, so the client re-establishes with
+      // this rather than discovering it has been logged out by linking.
+      const token = await admin.auth().createCustomToken((req as any).user.uid, {
+        email: result.studentId,
+      });
+
+      res.json({
+        ok: true, token,
+        googleEmail: result.googleEmail, alreadyOwned: result.alreadyOwned,
+      });
+    } catch (error: any) {
+      if (error instanceof GoogleLoginError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      sendSelfServiceError(res, error, "Link Google");
+    }
+  });
+
+  app.delete("/api/me/link-google", verifyAuth, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      await unlinkGoogleAccount(db, (req as any).user, admin.firestore.FieldValue);
+      res.json({ ok: true });
+    } catch (error: any) {
+      sendSelfServiceError(res, error, "Unlink Google");
     }
   });
 
@@ -728,6 +929,9 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
 
       await studentRef.set({
         name,
+        // Every path that writes `name` must write nameKey too - /api/login
+        // queries it, and a student without one cannot sign in by name.
+        nameKey: nameKeyFor(name),
         email: emailLower,
         password: hashedPassword,
         examCode,
@@ -883,8 +1087,11 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
         return res.status(404).json({ error: "Student not found" });
       }
 
+      const resolvedName = name || studentDoc.data()?.name;
       const updateData: any = {
-        name: name || studentDoc.data()?.name,
+        name: resolvedName,
+        // Kept in step with `name`, or name login stops finding them.
+        nameKey: nameKeyFor(resolvedName || ''),
         examCode: examCode || studentDoc.data()?.examCode,
       };
 
@@ -912,6 +1119,27 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
       res.json({ success: true });
     } catch (error) {
       console.error("Edit student error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Re-issue one student's password.
+  //
+  // Unlike every other student write the admin UI makes, this one goes through
+  // the API rather than the SDK, which is what lets the stage authority apply
+  // at all - the Admin SDK bypasses firestore.rules, so resetStudentPassword
+  // re-checks the boundary by hand.
+  app.post("/api/admin/students/:email/reset-password", verifyAuth, verifyAdmin, async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const studentId = decodeURIComponent(req.params.email);
+      const result = await resetStudentPassword(db, studentId, callerStage(req));
+      res.json(result);
+    } catch (error: any) {
+      if (error instanceof StudentAdminError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      console.error("Reset student password error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

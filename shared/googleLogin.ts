@@ -100,33 +100,65 @@ export async function resolveGoogleLogin(
   const emailLower = identity.email;
   let stageSource: { stageId?: string | null; managedStageId?: string | null } = {};
 
+  // The string this account is keyed by everywhere else: the students document
+  // id, the auth uid, and the token's `email` claim.
+  //
+  // For every account that predates roster import this is just the address -
+  // the document id IS the email - so all the paths below leave it alone and
+  // behave exactly as they always have. It only diverges for a student who was
+  // imported without an email and later linked a Gmail from settings: their
+  // document is keyed by a synthetic id, and the claim has to keep carrying
+  // that id, because firestore.rules resolves students/{token.email} in
+  // isWhitelisted(). Handing out the real Gmail there would fail every read
+  // that student is entitled to.
+  let identityKey = emailLower;
+
   if (!opts.masterAdminEmails.includes(emailLower)) {
     const adminDoc = await db.collection('allowed_admins').doc(emailLower).get();
     if (adminDoc.exists) {
       stageSource = { managedStageId: adminDoc.data()?.managedStageId };
     } else {
+      let studentId: string | null = null;
+      let studentData: FirebaseFirestore.DocumentData | undefined;
+
       const studentDoc = await db.collection('students').doc(emailLower).get();
-      if (!studentDoc.exists) {
+      if (studentDoc.exists) {
+        studentId = studentDoc.id;
+        studentData = studentDoc.data();
+      } else {
+        // Not a document id - but it may be an address someone linked to a
+        // roster account. Checked only after the id lookup misses, so the
+        // common path costs no extra read.
+        const linked = await db.collection('students')
+          .where('googleEmail', '==', emailLower).limit(1).get();
+        if (!linked.empty) {
+          studentId = linked.docs[0].id;
+          studentData = linked.docs[0].data();
+          identityKey = studentId;
+        }
+      }
+
+      if (!studentId) {
         // Distinguishable from a wrong password: they have just proved they own
         // this mailbox, so telling them there is no account is safe - and the
         // app routes them to signup instead of a dead end blaming a password
         // they never set.
         throw new GoogleLoginError('No account for this email.', 404, 'NO_ACCOUNT');
       }
-      if (studentDoc.data()?.isActive === false) {
+      if (studentData?.isActive === false) {
         throw new GoogleLoginError('الحساب معطل', 401, 'DISABLED');
       }
-      stageSource = { stageId: studentDoc.data()?.stageId };
+      stageSource = { stageId: studentData?.stageId };
     }
   }
 
-  let targetUid = opts.fallbackUid;
-  const usersQuery = await db.collection('users').where('email', '==', emailLower).limit(1).get();
+  let targetUid = identityKey === emailLower ? opts.fallbackUid : identityKey;
+  const usersQuery = await db.collection('users').where('email', '==', identityKey).limit(1).get();
   if (!usersQuery.empty) {
     targetUid = usersQuery.docs[0].id;
     await opts.syncUserStage(targetUid, stageSource);
   }
 
-  const customToken = await adminAuth.createCustomToken(targetUid, { email: emailLower });
-  return { customToken, uid: targetUid, email: emailLower };
+  const customToken = await adminAuth.createCustomToken(targetUid, { email: identityKey });
+  return { customToken, uid: targetUid, email: identityKey };
 }

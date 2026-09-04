@@ -63,6 +63,20 @@ await db.collection('students').doc('off@x.com').set({
 await db.collection('users').doc('stu@x.com').set({
   email: 'stu@x.com', name: 'Student', role: 'student', stageId: 'stage_3', streakCount: 12,
 });
+// Imported from a roster with no email, then linked a Gmail from settings. The
+// document id is synthetic and is NOT the address Google will assert.
+const ROSTER_ID = 'a1b2c3d4e5f60708@roster.mylecture.local';
+await db.collection('students').doc(ROSTER_ID).set({
+  email: ROSTER_ID, name: 'Roster Student', isActive: true, stageId: 'stage_4',
+  placeholderEmail: true, googleEmail: 'linked@gmail.com',
+});
+await db.collection('users').doc(ROSTER_ID).set({
+  email: ROSTER_ID, name: 'Roster Student', role: 'student', stageId: 'stage_4',
+});
+await db.collection('students').doc('linkedoff@roster.mylecture.local').set({
+  email: 'linkedoff@roster.mylecture.local', name: 'Linked But Off', isActive: false,
+  stageId: 'stage_4', googleEmail: 'off-linked@gmail.com',
+});
 
 console.log('email_verified guard (account takeover):');
 let blockedGoogle = false;
@@ -149,6 +163,45 @@ const fresh = await resolveGoogleLogin(db, fakeAdminAuth({}) as any,
   }).catch(e => e);
 check('a whitelisted student with no users doc yet is refused only if not a student',
   fresh instanceof GoogleLoginError && fresh.code === 'NO_ACCOUNT');
+
+console.log('\nLinked Gmail on a roster account:');
+{
+  // The address is not a document id, so the id lookup misses and the
+  // googleEmail query has to find them. Everything downstream must stay keyed
+  // by the SYNTHETIC id: firestore.rules resolves students/{token.email} in
+  // isWhitelisted(), so a claim carrying the Gmail locks them out of every read.
+  const linked = await resolveGoogleLogin(db, fakeAdminAuth({}) as any,
+    { email: 'linked@gmail.com', name: 'Roster Student', emailVerified: true }, {
+      masterAdminEmails: MASTERS, fallbackUid: 'linked@gmail.com', syncUserStage: noopSync,
+    });
+  check('a linked Gmail resolves to the roster account', linked.uid === ROSTER_ID, linked.uid);
+  check('the email claim is the student doc id, NOT the Gmail',
+    linked.email === ROSTER_ID, linked.email);
+  check('the token is minted for that same id',
+    linked.customToken === `custom:${ROSTER_ID}`, linked.customToken);
+
+  // Same guard as an unlinked account - the fallback arm must not skip it.
+  let offLinked: GoogleLoginError | null = null;
+  try {
+    await resolveGoogleLogin(db, fakeAdminAuth({}) as any,
+      { email: 'off-linked@gmail.com', name: null, emailVerified: true }, {
+        masterAdminEmails: MASTERS, fallbackUid: 'g3', syncUserStage: noopSync,
+      });
+  } catch (e) { offLinked = e as GoogleLoginError; }
+  check('a deactivated account is still refused via the linked address',
+    offLinked?.code === 'DISABLED', String(offLinked?.code));
+
+  // The fallback must not turn an unknown address into an account.
+  let stillUnknown: GoogleLoginError | null = null;
+  try {
+    await resolveGoogleLogin(db, fakeAdminAuth({}) as any,
+      { email: 'notlinked@gmail.com', name: null, emailVerified: true }, {
+        masterAdminEmails: MASTERS, fallbackUid: 'g4', syncUserStage: noopSync,
+      });
+  } catch (e) { stillUnknown = e as GoogleLoginError; }
+  check('an unlinked unknown address is still NO_ACCOUNT',
+    stillUnknown?.code === 'NO_ACCOUNT', String(stillUnknown?.code));
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

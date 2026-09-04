@@ -32,6 +32,9 @@ import SubjectBrowser from './components/SubjectBrowser';
 import HomeScreen from './components/HomeScreen';
 import LoginScreen from './components/LoginScreen';
 import OnboardingScreen from './components/OnboardingScreen';
+import { resolveLegalPath } from './components/legal';
+import PasswordChangeGate from './components/PasswordChangeGate';
+import ExamCodePrompt, { shouldAskForExamCode } from './components/ExamCodePrompt';
 import OnboardingSlides from './components/OnboardingSlides';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import MCQOverlay from './components/MCQOverlay';
@@ -72,6 +75,11 @@ export default function App() {
 
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
+  // Both of these live on students/{id}, which the auth listener reads ONCE -
+  // it is not a snapshot the way the users doc is. So the acknowledgement is
+  // held here rather than waiting for a profile that will not update.
+  const [passwordChanged, setPasswordChanged] = useState(false);
+  const [examCodeResolved, setExamCodeResolved] = useState(false);
   // Which end-of-year question is open comes from the academic calendar's
   // results dates, replacing the old settings/app_settings.isProgressionSeasonActive
   // flag that nothing ever wrote.
@@ -321,6 +329,12 @@ export default function App() {
 
               lastStreakDate: userDoc.data().lastStreakDate || undefined,
               examCode: studentData?.examCode || userDoc.data().examCode || undefined,
+              // students/ is the authority for both: it is server-write-only,
+              // so a student cannot clear their own forced password change or
+              // invent a linked Google address from the console.
+              mustChangePassword: studentData?.mustChangePassword === true,
+              googleEmail: studentData?.googleEmail || undefined,
+              examCodePromptSnoozedUntil: userDoc.data().examCodePromptSnoozedUntil || undefined,
               group: userDoc.data().group || undefined,
               favorites: userDoc.data().favorites || [],
               studied: userDoc.data().studied || [],
@@ -359,6 +373,8 @@ export default function App() {
               isMasterAdmin,
               photoUrl: firebaseUser.photoURL || undefined,
               examCode: studentData?.examCode || undefined,
+              mustChangePassword: studentData?.mustChangePassword === true,
+              googleEmail: studentData?.googleEmail || undefined,
               favorites: [],
               studied: [],
               completedWeeklyTasks: [],
@@ -393,6 +409,8 @@ export default function App() {
             isMasterAdmin,
             photoUrl: firebaseUser.photoURL || undefined,
             examCode: studentData?.examCode || undefined,
+            mustChangePassword: studentData?.mustChangePassword === true,
+            googleEmail: studentData?.googleEmail || undefined,
             favorites: [],
             studied: [],
             completedWeeklyTasks: [],
@@ -638,6 +656,12 @@ export default function App() {
     }
   }, [user]);
 
+  // Google Play opens /privacy and /delete-account with no account at all, so
+  // these are answered before authentication is even consulted - ahead of the
+  // loading spinner, not just ahead of the login screen.
+  const legalPage = resolveLegalPath(window.location.pathname);
+  if (legalPage) return legalPage;
+
   if (!isAuthReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
@@ -659,6 +683,10 @@ export default function App() {
         onDone={() => setProgressionRound(null)}
       />
     );
+  }
+
+  if (user.mustChangePassword && !passwordChanged) {
+    return <PasswordChangeGate lang={lang} onDone={() => setPasswordChanged(true)} />;
   }
 
   if (!user.group && user.role === 'student') {
@@ -733,6 +761,14 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {user && !examCodeResolved && shouldAskForExamCode(user) && (
+        <ExamCodePrompt
+          user={user}
+          lang={lang}
+          onResolved={() => setExamCodeResolved(true)}
+        />
       )}
 
       {['home', 'lectures', 'weekly', 'records', 'leaderboard', 'downloads'].includes(currentTab) && (

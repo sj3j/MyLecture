@@ -43,7 +43,16 @@ const DIST = path.resolve(process.argv[2] || 'dist');
 //   - "price" in an app that also has non-monetary prices.
 //   - A support contact link that is not a contact-to-buy flow.
 const FORBIDDEN_CONTENT = [
-  { label: 'payment gateway name', re: /stripe|paypal|zaincash|paddle|lemonsqueezy/i },
+  //  on both sides so a provider name is matched as a WORD. Without it this
+  // fired on the xlsx library's Excel fill patterns - "HorzStripe",
+  // "ThinVertStripe", "ReverseDiagStripe" - which have nothing to do with
+  // Stripe the payment processor. That is the "cries wolf" failure this file
+  // warns about two comments up: seven bogus hits on a dependency nobody can
+  // change, on the one check standing between a release and a policy strike.
+  //
+  // Real integrations still match: "stripe.com", "Stripe(", "paypal.me" all
+  // have a boundary on each side.
+  { label: 'payment gateway name', re: /(stripe|paypal|zaincash|paddle|lemonsqueezy)/i },
   { label: 'currency code', re: /\b(IQD|USD|EGP|SAR|AED)\b/ },
   { label: 'real-money order field', re: /finalPrice[A-Z]{3}/ },
 ];
