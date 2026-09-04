@@ -109,16 +109,20 @@ had one card, one lecture folder and one progress bar, so a physiology lecture a
 a computer-science lecture landed in the same place and neither subject could be
 tracked alone.
 
-The seed is fixed. Databases already seeded from it are repaired either from
-المواد (the split button on a flagged row -> `SplitSubjectDialog`) or in bulk with
-`node scripts/splitCombinedSubjects.mjs --apply`.
+The seed is fixed. A database already seeded from it is repaired from المواد - a
+flagged row warns, and its split button opens `SplitSubjectDialog`, which names
+the parts and asks per lecture/recording which one it belongs to. That is the
+only repair path; there is deliberately no standalone bulk script for this -
+splitting is a judgment call about *where content goes*, not a mechanical
+transform, and a one-shot admin-SDK script is exactly the kind of file this repo
+avoids accumulating. A live-database fix instead runs the same client logic
+directly (`src/lib/subjectSplit.ts`) against Firestore under admin credentials.
 
 **Only `+` splits a name.** `and` / `و` do not: `Pharmaceutical and Cosmetic
 Preparations` (المستحضرات الصيدلانية والتجميلية) is one subject whose name happens
 to read as a conjunction, and splitting it would invent a subject the college does
 not teach and move real lectures into it. The rule lives in `src/lib/subjectSplit.ts`
-and is pinned by `npm run test:subjects`; the .mjs script duplicates it deliberately
-(admin SDK, no TS) - keep the two in step.
+and is pinned by `npm run test:subjects`.
 
 A split **hides** the combined document (`isActive: false`) rather than deleting
 it. Content the splitter could not see would otherwise be left with a `subjectId`
