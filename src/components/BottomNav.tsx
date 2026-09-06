@@ -28,7 +28,7 @@ export default function BottomNav({ currentTab, setCurrentTab, lang, hasUnreadAn
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 pointer-events-none pb-4 sm:pb-6 px-4 z-50 flex justify-center">
+    <div className="fixed bottom-0 left-0 right-0 pointer-events-none pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-4 z-50 flex justify-center">
       <div 
         className="flex justify-around items-center h-[72px] w-full max-w-md bg-white dark:bg-zinc-900 rounded-[36px] px-2 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.5)] pointer-events-auto border border-slate-100 dark:border-zinc-800" 
         dir={isRtl ? 'rtl' : 'ltr'}

@@ -383,7 +383,7 @@ ${questionText}`;
     <div className="flex flex-col h-full bg-stone-50 dark:bg-zinc-900 overflow-hidden relative" dir="rtl">
       
       {/* Sticky Header */}
-      <div className="bg-white dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-700 z-30 shrink-0 px-4 py-3 shadow-sm">
+      <div className="bg-white dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-700 z-30 shrink-0 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <button onClick={onClose} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full transition-colors">
             <X className="w-6 h-6" />
@@ -615,7 +615,7 @@ ${questionText}`;
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute bottom-0 w-full bg-white dark:bg-zinc-800 rounded-t-3xl p-6 pb-12 z-50 max-h-[80vh] overflow-y-auto"
+              className="absolute bottom-0 w-full bg-white dark:bg-zinc-800 rounded-t-3xl p-6 pb-[calc(3rem+env(safe-area-inset-bottom))] z-50 max-h-[80vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-lg dark:text-white">نظرة عامة على الأسئلة</h3>
@@ -826,14 +826,14 @@ ${questionText}`;
       </AnimatePresence>
 
       {showReportSuccess && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-emerald-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
+        <div className="fixed bottom-[calc(2.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[300] bg-emerald-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
           <CheckCircle className="w-5 h-5" />
           تم إرسال التقرير بنجاح، شكراً لك!
         </div>
       )}
       
       {showEditSuccess && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-sky-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
+        <div className="fixed bottom-[calc(2.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[300] bg-sky-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
           <CheckCircle className="w-5 h-5" />
           تم التعديل الذكي بنجاح
         </div>

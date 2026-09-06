@@ -90,7 +90,7 @@ export default function OnboardingSlides({ onComplete }: OnboardingSlidesProps) 
         </AnimatePresence>
       </div>
 
-      <div className="p-8 pb-12 w-full max-w-md mx-auto flex flex-col gap-8">
+      <div className="p-8 pb-[calc(3rem+env(safe-area-inset-bottom))] w-full max-w-md mx-auto flex flex-col gap-8">
         <div className="flex justify-center gap-3">
           {slides.map((_, i) => (
             <div 

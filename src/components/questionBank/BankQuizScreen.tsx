@@ -219,7 +219,7 @@ ${questionText}`;
       className="flex flex-col h-full bg-stone-50 dark:bg-zinc-900 absolute inset-0 z-50"
     >
       <div className="flex flex-col bg-white dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-700 shadow-sm z-10 shrink-0 relative">
-         <div className="flex items-center justify-between p-4">
+         <div className="flex items-center justify-between p-4 pt-[max(env(safe-area-inset-top),1rem)]">
            <button onClick={onBack} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-full transition-colors">
              <ArrowRight className="w-6 h-6" />
            </button>
@@ -534,7 +534,7 @@ ${questionText}`;
       )}
 
       {showReportSuccess && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-emerald-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
+        <div className="fixed bottom-[calc(2.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[300] bg-emerald-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2">
           <CheckCircle className="w-5 h-5" />
           تم إرسال التقرير بنجاح، شكراً لك!
         </div>

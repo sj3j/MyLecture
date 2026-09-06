@@ -15,7 +15,7 @@ export default function GlobalAudioPlayer({ isRtl }: { isRtl: boolean }) {
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0, opacity: 0 }}
-          className="fixed bottom-[84px] sm:bottom-[92px] right-4 md:bottom-6 md:right-8 z-[60]"
+          className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] sm:bottom-[calc(92px+env(safe-area-inset-bottom))] right-4 md:bottom-6 md:right-8 z-[60]"
         >
           <button
             onClick={() => setIsPlayerHidden(false)}
@@ -49,7 +49,7 @@ export default function GlobalAudioPlayer({ isRtl }: { isRtl: boolean }) {
         initial={{ y: 150, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 150, opacity: 0 }}
-        className="fixed bottom-[84px] sm:bottom-[92px] left-4 right-4 md:bottom-6 md:left-auto md:right-8 md:w-[22rem] z-[60] bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded-[16px] shadow-[0_4px_24px_rgba(33,150,243,0.15)] flex flex-col p-3 overflow-hidden"
+        className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] sm:bottom-[calc(92px+env(safe-area-inset-bottom))] left-4 right-4 md:bottom-6 md:left-auto md:right-8 md:w-[22rem] z-[60] bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded-[16px] shadow-[0_4px_24px_rgba(33,150,243,0.15)] flex flex-col p-3 overflow-hidden"
         dir={isRtl ? 'rtl' : 'ltr'}
       >
         <div className="flex items-center justify-between mb-2">

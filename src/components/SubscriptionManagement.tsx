@@ -163,7 +163,7 @@ export default function SubscriptionManagement({ user, lang, onClose }: Subscrip
   return (
     <div className="fixed inset-0 z-50 bg-slate-50 dark:bg-zinc-950 overflow-y-auto" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800 px-4 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Crown className="w-5 h-5 text-amber-500" />
           {t.manageSubscriptions}

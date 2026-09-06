@@ -1754,7 +1754,7 @@ export default function ChatScreen({
         // status-bar inset App's root pads by, or the chat overflows by exactly
         // that much and the composer sits below the fold.
         height: "calc(100dvh - env(safe-area-inset-top))",
-        paddingBottom: isMobileChatOpen ? "0px" : "80px",
+        paddingBottom: isMobileChatOpen ? "0px" : "calc(80px + env(safe-area-inset-bottom))",
       }}
     >
       {/* Sidebar - Chat List */}

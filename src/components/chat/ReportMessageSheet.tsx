@@ -93,7 +93,7 @@ export default function ReportMessageSheet({ lang, target, onClose, onBlocked }:
             onClick={e => e.stopPropagation()}
             className="bg-white dark:bg-zinc-900 w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[85vh] overflow-y-auto"
           >
-            <div className="p-6">
+            <div className="p-6 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
               {done ? (
                 <div className="text-center py-6">
                   <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">

@@ -727,13 +727,18 @@ export default function App() {
     // pt-[env(safe-area-inset-top)]; with the header gone the root carries it,
     // or every screen's first row sits under the system clock on a notched phone.
     //
-    // pb-[104px] is the floating nav's real footprint - a 72px bar over BottomNav's
-    // own 16px inset, plus 16px of air. It is the ONLY bottom clearance in the app:
-    // every screen used to add its own pb-24/28/32 on top of the root's pb-20,
-    // which is what left a blank half-screen under the last card. A screen that
-    // needs more room now says so by its own content, not by re-padding.
+    // The bottom padding is the floating nav's real footprint - a 72px bar over
+    // BottomNav's own 16px inset, plus 16px of air, which is the 104px. The
+    // safe-area term rides along because BottomNav pads by the same inset: from
+    // targetSdk 35 the WebView also paints beneath the gesture bar, so without it
+    // the nav floats up and the last card slides underneath by exactly that much.
+    //
+    // It is the ONLY bottom clearance in the app: every screen used to add its own
+    // pb-24/28/32 on top of the root's pb-20, which is what left a blank
+    // half-screen under the last card. A screen that needs more room now says so
+    // by its own content, not by re-padding.
     <div
-      className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' || composingAnnouncements ? '' : 'pb-[104px]'} font-sans transition-colors duration-300`}
+      className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' || composingAnnouncements ? '' : 'pb-[calc(104px+env(safe-area-inset-bottom))]'} font-sans transition-colors duration-300`}
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
       dir={isRtl ? 'rtl' : 'ltr'}
     >

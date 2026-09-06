@@ -511,7 +511,7 @@ export default function ProfileScreen({
           three getDocs, so none of that runs until the tile is tapped. */}
       {showStreakStatus && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" dir={isRtl ? 'rtl' : 'ltr'}>
-          <div className="bg-orange-50 dark:bg-zinc-900 w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-5">
+          <div className="bg-orange-50 dark:bg-zinc-900 w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-5 pb-[max(env(safe-area-inset-bottom),1.25rem)]">
             <div className="flex items-center justify-between mb-4 gap-2">
               <h3 className="text-base font-black text-orange-800 dark:text-orange-300 flex items-center gap-2 min-w-0">
                 <Flame className="w-5 h-5 text-orange-500 shrink-0" />

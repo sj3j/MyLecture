@@ -977,7 +977,7 @@ export default function StudentManagement({ isOpen, onClose, lang, user }: Stude
             exit={{ opacity: 0, y: 20 }}
             className="relative w-full h-full bg-white dark:bg-zinc-900 overflow-hidden flex flex-col shadow-2xl"
           >
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-600 dark:bg-sky-600 text-white">
+            <div className="px-6 pt-[max(env(safe-area-inset-top),1rem)] pb-4 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-sky-600 dark:bg-sky-600 text-white">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Users className="w-5 h-5" />
                 {isRtl ? 'إدارة الطلاب' : 'Manage Students'}
