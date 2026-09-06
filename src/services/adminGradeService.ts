@@ -10,7 +10,8 @@ export async function confirmDegreeBatchClient(
   material?: string,
   existingBatchId?: string,
   allStudentIds?: string[],
-  stageId?: string
+  stageId?: string,
+  yearLabel?: string
 ) {
   const user = auth.currentUser;
   if (!user) throw new Error("يجب تسجيل الدخول");
@@ -98,6 +99,7 @@ export async function confirmDegreeBatchClient(
         if (maxDegree) degreeData.maxDegree = maxDegree;
         if (material) degreeData.material = material;
         if (passRate !== undefined) degreeData.passRate = passRate;
+        if (yearLabel) degreeData.yearLabel = yearLabel;
 
         firestoreBatch.set(degreeRef, degreeData);
         if (confirmedResults.some(r => r.matchedUserId === record.studentId)) {
@@ -126,6 +128,7 @@ export async function confirmDegreeBatchClient(
         if (maxDegree) batchDocData.maxDegree = maxDegree;
         if (material) batchDocData.material = material;
         if (passRate !== undefined) batchDocData.passRate = passRate;
+        if (yearLabel) batchDocData.yearLabel = yearLabel;
         firestoreBatch.set(batchRef, batchDocData);
       }
 
@@ -153,6 +156,7 @@ export async function confirmDegreeBatchClient(
       if (maxDegree) emptyBatchData.maxDegree = maxDegree;
       if (material) emptyBatchData.material = material;
       if (passRate !== undefined) emptyBatchData.passRate = passRate;
+      if (yearLabel) emptyBatchData.yearLabel = yearLabel;
       firestoreBatch.set(batchRef, emptyBatchData);
       await firestoreBatch.commit();
     }
@@ -197,14 +201,23 @@ export async function patchDegreeBatchClient(
         }
         
         const degreeRef = doc(db, `degrees/${update.matchedUserId}/exams/${examId}`);
-        firestoreBatch.set(degreeRef, {
+        // The batch's own classification has to ride along. This path also
+        // CREATES documents - an appeal adds a student who was not in the
+        // original file - and one written without stageId/yearLabel belongs to
+        // no stage tab and no year heading, so it would surface under whichever
+        // stage the reader happens to be on.
+        const patch: any = {
           examName: batchData.examName,
           degree: finalDegree,
           batchId: batchId || '',
           material: batchData.material || '',
           maxDegree: batchData.maxDegree || '',
           updatedAt: serverTimestamp(),
-        }, { merge: true });
+        };
+        if (batchData.stageId) patch.stageId = batchData.stageId;
+        if (batchData.yearLabel) patch.yearLabel = batchData.yearLabel;
+        if (typeof batchData.passRate === 'number') patch.passRate = batchData.passRate;
+        firestoreBatch.set(degreeRef, patch, { merge: true });
         
         existingStudentIds.add(update.matchedUserId);
         validUpdates++;

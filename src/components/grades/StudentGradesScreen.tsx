@@ -1,11 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Award, Target, Trophy, Clock, Search, X } from 'lucide-react';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { StudentDegree } from '../../types/grades.types';
-import { CATEGORIES, TRANSLATIONS } from '../../types';
+import { CATEGORIES, TRANSLATIONS, Stage } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageContext } from '../../contexts/StageContext';
+
+/**
+ * Year bucket for a degree written before yearLabel existed. Sorts last, and is
+ * labelled rather than hidden - an unstamped degree is still a real result.
+ */
+const NO_YEAR = '';
 
 export interface StudentGradesScreenProps {
   isOpen: boolean;
@@ -16,8 +22,8 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
   const [degrees, setDegrees] = useState<StudentDegree[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'current' | 'archive'>('current');
-  const { effectiveStageId } = useStageContext();
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const { stages, effectiveStageId } = useStageContext();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,23 +46,108 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     return () => unsub();
   }, [isOpen]);
 
+  /**
+   * One tab per stage the student has reached - the ladder up to and including
+   * their current stage - so a promoted student keeps last year alongside this
+   * year instead of watching it turn into an undifferentiated "archive".
+   *
+   * A stage that actually holds degrees is always given a tab even when it is
+   * not on that ladder. That costs one Set and is what stops a degree becoming
+   * invisible if a stageId is ever reassigned downward.
+   */
+  const stageTabs = useMemo(() => {
+    const shown = new Map<string, Stage>();
+    const current = stages.find(s => s.id === effectiveStageId);
+    if (current) {
+      for (const s of stages) if (s.order <= current.order) shown.set(s.id, s);
+    }
+    for (const d of degrees) {
+      if (!d.stageId || shown.has(d.stageId)) continue;
+      const s = stages.find(x => x.id === d.stageId);
+      if (s) shown.set(s.id, s);
+    }
+    return Array.from(shown.values()).sort((a, b) => a.order - b.order);
+  }, [stages, effectiveStageId, degrees]);
+
+  const tabbedStageIds = useMemo(() => new Set(stageTabs.map(s => s.id)), [stageTabs]);
+  const earliestTabId = stageTabs[0]?.id ?? null;
+
+  /**
+   * A degree with no stageId, or naming a stage with no tab, files under the
+   * earliest tab rather than vanishing. Legacy degrees are older by definition,
+   * so that is the least wrong home for them - but the real fix is
+   * scripts/backfillDegreeYears.ts, after which there should be none.
+   */
+  const tabIdFor = (d: StudentDegree) =>
+    d.stageId && tabbedStageIds.has(d.stageId) ? d.stageId : earliestTabId;
+
+  /**
+   * Which tab opens before the student picks one.
+   *
+   * Their current stage, because that is where new results land - but only once
+   * it has any. A student promoted in the summer has an empty current stage
+   * until the first upload of the new year, and opening on "no grades yet" hides
+   * the year they just finished behind a tab they have no reason to press. So
+   * fall back to the newest stage that actually has results.
+   */
+  const defaultStageId = (() => {
+    const withDegrees = new Set(degrees.map(tabIdFor).filter(Boolean) as string[]);
+    const current = stageTabs.find(s => s.id === effectiveStageId);
+    if (current && withDegrees.has(current.id)) return current.id;
+    for (let i = stageTabs.length - 1; i >= 0; i--) {
+      if (withDegrees.has(stageTabs[i].id)) return stageTabs[i].id;
+    }
+    // Nothing anywhere: sit on their own stage, or the newest tab if it is unset.
+    return current?.id ?? stageTabs[stageTabs.length - 1]?.id ?? null;
+  })();
+
+  // Null only when there are no stages at all, which shows every degree rather
+  // than an empty screen.
+  const activeStageId =
+    selectedStageId && stageTabs.some(s => s.id === selectedStageId)
+      ? selectedStageId
+      : defaultStageId;
+
+  const activeStage = stageTabs.find(s => s.id === activeStageId) || null;
+
   const filteredDegrees = degrees.filter(d => {
     const matchesSearch = d.examName.toLowerCase().includes(search.toLowerCase());
-    const dStage = d.stageId;
-    // If degree has no stageId, it's legacy (assume it belongs to current/default stage for now, so it shows up)
-    const matchesStage = viewMode === 'current' 
-      ? (!dStage || dStage === effectiveStageId) 
-      : (dStage && dStage !== effectiveStageId);
-      
+    const matchesStage = activeStageId === null || tabIdFor(d) === activeStageId;
     return matchesSearch && matchesStage;
   });
 
-  const groupedDegrees = filteredDegrees.reduce((acc, degree) => {
-    const mat = degree.material || 'other';
-    if (!acc[mat]) acc[mat] = [];
-    acc[mat].push(degree);
-    return acc;
-  }, {} as Record<string, StudentDegree[]>);
+  /**
+   * Degrees in the open tab, split by academic year, newest first. A stage the
+   * student repeated is the reason this exists: without it both years land in
+   * one list with nothing to tell them apart.
+   */
+  const yearGroups: [string, StudentDegree[]][] = (() => {
+    const byYear = new Map<string, StudentDegree[]>();
+    for (const d of filteredDegrees) {
+      const y = d.yearLabel || NO_YEAR;
+      if (!byYear.has(y)) byYear.set(y, []);
+      byYear.get(y)!.push(d);
+    }
+    return Array.from(byYear.entries()).sort(([a], [b]) => {
+      if (a === NO_YEAR) return 1;
+      if (b === NO_YEAR) return -1;
+      return b.localeCompare(a);
+    });
+  })();
+
+  const groupByMaterial = (list: StudentDegree[]) =>
+    list.reduce((acc, degree) => {
+      const mat = degree.material || 'other';
+      if (!acc[mat]) acc[mat] = [];
+      acc[mat].push(degree);
+      return acc;
+    }, {} as Record<string, StudentDegree[]>);
+
+  const materialName = (material: string) =>
+    material === 'other' ? 'أخرى' :
+      (CATEGORIES.find(c => c.value === material)?.labelKey
+        ? TRANSLATIONS.ar[CATEGORIES.find(c => c.value === material)!.labelKey as keyof typeof TRANSLATIONS.ar]
+        : material);
 
   const renderDegreeCard = (degree: StudentDegree) => {
     let passRateColor = 'bg-gray-200';
@@ -137,6 +228,22 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
     );
   };
 
+  const renderMaterialSections = (list: StudentDegree[]) => (
+    <div className="space-y-8">
+      {Object.entries(groupByMaterial(list)).map(([material, matDegrees]) => (
+        <div key={material}>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <div className="w-2 h-6 bg-emerald-500 rounded-full"></div>
+            {materialName(material)}
+          </h2>
+          <div className="flex flex-nowrap overflow-x-auto pb-4 gap-4 sm:gap-6 snap-x aesthetic-scrollbar scroll-smooth">
+            {(matDegrees as StudentDegree[]).map(degree => renderDegreeCard(degree))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -155,34 +262,31 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
             </button>
 
             <div className="p-4 sm:p-6 lg:p-8">
-              <div className="mb-6 sm:mb-8 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">السعيّات والدرجات</h1>
-                  <p className="text-gray-500 dark:text-zinc-400">سجل بجميع الدرجات المعتمدة من الكلية.</p>
-                </div>
-                <div className="flex bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl self-start sm:self-auto">
-                  <button
-                    onClick={() => setViewMode('current')}
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                      viewMode === 'current'
-                        ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    العام الحالي
-                  </button>
-                  <button
-                    onClick={() => setViewMode('archive')}
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                      viewMode === 'archive'
-                        ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    الأرشيف السنوي
-                  </button>
-                </div>
+              <div className="mb-5 sm:mb-6 mt-2">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">السعيّات والدرجات</h1>
+                <p className="text-gray-500 dark:text-zinc-400">سجل بجميع الدرجات المعتمدة من الكلية، مرحلة بمرحلة.</p>
               </div>
+
+              {stageTabs.length > 0 && (
+                <div className="mb-6 flex gap-1 overflow-x-auto bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl aesthetic-scrollbar">
+                  {stageTabs.map(stage => (
+                    <button
+                      key={stage.id}
+                      onClick={() => setSelectedStageId(stage.id)}
+                      className={`shrink-0 px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                        activeStageId === stage.id
+                          ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                      }`}
+                    >
+                      {stage.nameAr}
+                      {stage.id === effectiveStageId && (
+                        <span className="mr-1.5 inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 align-middle" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
 
       <div className="mb-8 relative">
         <input 
@@ -204,29 +308,35 @@ export default function StudentGradesScreen({ isOpen, onClose }: StudentGradesSc
       ) : filteredDegrees.length === 0 ? (
         <div className="text-center py-20 bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm px-4">
           <Trophy className="w-16 h-16 text-emerald-100 dark:text-emerald-900/50 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">لم يتم رصد درجات بعد</h2>
-          <p className="text-gray-500 dark:text-zinc-400">ستظهر السعيّات والنتائج هنا بمجرد اعتمادها من الإدارة.</p>
+          {degrees.length > 0 && activeStage ? (
+            <>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">لا توجد درجات في {activeStage.nameAr}</h2>
+              <p className="text-gray-500 dark:text-zinc-400">اختر مرحلة أخرى من الأعلى.</p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">لم يتم رصد درجات بعد</h2>
+              <p className="text-gray-500 dark:text-zinc-400">ستظهر السعيّات والنتائج هنا بمجرد اعتمادها من الإدارة.</p>
+            </>
+          )}
         </div>
+      ) : yearGroups.length === 1 ? (
+        // A single year needs no heading to disambiguate: this is the normal case,
+        // and it renders exactly as the screen did before years existed.
+        renderMaterialSections(yearGroups[0][1])
       ) : (
-        <div className="space-y-8">
-          {Object.entries(groupedDegrees).map(([material, matDegrees]) => {
-            const materialName = material === 'other' ? 'أخرى' : 
-              (CATEGORIES.find(c => c.value === material)?.labelKey 
-                ? TRANSLATIONS.ar[CATEGORIES.find(c => c.value === material)!.labelKey as keyof typeof TRANSLATIONS.ar] 
-                : material);
-                
-            return (
-              <div key={material}>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                  <div className="w-2 h-6 bg-emerald-500 rounded-full"></div>
-                  {materialName}
-                </h2>
-                <div className="flex flex-nowrap overflow-x-auto pb-4 gap-4 sm:gap-6 snap-x aesthetic-scrollbar scroll-smooth">
-                  {(matDegrees as StudentDegree[]).map(degree => renderDegreeCard(degree))}
-                </div>
+        <div className="space-y-10">
+          {yearGroups.map(([year, yearDegrees]) => (
+            <div key={year || 'no-year'}>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-sm font-bold font-mono" dir="ltr">
+                  {year || 'بدون سنة'}
+                </span>
+                <div className="flex-1 h-px bg-gray-200 dark:bg-zinc-800" />
               </div>
-            );
-          })}
+              {renderMaterialSections(yearDegrees)}
+            </div>
+          ))}
         </div>
       )}
             </div>

@@ -7,6 +7,16 @@ export interface GradeBatch {
   createdAt: string;
   createdBy: string;
   status: 'draft' | 'confirmed';
+  /** Which stage the batch was uploaded into. Written since the stage rollout. */
+  stageId?: string;
+  /**
+   * Academic year the exam belongs to, e.g. '2025-2026'. Copied from the
+   * calendar at upload time rather than derived from createdAt, because a batch
+   * confirmed after the year rolls over still belongs to the year it examined.
+   */
+  yearLabel?: string;
+  /** Every student the batch wrote a degree for; undo and patch both walk this. */
+  studentIds?: string[];
   stats: {
     totalRows: number;
     matched: number;
@@ -35,4 +45,8 @@ export interface StudentDegree {
   batchId: string;
   batchDate: string;
   createdAt: string;
+  /** The stage tab this degree files under in StudentGradesScreen. */
+  stageId?: string;
+  /** The year heading it files under within that tab. See GradeBatch.yearLabel. */
+  yearLabel?: string;
 }

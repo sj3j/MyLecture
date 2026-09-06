@@ -9,6 +9,7 @@ import { MatchedResult, GradeBatch } from '../../types/grades.types';
 import { confirmDegreeBatchClient, undoDegreeBatch, patchDegreeBatchClient } from '../../services/adminGradeService';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageContext } from '../../contexts/StageContext';
+import { useAcademicPhase } from '../../hooks/useAcademicPhase';
 import { canManage } from '../../lib/permissions';
 
 export interface AdminGradesScreenProps {
@@ -117,6 +118,10 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
   const isMasterAdmin = auth.currentUser?.email === 'almdrydyl335@gmail.com';
   const canManageGrades = canManage(user, 'manageGrades');
   const { effectiveStageId } = useStageContext();
+  // Stamped onto every degree this upload writes. Taken from the calendar, not
+  // from createdAt: a batch confirmed after the year rolls over still belongs to
+  // the year it examined.
+  const { yearLabel } = useAcademicPhase();
   
   if (isOpen && !canManageGrades && !isMasterAdmin) {
     onClose();
@@ -147,6 +152,19 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
 
   // History State
   const [batches, setBatches] = useState<any[]>([]);
+  const [historyYear, setHistoryYear] = useState<string>('all');
+
+  // Years present in the loaded history, newest first. Derived in memory rather
+  // than queried: the history query is already where('stageId') + orderBy(
+  // 'createdAt'), and a second where() would need another composite index for a
+  // list that is only ever a handful of rows.
+  const historyYears = Array.from(
+    new Set(batches.map(b => b.yearLabel).filter(Boolean) as string[])
+  ).sort((a, b) => b.localeCompare(a));
+
+  const visibleBatches = historyYear === 'all'
+    ? batches
+    : batches.filter(b => (b.yearLabel || '') === historyYear);
 
   // Fetch all students exactly once
   useEffect(() => {
@@ -325,7 +343,7 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
          setPatchAppealsBatchId(null);
        } else {
          const allStudentIds = students.map(s => s.uid);
-         await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined, allStudentIds, effectiveStageId);
+         await confirmDegreeBatchClient(examName, matchedResults, Number(maxDegree) || 100, material, editBatchId || undefined, allStudentIds, effectiveStageId, yearLabel);
        }
        setMatchedResults([]);
        setExamName('');
@@ -764,14 +782,41 @@ export default function AdminGradesScreen({ isOpen, onClose, user }: AdminGrades
 
       {tab === 'history' && (
         <div className="space-y-4">
-          {batches.length === 0 ? (
+          {historyYears.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 pb-1">
+              <span className="text-sm font-medium text-gray-500 dark:text-zinc-400">السنة الدراسية:</span>
+              <button
+                onClick={() => setHistoryYear('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${historyYear === 'all' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'}`}
+              >
+                الكل
+              </button>
+              {historyYears.map(y => (
+                <button
+                  key={y}
+                  onClick={() => setHistoryYear(y)}
+                  dir="ltr"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-colors ${historyYear === y ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'}`}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {visibleBatches.length === 0 ? (
             <div className="text-center py-12 text-gray-500 dark:text-zinc-400">لا توجد كشوفات محفوظة مسبقاً</div>
           ) : (
-            batches.map(batch => (
+            visibleBatches.map(batch => (
               <div key={batch.id} className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                     {batch.examName}
+                    {batch.yearLabel && (
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400" dir="ltr">
+                        {batch.yearLabel}
+                      </span>
+                    )}
                     {batch.material && (
                       <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
                         {TRANSLATIONS.ar[CATEGORIES.find(c => c.value === batch.material)?.labelKey as keyof typeof TRANSLATIONS.ar] || batch.material}
