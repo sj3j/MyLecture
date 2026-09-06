@@ -45,6 +45,17 @@ export default defineConfig(({mode}) => {
           inlineWorkboxRuntime: true,
           importScripts: ['/firebase-messaging-sw.js'],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          // The announcement composer's editor (Tiptap/ProseMirror, ~128KB
+          // gzipped) is lazy-loaded and only ever mounted by admins and
+          // moderators. Precaching it would hand that download to every student
+          // in the background, which is exactly what the React.lazy() boundary
+          // in Composer.tsx exists to avoid - globPatterns above sweeps up every
+          // emitted .js chunk regardless of who can reach it.
+          //
+          // The trade: an admin who opens the composer while offline gets the
+          // loading state instead of an editor. Acceptable, because publishing
+          // needs the network anyway - attachment uploads cannot queue.
+          globIgnores: ['**/ComposerEditor-*.js'],
           maximumFileSizeToCacheInBytes: 5000000,
           runtimeCaching: [
             {

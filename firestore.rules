@@ -542,6 +542,26 @@ service cloud.firestore {
         canReadStage(resource.data.get('stageId', null), '') &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
       );
+
+      // Poll ballots.
+      //
+      // ANONYMOUS: a ballot is readable by the student who cast it and by staff,
+      // never by another student. That boundary is the whole reason votes are a
+      // subcollection rather than a `votes` map on the post - a map would be
+      // readable by everyone who can read the post, so "anonymous poll" would
+      // have been a label rather than a property.
+      //
+      // The aggregate stays public: `poll.counts` lives on the parent document
+      // and is written ONLY by the tallyPollVotes Cloud Function through the
+      // Admin SDK, which is why the reader escape hatch above still needs to
+      // permit nothing but `reactions`. A student cannot inflate a tally,
+      // because a student cannot write the field that holds it.
+      match /votes/{voterId} {
+        allow read: if isStaff() || (isAuthenticated() && request.auth.uid == voterId);
+        allow write: if isAuthenticated()
+          && request.auth.uid == voterId
+          && canReadStage(get(/databases/$(database)/documents/announcements/$(postId)).data.get('stageId', null), '');
+      }
     }
 
     match /homeworks/{homeworkId} {

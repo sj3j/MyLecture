@@ -22,6 +22,7 @@ import StudentGradesScreen from './components/grades/StudentGradesScreen';
 import AntiCheatDashboard from './components/AntiCheatDashboard';
 import AdminLogsScreen from './components/AdminLogsScreen';
 import BottomNav, { Tab } from './components/BottomNav';
+import { canManage } from './lib/permissions';
 import AnnouncementsScreen from './components/AnnouncementsScreen';
 import WeeklyListScreen from './components/WeeklyListScreen';
 import ProfileScreen from './components/ProfileScreen';
@@ -712,6 +713,12 @@ export default function App() {
 
 
 
+  // Staff compose from a docked bar that owns the bottom edge of the
+  // announcements screen, so the floating nav is removed there rather than
+  // stacked on top of it - the screen grows a back arrow instead (its `onBack`).
+  // Students are unaffected: they never mount the composer, and keep the nav.
+  const composingAnnouncements = currentTab === 'announcements' && canManage(user, 'manageAnnouncements');
+
   const isAnyOverlayOpen = showUpload || showAdminManage || showStudentManage || showAdminGrades || showAdminBank || showStudentGrades || showAntiCheat || showAdminLogs || showSubManage || showPaywall || (mcqLecture !== null) || (readerLecture !== null);
 
   return (
@@ -726,7 +733,7 @@ export default function App() {
     // which is what left a blank half-screen under the last card. A screen that
     // needs more room now says so by its own content, not by re-padding.
     <div
-      className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' ? '' : 'pb-[104px]'} font-sans transition-colors duration-300`}
+      className={`min-h-screen bg-stone-50 dark:bg-zinc-900 text-slate-900 dark:text-stone-100 ${currentTab === 'chat' || composingAnnouncements ? '' : 'pb-[104px]'} font-sans transition-colors duration-300`}
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
@@ -785,7 +792,7 @@ export default function App() {
         />
       )}
       {currentTab === 'announcements' && (
-        <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={handleNavigateToChat} onOpenMCQ={handleOpenMCQ} onOpenReader={handleOpenReader} />
+        <AnnouncementsScreen user={user} lang={lang} lectures={lectures} onNavigateToChat={handleNavigateToChat} onOpenMCQ={handleOpenMCQ} onOpenReader={handleOpenReader} onBack={() => setCurrentTab('home')} />
       )}
       {currentTab === 'chat' && (
         <ChatScreen user={user} lang={lang} setCurrentTab={setCurrentTab} onMobileChatOpenChange={setIsMobileChatOpenApp} />
@@ -899,7 +906,7 @@ export default function App() {
 
       <GlobalAudioPlayer isRtl={isRtl} />
       <AnimatePresence>
-        {(!isAnyOverlayOpen && !isMobileChatOpenApp) && (
+        {(!isAnyOverlayOpen && !isMobileChatOpenApp && !composingAnnouncements) && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

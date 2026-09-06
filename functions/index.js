@@ -1,5 +1,5 @@
 const { setGlobalOptions } = require('firebase-functions/v2');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const axios = require('axios');
@@ -185,7 +185,19 @@ exports.sendAnnouncementNotificationV3 = onDocumentCreated({
     await notifLockRef.set({ sentAt: admin.firestore.FieldValue.serverTimestamp() });
 
     const announcementData = snap.data();
-    let content = announcementData.text || announcementData.content || 'إعلان جديد';
+    // `text` is the plain-text mirror of richBlocks, written by the composer on
+    // every save precisely so this line never has to understand formatting - a
+    // bold word must not reach a notification tray as literal markup.
+    let content = announcementData.text || announcementData.content || '';
+    // A poll-only post has no body. Falling through to the generic 'إعلان جديد'
+    // would tell a student nothing; the question is the announcement.
+    if (!content && announcementData.poll && announcementData.poll.question) {
+      content = `📊 ${announcementData.poll.question}`;
+    }
+    if (!content && Array.isArray(announcementData.attachments) && announcementData.attachments.length) {
+      content = `📎 ${announcementData.attachments.length} مرفق`;
+    }
+    if (!content) content = 'إعلان جديد';
     // Truncate content for notification body
     if (content.length > 100) {
       content = content.substring(0, 97) + '...';
@@ -231,6 +243,74 @@ exports.sendAnnouncementNotificationV3 = onDocumentCreated({
 
     return null;
   });
+
+/**
+ * Keeps `poll.counts` and `poll.totalVoters` on an announcement in step with the
+ * ballots under `announcements/{id}/votes/{uid}`.
+ *
+ * This function exists so that the tally is not client-written. The students
+ * collection has a precedent for accepting forgeable client-written aggregates
+ * (see the comment above userMCQStats in firestore.rules), and that trade is
+ * defensible for a personal score. It is not defensible for a poll: the whole
+ * point of asking the class is that the answer reflects the class, and a single
+ * student able to add fifty votes to their preferred option makes the result
+ * worse than not asking. So firestore.rules grants students no write access to
+ * the announcement document at all, and the count arrives here instead.
+ *
+ * Recounted from the subcollection rather than incremented from the delta. An
+ * increment would drift permanently on any retry or out-of-order delivery, and
+ * a class poll is a few dozen documents - cheap enough to just count.
+ */
+exports.tallyPollVotes = onDocumentWritten({
+  document: 'announcements/{announcementId}/votes/{voterId}',
+  database: '(default)'
+}, async (event) => {
+  const { announcementId } = event.params;
+  const announcementRef = db.doc(`announcements/${announcementId}`);
+
+  try {
+    const announcementSnap = await announcementRef.get();
+    if (!announcementSnap.exists) return null;
+
+    const poll = announcementSnap.data().poll;
+    if (!poll || !Array.isArray(poll.options)) return null;
+
+    const votesSnap = await db.collection(`announcements/${announcementId}/votes`).get();
+
+    // Seeded from the poll's own options so an option nobody picked reports 0
+    // rather than disappearing from the map - the bar has to render at 0%.
+    const counts = {};
+    for (const option of poll.options) counts[option.id] = 0;
+
+    let totalVoters = 0;
+    const valid = new Set(poll.options.map(o => o.id));
+
+    votesSnap.forEach(doc => {
+      const optionIds = doc.data().optionIds;
+      if (!Array.isArray(optionIds) || optionIds.length === 0) return;
+
+      // Ignore ids that are not options of this poll. A ballot can outlive an
+      // edit that removed the option it named, and it must not create a phantom
+      // key in the tally when it does.
+      const picked = optionIds.filter(id => valid.has(id));
+      if (picked.length === 0) return;
+
+      totalVoters++;
+      // De-duplicated: a malformed ballot listing the same option twice counts
+      // once, so a student cannot double-weight themselves.
+      for (const id of new Set(picked)) counts[id] += 1;
+    });
+
+    await announcementRef.update({
+      'poll.counts': counts,
+      'poll.totalVoters': totalVoters,
+    });
+    return null;
+  } catch (error) {
+    console.error('Error tallying poll votes for', announcementId, error);
+    return null;
+  }
+});
 
 exports.telegramWebhookV3 = onRequest(async (req, res) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -694,8 +774,10 @@ exports.migrateOriginalNames = onCall(async (request) => {
   }
 });
 
-const { onDocumentWritten } = require('firebase-functions/v2/firestore');
-
+// onDocumentWritten is imported at the top of the file alongside
+// onDocumentCreated. It used to be re-required here, which stopped working the
+// moment a second trigger needed it: tallyPollVotes registers at module load,
+// well before this line runs, and `const` is not hoisted.
 exports.syncRole = onDocumentWritten({
   document: 'users/{uid}',
   database: '(default)'

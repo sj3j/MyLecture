@@ -1,16 +1,52 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
+
     // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function isAdminOrModerator() {
-      return isAuthenticated() && 
-        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['admin', 'moderator'];
+
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    // Mirrors isMasterAdmin() in firestore.rules.
+    //
+    // This used to be missing, and its absence was a live bug rather than a
+    // theoretical gap: isStaff() below tests `role in ['admin','moderator']`,
+    // and a master admin's user document carries role 'master_admin'. The one
+    // account with authority over every stage was therefore the one account
+    // that could not attach a file to an announcement.
+    function isMasterAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'almdrydyl335@gmail.com') ||
+        ('role' in request.auth.token && request.auth.token.role == 'master_admin') ||
+        (hasUserDoc() && userDoc().role == 'master_admin')
+      );
+    }
+
+    function isStaff() {
+      return isMasterAdmin() || (hasUserDoc() && userDoc().role in ['admin', 'moderator']);
+    }
+
+    // Content-write scope for a stage, mirroring canWriteStage() in
+    // firestore.rules - including its staged-rollout grace for staff who have
+    // no managedStageId yet. Keep the two in step: when that grace is removed
+    // from firestore.rules, remove it here in the same change.
+    function canWriteStage(stageId) {
+      return isMasterAdmin() || (
+        isStaff() && (
+          !('managedStageId' in userDoc()) ||
+          userDoc().managedStageId == '' ||
+          userDoc().managedStageId == stageId
+        )
+      );
     }
 
     // Profile pictures: Any user can upload their own
@@ -19,22 +55,34 @@ service firebase.storage {
       allow write: if isAuthenticated() && fileName.matches(request.auth.uid + ".*");
     }
 
-    // Lectures: Only admins/moderators can upload
+    // Lectures: Only staff can upload
     match /lectures/{fileName} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if isStaff();
     }
 
-    // Announcements: Only admins/moderators can upload
+    // Announcement attachments are stage-scoped: the composer writes to
+    // announcements/{stageId}/{fileName}, so a representative for one stage
+    // cannot drop files into another's prefix. Previously this path carried no
+    // stage check at all, which made it the one hole left in stage isolation
+    // after firestore.rules closed the document side.
+    match /announcements/{stageId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if canWriteStage(stageId);
+    }
+
+    // Flat legacy prefix, kept readable for files attached before the composer
+    // began scoping uploads by stage. Deliberately not writable: new uploads
+    // must go through the stage-scoped path above.
     match /announcements/{fileName} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if false;
     }
-    
-    // Weekly Tasks: Only admins/moderators can upload
+
+    // Weekly Tasks: Only staff can upload
     match /weekly_tasks/{fileName} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if isStaff();
     }
 
     // Chat Attachments: Authenticated users can upload their own files
@@ -46,7 +94,7 @@ service firebase.storage {
     // Default fallback
     match /{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAdminOrModerator();
+      allow write: if isStaff();
     }
   }
 }

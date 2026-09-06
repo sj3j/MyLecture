@@ -98,6 +98,27 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
     email: 'reset@x.com', name: 'Reset', isActive: true, stageId: 'stage_3', password: 'HASH',
   });
 
+  // A second stage_3 student, so "one student cannot read another's ballot"
+  // can actually be asserted rather than assumed.
+  await setDoc(doc(db, 'users/stu2_uid'), {
+    role: 'student', email: 'stu2@x.com', stageId: 'stage_3',
+  });
+  await setDoc(doc(db, 'students/stu2@x.com'), {
+    email: 'stu2@x.com', name: 'Student Two', isActive: true, stageId: 'stage_3', password: 'HASH',
+  });
+
+  // An announcement carrying a poll, plus a ballot already cast by stu2.
+  await setDoc(doc(db, 'announcements/ann_poll'), {
+    content: 'Which day?', stageId: 'stage_3',
+    poll: {
+      question: 'Which day?',
+      options: [{ id: 'sat', text: 'Saturday' }, { id: 'sun', text: 'Sunday' }],
+      allowsMultiple: false, counts: { sat: 1, sun: 0 }, totalVoters: 1,
+    },
+  });
+  await setDoc(doc(db, 'announcements/ann_poll/votes/stu2_uid'), { optionIds: ['sat'] });
+  await setDoc(doc(db, 'announcements/ann_stage4/votes/stu2_uid'), { optionIds: ['x'] });
+
   await setDoc(doc(db, 'stages/stage_3'), { id: 'stage_3', nameEn: 'Third Stage', order: 3 });
   await setDoc(doc(db, 'stages/stage_4'), { id: 'stage_4', nameEn: 'Fourth Stage', order: 4 });
   await setDoc(doc(db, 'lectures/lec1'), { title: 'L1', stageId: 'stage_3', category: 'biochemistry' });
@@ -123,6 +144,7 @@ const resetUser = ctxFor('reset_uid', 'reset@x.com');
 const mod = ctxFor('mod_uid', 'mod@x.com');
 const legacy = ctxFor('legacy_uid', 'legacy@x.com');
 const student = ctxFor('stu_uid', 'stu@x.com');
+const student2 = ctxFor('stu2_uid', 'stu2@x.com');
 const master = ctxFor('master_uid', 'almdrydyl335@gmail.com');
 
 console.log('\nModerator is walled off from student data');
@@ -268,6 +290,54 @@ await check('student CANNOT read another stage group chat',
   assertFails(getDoc(doc(student, 'chat_messages/msg_stage4'))));
 await check('representative CANNOT read another stage record',
   assertFails(getDoc(doc(rep, 'records/rec_stage4'))));
+
+// ---------------------------------------------------------------------------
+// Poll ballots.
+//
+// The two properties here pull against each other and both have to hold: a poll
+// is ANONYMOUS (no student can see another's ballot) while its result is PUBLIC
+// (everyone sees the tally). The tally lives in `poll.counts` on the parent
+// announcement, which is why no student may write that document - if any of the
+// "CANNOT forge" assertions below start passing, the counts became client-
+// writable and the poll became riggable.
+// ---------------------------------------------------------------------------
+console.log('\nPoll ballots are private, tallies are not');
+
+await check('a student CAN cast their own ballot',
+  assertSucceeds(setDoc(doc(student, 'announcements/ann_poll/votes/stu_uid'), { optionIds: ['sun'] })));
+await check('a student CAN change their own ballot',
+  assertSucceeds(setDoc(doc(student, 'announcements/ann_poll/votes/stu_uid'), { optionIds: ['sat'] })));
+await check('a student CAN withdraw their own ballot',
+  assertSucceeds(deleteDoc(doc(student, 'announcements/ann_poll/votes/stu_uid'))));
+await check('a student CAN read their own ballot',
+  assertSucceeds(getDoc(doc(student, 'announcements/ann_poll/votes/stu_uid'))));
+
+await check('a student CANNOT read another student ballot',
+  assertFails(getDoc(doc(student, 'announcements/ann_poll/votes/stu2_uid'))));
+await check('a student CANNOT vote as another student',
+  assertFails(setDoc(doc(student, 'announcements/ann_poll/votes/stu2_uid'), { optionIds: ['sun'] })));
+await check('a student CANNOT delete another student ballot',
+  assertFails(deleteDoc(doc(student, 'announcements/ann_poll/votes/stu2_uid'))));
+await check('a student CANNOT vote on another stage poll',
+  assertFails(setDoc(doc(student, 'announcements/ann_stage4/votes/stu_uid'), { optionIds: ['x'] })));
+
+await check('staff CAN read a ballot, which is what makes results visible to them',
+  assertSucceeds(getDoc(doc(rep, 'announcements/ann_poll/votes/stu2_uid'))));
+
+await check('the poll tally is readable by any student in the stage',
+  assertSucceeds(getDoc(doc(student, 'announcements/ann_poll'))));
+await check('a student CANNOT forge the poll tally',
+  assertFails(updateDoc(doc(student, 'announcements/ann_poll'), { 'poll.counts': { sat: 999, sun: 0 } })));
+await check('a student CANNOT forge the tally by rewriting the whole poll',
+  assertFails(updateDoc(doc(student, 'announcements/ann_poll'), {
+    poll: { question: 'x', options: [], allowsMultiple: false, counts: { sat: 999 }, totalVoters: 999 },
+  })));
+await check('a student CANNOT smuggle a tally edit alongside a reaction',
+  assertFails(updateDoc(doc(student, 'announcements/ann_poll'), {
+    'reactions.👍': ['stu_uid'], 'poll.totalVoters': 999,
+  })));
+await check('a student CAN still react, which the poll rules must not have broken',
+  assertSucceeds(updateDoc(doc(student, 'announcements/ann_poll'), { 'reactions.👍': ['stu_uid'] })));
 
 console.log('\nLeaderboard stats cannot be moved to another stage');
 await check('student CAN write their own stats on their own stage',
