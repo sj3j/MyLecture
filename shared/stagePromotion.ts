@@ -19,6 +19,7 @@
  *    than one user doc (hence the merge-duplicates tool in StudentManagement).
  */
 import { GroupConfigLike, FALLBACK_GROUP_CONFIG, isValidSubgroup, normalizeSubgroup } from './groups.js';
+import { completedProgressionFields } from './progression.js';
 
 /** One row of the roster spreadsheet, already normalised. */
 export interface PromotionRow {
@@ -250,10 +251,7 @@ export async function applyPromotion(
         stageId: plan.to,
         group: m.subgroup,          // what App.tsx actually gates on
         tahmeelSubjects: [],        // ids from the old stage; stale after a move
-        hasCompletedProgression: true,
-        lastProgressionYear: opts.progressionYear,
-        progressionYear: opts.progressionYear,
-        progressionState: 'completed',
+        ...completedProgressionFields(opts.progressionYear),
       };
       // Same rule as submitProgression: a representative or moderator represents
       // the stage they study in, so moving them up vacates the seat rather than

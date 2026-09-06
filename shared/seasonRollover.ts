@@ -51,6 +51,9 @@ export async function loadCalendar(db: FirebaseFirestore.Firestore): Promise<Aca
     yearLabel: data.yearLabel || DEFAULT_CALENDAR.yearLabel,
     timezone: data.timezone || DEFAULT_CALENDAR.timezone,
     terms: data.terms,
+    resultsDate: data.resultsDate ?? null,
+    resitResultsDate: data.resitResultsDate ?? null,
+    progressionStages: data.progressionStages ?? null,
   };
 }
 

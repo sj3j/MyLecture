@@ -6,6 +6,7 @@ import { Language, TRANSLATIONS } from '../types';
 import { Loader2, UserRound, Lock, LogIn } from 'lucide-react';
 import { apiUrl } from '../lib/apiBase';
 import { getGoogleCustomToken, NoAccountError } from '../lib/googleSignIn';
+import { carriedProgressionFields } from '../../shared/progression';
 import SignupScreen from './SignupScreen';
 
 interface LoginScreenProps {
@@ -166,6 +167,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
       let userRole = 'student';
       let whitelistStageId: string | null = null;
       let whitelistManagedStageId: string | null = null;
+      let whitelistStudentData: any = null;
 
       // The id the SERVER resolved, not the address Google asserted: a roster
       // student who linked a Gmail is keyed by a synthetic id, so looking them
@@ -195,6 +197,7 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
               if (data.isActive === false) return; // shouldn't reach here since API checks it
               userRole = data.role || 'student';
               whitelistStageId = data.stageId || null;
+              whitelistStudentData = data;
             }
           }
         }
@@ -221,6 +224,10 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           // write stageId on create or during progression season.
           ...(whitelistStageId ? { stageId: whitelistStageId } : {}),
           ...(whitelistManagedStageId ? { managedStageId: whitelistManagedStageId } : {}),
+          // A fresh-intake roster import stamps this on the students doc, since
+          // it cannot write to a uid that does not exist yet. See RosterImport
+          // and shared/progression.ts's completedProgressionFields.
+          ...carriedProgressionFields(whitelistStudentData),
           createdAt: serverTimestamp(),
           favorites: [],
           studied: [],
@@ -330,6 +337,8 @@ export default function LoginScreen({ lang, externalError, onClearError }: Login
           // first - the users doc does not exist yet - so it is carried across
           // here, which also lets an imported student skip the group step.
           ...(studentData.subgroup ? { group: studentData.subgroup } : {}),
+          // Same reasoning for a fresh-intake stamp - see completedProgressionFields.
+          ...carriedProgressionFields(studentData),
           createdAt: serverTimestamp(),
           favorites: [],
           studied: [],

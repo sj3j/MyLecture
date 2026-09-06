@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../lib/firebase';
-import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import {
   Upload, Loader2, AlertTriangle, CheckCircle2, Download, X, Copy, Check,
 } from 'lucide-react';
@@ -14,6 +14,8 @@ import {
   generatePassword, isPlaceholderEmail,
 } from '../../shared/rosterIdentity';
 import { GroupConfigLike, isValidSubgroup, normalizeSubgroup, subgroupOptions } from '../../shared/groups';
+import { DEFAULT_CALENDAR } from '../../shared/academicCalendar';
+import { completedProgressionFields } from '../../shared/progression';
 
 /**
  * Bulk student import from a spreadsheet or CSV.
@@ -134,6 +136,16 @@ export default function RosterImport({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /**
+   * This roster is a brand-new intake with no prior year's result to report -
+   * so newly-created rows are stamped as already answered for the current
+   * calendar year (see completedProgressionFields), or nextProgressionStep
+   * would ask them a question that has nothing to ask them about. Only new
+   * rows get stamped: a row that updates an existing student may already be
+   * mid-cycle (e.g. awaiting a resit), and this checkbox must not overwrite
+   * that.
+   */
+  const [freshIntake, setFreshIntake] = useState(false);
 
   /**
    * The passwords from the last import, held until the representative confirms
@@ -350,6 +362,12 @@ export default function RosterImport({
     setError(null);
 
     try {
+      let freshIntakeYearLabel: string | null = null;
+      if (freshIntake) {
+        const calSnap = await getDoc(doc(db, 'app_settings', 'academicCalendar'));
+        freshIntakeYearLabel = (calSnap.exists() && calSnap.data().yearLabel) || DEFAULT_CALENDAR.yearLabel;
+      }
+
       const list: IssuedRow[] = [];
       let created = 0;
       let updated = 0;
@@ -380,6 +398,7 @@ export default function RosterImport({
           if (!updating) {
             payload.createdAt = serverTimestamp();
             if (!row.examCode) payload.examCode = '';
+            if (freshIntakeYearLabel) Object.assign(payload, completedProgressionFields(freshIntakeYearLabel));
           }
 
           // merge so an update never clears fields this file has no column for.
@@ -486,6 +505,25 @@ export default function RosterImport({
       <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
         {isRtl ? 'استيراد قائمة الطلاب' : 'Import student list'}
       </h3>
+
+      <label className="mb-3 flex items-start gap-2 p-2.5 bg-slate-50 dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={freshIntake}
+          onChange={e => setFreshIntake(e.target.checked)}
+          className="mt-0.5 shrink-0"
+        />
+        <span className="text-xs">
+          <span className="font-bold text-slate-700 dark:text-slate-200 block">
+            {isRtl ? 'دفعة جديدة كلياً' : 'Brand-new cohort'}
+          </span>
+          <span className="text-slate-500 dark:text-slate-400">
+            {isRtl
+              ? 'لا نتيجة عام سابق لديهم ليُبلَّغوا عنها — لن يُسألوا سؤال النتيجة هذا العام.'
+              : "They have no prior year's result to report — they won't be asked this year's result question."}
+          </span>
+        </span>
+      </label>
 
       <label className="w-full py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-zinc-700">
         {isBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}

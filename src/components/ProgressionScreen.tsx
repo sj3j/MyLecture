@@ -92,7 +92,11 @@ export default function ProgressionScreen({ user, lang, round, onDone }: Progres
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'API error');
+      if (!res.ok || !data.success) {
+        const apiErr = new Error(data.error || 'API error');
+        (apiErr as any).isApiError = true;
+        throw apiErr;
+      }
 
       if (data.promoted || data.graduated) {
         setResult({
@@ -107,9 +111,14 @@ export default function ProgressionScreen({ user, lang, round, onDone }: Progres
       }
     } catch (err: any) {
       console.error('Progression submit failed:', err);
-      setError(isRtl
-        ? 'تعذّر حفظ إجابتك. تحقّق من الاتصال وحاول مرة أخرى.'
-        : 'Could not save your answer. Check your connection and try again.');
+      // Only the server's own error (e.g. "no progression question is open
+      // yet") is specific enough to show as-is; a missing token or a real
+      // network failure gets the generic connectivity message instead.
+      setError(err?.isApiError && err.message
+        ? err.message
+        : isRtl
+          ? 'تعذّر حفظ إجابتك. تحقّق من الاتصال وحاول مرة أخرى.'
+          : 'Could not save your answer. Check your connection and try again.');
     } finally {
       setIsSaving(false);
     }

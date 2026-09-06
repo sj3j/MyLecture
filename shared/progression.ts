@@ -182,3 +182,38 @@ export function isAnswerValid(round: ProgressionRound, answer: string): boolean 
     ? answer === 'passed' || answer === 'resit'
     : answer === 'passed' || answer === 'tahmeel' || answer === 'failed';
 }
+
+/**
+ * Stamps a student as already handled for this year's progression cycle.
+ *
+ * Used both for CLI promotion (stagePromotion.ts) and for importing a
+ * brand-new roster with no prior year's result to report (RosterImport.tsx):
+ * both place a student in a stage without them having answered a progression
+ * question, and nextProgressionStep cannot tell "never answered because they
+ * are new" from "never answered because they haven't gotten to it yet" - so
+ * without this stamp they would be asked a question that has nothing to ask
+ * them about.
+ */
+export function completedProgressionFields(yearLabel: string) {
+  return {
+    hasCompletedProgression: true,
+    lastProgressionYear: yearLabel,
+    progressionYear: yearLabel,
+    progressionState: 'completed' as ProgressionState,
+  };
+}
+
+/**
+ * Copies a fresh-intake stamp off a students/{email} doc onto the users/{uid}
+ * doc created at first login. Mirrors how stageId/subgroup are carried over
+ * there: the importer cannot write to a uid that does not exist yet.
+ */
+export function carriedProgressionFields(studentData: any): Partial<ReturnType<typeof completedProgressionFields>> {
+  if (!studentData?.progressionYear) return {};
+  return {
+    progressionYear: studentData.progressionYear,
+    progressionState: studentData.progressionState,
+    hasCompletedProgression: studentData.hasCompletedProgression,
+    lastProgressionYear: studentData.lastProgressionYear,
+  };
+}
